@@ -1,126 +1,102 @@
-# 🛡️ CFT Security Agent
+<div align="center">
 
-> AI-agent for contextual vulnerability prioritization and safe iterative verification inside a CI/CD pipeline.
+# CFT Security Agent
+
+### ИИ-агент для анализа, приоритизации и контролируемой проверки уязвимостей в CI/CD
+
+`SAST` · `CVSS 4.0` · `LangGraph` · `AgentState` · `Validator` · `Executor`
+
+</div>
+
+---
+
+## Зачем нужен проект
+
+Обычный SAST умеет находить подозрительные места в коде, но не всегда понимает, **насколько находка важна именно для конкретной системы** и действительно ли она воспроизводится.
+
+Этот проект строит следующий слой поверх SAST:
+
+1. получает finding;
+2. добавляет контекст кода и архитектуры;
+3. оценивает техническую серьёзность через `CVSS 4.0`;
+4. отдельно считает контекстный приоритет;
+5. передаёт находку агенту;
+6. агент формирует гипотезу и предлагает безопасную проверку;
+7. `Validator` решает, разрешена ли она;
+8. `Executor` выполняет только заранее разрешённое действие;
+9. результат превращается в доказательство;
+10. формируется финальный отчёт и статус для CI/CD.
+
+> **Агент думает. Валидатор разрешает. Исполнитель выполняет. Результат подтверждается доказательствами.**
+
+---
+
+## Архитектура
+
+Диаграмма ниже повторяет текущую архитектуру **Miro v0.2** по блокам и связям.
 
 <p align="center">
-  <strong>SAST → Context → CVSS → AI Agent → Validator → Executor → Evidence → Report</strong>
+  <img src="docs/diagrams/architecture.svg" alt="Архитектура CFT Security Agent" width="100%">
 </p>
 
+### Два этапа системы
+
+**Этап 1. Контекстная оценка**
+
+`SAST`-находка дополняется информацией об архитектуре. На выходе получаем техническую оценку `CVSS` и отдельный контекстный приоритет.
+
+**Этап 2. Агентная проверка**
+
+Агент анализирует находку и предлагает проверку. Она не выполняется напрямую: сначала проходит через `Validator`, после чего `Executor` может запустить только разрешённое действие в согласованной тестовой среде.
+
 ---
 
-## 📌 О проекте
+## Как работает агент
 
-Репозиторий содержит базовую архитектуру решения для задачи ЦФТ:
+Диаграмма повторяет **«Граф работы агента» из Miro v0.1**.
 
-**«ИИ-агент для поиска уязвимостей в ПО в CI/CD-контуре»**
+<p align="center">
+  <img src="docs/diagrams/workflow.svg" alt="Граф работы агента на LangGraph" width="100%">
+</p>
 
-Проект состоит из двух связанных частей:
+В коде этот процесс реализован через `LangGraph` и общий `AgentState`.
 
-1. Контекстный скоринг уязвимостей
-2. ИИ-агент-пентестер с безопасной итеративной проверкой гипотез
-
-Цель MVP:
+Главные ветки:
 
 ```text
-один finding
-→ контекст
-→ scoring
-→ hypothesis
-→ ActionProposal
-→ Validator
-→ Executor
-→ Evidence
-→ FinalReport
+APPROVE → Executor → Evidence → переоценка
+DENY    → policy_blocked → финальный отчёт
 ```
+
+Если доказательств недостаточно, граф может сделать ещё одну итерацию, но только до заданного лимита.
 
 ---
 
-## 🧠 Главный принцип
+## Что уже работает
 
-```text
-Agent думает
-Validator разрешает
-Executor выполняет
-```
-
-LLM не получает прямой произвольный shell-доступ.
-
----
-
-## 🧱 Структура проекта
-
-```text
-cft-security-agent/
-│
-├── README.md
-├── AGENTS.md
-├── pyproject.toml
-├── .env.example
-├── .gitignore
-│
-├── app/
-│   ├── config.py
-│   └── main.py
-│
-├── schemas/
-│   ├── finding.py
-│   ├── architecture.py
-│   ├── scoring.py
-│   ├── hypothesis.py
-│   ├── action.py
-│   ├── validation.py
-│   ├── execution.py
-│   ├── evidence.py
-│   ├── report.py
-│   └── state.py
-│
-├── agent/
-│   ├── graph.py
-│   ├── nodes.py
-│   └── prompts.py
-│
-├── tools/
-│   ├── contracts.py
-│   └── registry.py
-│
-├── scoring/
-│   └── service.py
-│
-├── validator/
-│   └── validator.py
-│
-├── executor/
-│   └── executor.py
-│
-├── evidence/
-│   └── store.py
-│
-├── sast/
-│   └── normalizer.py
-│
-├── architecture/
-│   └── service.py
-│
-├── policies/
-│   └── default.yaml
-│
-├── targets/
-│   ├── sberlab.yaml
-│   └── sberlab_architecture.yaml
-│
-├── docs/
-│   ├── architecture.md
-│   ├── contracts.md
-│   └── demo_case.md
-│
-└── tests/
-    ├── test_contracts.py
-    └── test_agent_graph.py
-```
+| Компонент | Состояние |
+|---|---|
+| Структура репозитория и общие схемы | ✅ готово |
+| `AgentState` | ✅ готово |
+| Граф на `LangGraph` | ✅ готово |
+| Ветки `APPROVE` / `DENY` | ✅ готово |
+| Цикл с ограничением итераций | ✅ готово |
+| Системный промпт агента | ✅ готово |
+| `AgentReasoningModel` | ✅ готово |
+| Детерминированная модель для тестов | ✅ готово |
+| Базовый `Validator` | ✅ есть, будет заменён правилами Ромы |
+| Безопасный тестовый `Executor` | ✅ есть, будет расширен |
+| `Evidence` и `FinalReport` | ✅ базовая реализация |
+| SberLab как Target v1 | ✅ зафиксирован |
+| Реальный CVSS 4.0 | ⏳ следующий этап |
+| Реальные проверки SberLab | ⏳ после готовности Docker |
+| Реальный end-to-end сценарий | ⏳ после первого SAST |
 
 ---
 
-## 🚀 Быстрый старт
+## Быстрый запуск
+
+Требуется Python `3.11+`.
 
 ```bash
 python3 -m venv .venv
@@ -129,129 +105,204 @@ python3 -m pip install -e ".[dev]"
 python3 -m pytest -q
 ```
 
-Ожидаемый результат:
+Для текущего состояния проекта:
 
 ```text
-6 passed
+9 passed
 ```
 
-Ручной тест workflow:
+Ручной тест графа:
 
 ```bash
 python3 -m app.main
 ```
 
-Ожидаемо:
+Пример результата:
 
 ```text
 Workflow status: confirmed
 Finding: demo-001
 Iterations: 1
 Evidence count: 1
+Explanation: Controlled evidence confirmed the test hypothesis.
 ```
+
+Предупреждение `LangChainPendingDeprecationWarning` от текущей версии LangGraph не означает падение теста.
 
 ---
 
-## 🔄 Текущий LangGraph workflow
+## Структура репозитория
 
 ```text
-START
-  ↓
-load_context
-  ↓
-score_finding
-  ↓
-analyse
-  ↓
-form_hypothesis
-  ↓
-propose_action
-  ↓
-validate_action
-  ↓
-approved?
-  ├─ no  → report → END
-  └─ yes
-       ↓
-    execute
-       ↓
- collect_evidence
-       ↓
-  reevaluate
-       ↓
-     stop?
-   ├─ yes → report → END
-   └─ no  → analyse
+cft-security-agent/
+├── app/                  # конфигурация и точка запуска
+├── agent/                # LangGraph, nodes, модель и prompt
+├── schemas/              # общие типизированные контракты
+├── architecture/         # получение архитектурного контекста
+├── sast/                 # нормализация SAST-находок
+├── scoring/              # CVSS и контекстный приоритет
+├── validator/            # policy gate
+├── executor/             # выполнение разрешённых действий
+├── evidence/             # хранение доказательств
+├── tools/                # контракты инструментов
+├── policies/             # правила разрешений
+├── targets/              # описание SberLab
+├── docs/
+│   └── diagrams/         # диаграммы README
+└── tests/
 ```
 
 ---
 
-## 🧪 Что сейчас настоящее, а что stub
+## Ключевые модели
 
-Настоящее:
+Компоненты общаются через единые структуры:
 
-- shared schemas;
-- AgentState;
-- LangGraph orchestration;
-- conditional edges;
-- iteration loop;
-- Validator policy gate;
-- safe Executor registry;
-- Evidence;
-- FinalReport;
-- tests.
+```text
+Finding
+ArchitectureContext
+CVSSResult
+ContextPriority
+AnalysisResult
+Hypothesis
+ActionProposal
+ValidationResult
+ExecutionResult
+Evidence
+ReevaluationResult
+FinalReport
+AgentState
+```
 
-Пока заглушки:
-
-- CVSS;
-- Context Priority;
-- реальный анализ кода через LLM;
-- реальные security checks;
-- реальная интеграция с SberLab runtime.
+Это позволяет Лёхе, Роме, Кириллу и агентной части работать независимо, а потом соединять модули без переписывания интерфейсов.
 
 ---
 
-## 👥 Распределение зон
+## Разделение ответственности
+
+### Агент
+
+Агент может анализировать входные данные, формировать гипотезу, выбирать зарегистрированную возможность проверки и создавать `ActionProposal`.
+
+Агент **не выполняет действие сам**.
+
+### Validator
+
+`Validator` проверяет:
+
+- разрешён ли target;
+- разрешён ли инструмент;
+- допустима ли среда;
+- соблюдён ли scope;
+- не превышены ли лимиты;
+- заполнены ли обязательные параметры.
+
+### Executor
+
+`Executor` принимает только уже одобренный `ActionProposal` и запускает только зарегистрированные операции.
+
+---
+
+## CVSS и контекстный приоритет
+
+`CVSS 4.0` отвечает за **техническую серьёзность** уязвимости.
+
+Контекстный приоритет отвечает за **важность находки именно в нашей архитектуре**.
+
+Примеры архитектурных признаков:
+
+- доступность из интернета;
+- критичность сервиса;
+- доступ к БД;
+- путь к критичным компонентам;
+- необходимые привилегии;
+- возможный радиус влияния.
+
+Эти оценки хранятся **отдельно** и не складываются в одно искусственное число.
+
+---
+
+## Первый тестовый объект
+
+Первый контролируемый target проекта: **SberLab Target v1**.
+
+Репозитории разделены:
+
+```text
+workspace/
+├── cft-security-agent/
+└── sberlab-target/
+```
+
+Активные проверки допускаются только на локальной, sandbox или staging-копии SberLab.
+
+---
+
+## Git workflow
+
+`main` должен оставаться рабочей общей базой.
+
+```text
+main
+  ↓
+feature/<task>
+  ↓
+код + тесты
+  ↓
+Pull Request
+  ↓
+merge
+  ↓
+main
+```
+
+Новая feature-ветка создаётся от актуального `main`. Готовую и проверенную работу не нужно надолго оставлять отдельно.
+
+---
+
+## Кто за что отвечает
 
 | Зона | Ответственный |
 |---|---|
-| AgentState / LangGraph / интеграция | Ставр |
-| CVSS / Context Priority | Лёха |
-| Validator / Evidence / security tools | Рома |
-| Docker / Executor / runtime / CI/CD | Кирилл |
+| `AgentState`, `LangGraph`, слой модели, интеграция | Ставр |
+| `CVSS 4.0`, контекстный приоритет | Лёха |
+| `Validator`, критерии Evidence, security tools | Рома |
+| SberLab Docker, `Executor`, runtime, CI/CD | Кирилл |
 
 ---
 
-## 🛡️ Ограничения MVP
+## Что делаем дальше
 
-Не делаем пока:
-
-- multi-agent;
-- GNN;
-- production CI/CD;
-- Kubernetes;
-- произвольный shell от LLM;
-- большой каталог pentest tools;
-- сложный RAG;
-- production pentesting.
+1. Кирилл стабильно поднимает SberLab в Docker.
+2. Рома фиксирует policy для `Validator`, критерии Evidence и список security tools.
+3. После готовности SberLab запускаем первый SAST.
+4. Лёха применяет `CVSS 4.0` и контекстный приоритет к 3–5 реальным findings.
+5. Выбираем один безопасный finding для демонстрации.
+6. Подменяем тестовые заглушки реальными компонентами.
+7. Проводим один полный end-to-end проход.
+8. После рабочего сценария обновляем Architecture v0.3.
 
 ---
 
-## ✅ Definition of Done
+## MVP готов, когда
 
-MVP считается собранным, когда один реальный finding из SberLab проходит:
+Один реальный finding из SberLab проходит всю цепочку:
 
 ```text
 SAST
 → Finding
-→ Code Context
-→ Architecture Context
+→ кодовый контекст
+→ архитектурный контекст
 → CVSS
-→ Context Priority
-→ Hypothesis
+→ контекстный приоритет
+→ анализ
+→ гипотеза
 → ActionProposal
 → Validator
 → Executor
 → Evidence
+→ переоценка
 → FinalReport
 ```
+
+И каждый этап можно воспроизвести и объяснить на демонстрации.

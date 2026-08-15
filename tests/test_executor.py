@@ -1,0 +1,317 @@
+import pytest
+
+from evidence.audit import JsonlAuditLog
+from evidence.store import JsonExecutionEvidenceStore
+from executor.approvals import InMemoryApprovalStore
+from executor.executor import SafeExecutor
+from executor.sandbox import (
+    RunLimiter,
+    SandboxLimits,
+    SandboxRequest,
+    SandboxResult,
+)
+from executor.targets import TargetDefinition, TargetRegistry
+from schemas.action import ActionProposal
+from schemas.validation import ValidationResult
+from validator.validator import PolicyValidator
+
+
+class FakeSandbox:
+    def __init__(
+        self,
+        *,
+        exit_code: int = 0,
+        stdout: str = "ok",
+        stderr: str = "",
+        timed_out: bool = False,
+        raises: bool = False,
+    ) -> None:
+        self.exit_code = exit_code
+        self.stdout = stdout
+        self.stderr = stderr
+        self.timed_out = timed_out
+        self.raises = raises
+        self.requests: list[SandboxRequest] = []
+
+    def run(self, request: SandboxRequest) -> SandboxResult:
+        self.requests.append(request)
+        if self.raises:
+            raise RuntimeError("synthetic sandbox failure")
+        return SandboxResult(
+            run_id=request.run_id,
+            exit_code=self.exit_code,
+            stdout=self.stdout,
+            stderr=self.stderr,
+            duration_ms=1,
+            timed_out=self.timed_out,
+            workspace_id=f"run-{request.run_id}",
+        )
+
+
+def _proposal(
+    *,
+    action_id: str = "executor-test-1",
+    tool: str = "safe_noop",
+    target: str = "sberlab-local",
+    parameters: dict | None = None,
+) -> ActionProposal:
+    return ActionProposal(
+        id=action_id,
+        tool=tool,
+        target=target,
+        parameters=parameters or {},
+        purpose="executor unit test",
+        expected_evidence="structured execution evidence",
+    )
+
+
+def _approve(action: ActionProposal) -> tuple[InMemoryApprovalStore, ValidationResult]:
+    validation = PolicyValidator.from_yaml("policies/default.yaml").validate(action)
+    assert validation.approved is True
+    approvals = InMemoryApprovalStore()
+    approvals.record(action, validation)
+    return approvals, validation
+
+
+def _executor(
+    tmp_path,
+    approvals: InMemoryApprovalStore,
+    *,
+    sandbox: FakeSandbox | None = None,
+    environment: str = "local",
+    max_runs_per_action: int = 1,
+) -> tuple[SafeExecutor, FakeSandbox, JsonlAuditLog]:
+    fake_sandbox = sandbox or FakeSandbox()
+    limits = SandboxLimits(
+        wall_time_seconds=2,
+        cpu_time_seconds=1,
+        memory_bytes=128 * 1024 * 1024,
+        max_file_bytes=1024 * 1024,
+        max_processes=4,
+        max_output_bytes=1024,
+    )
+    audit_log = JsonlAuditLog(tmp_path / "audit" / "executor.jsonl")
+    executor = SafeExecutor(
+        approvals=approvals,
+        targets=TargetRegistry(
+            [
+                TargetDefinition(
+                    id="sberlab-local",
+                    environment=environment,
+                    base_url="http://127.0.0.1:8000",
+                )
+            ]
+        ),
+        evidence_store=JsonExecutionEvidenceStore(tmp_path / "evidence"),
+        audit_log=audit_log,
+        sandbox=fake_sandbox,
+        run_limiter=RunLimiter(
+            max_runs_per_action=max_runs_per_action,
+            max_concurrent_runs=1,
+        ),
+        limits=limits,
+        allowed_environments={"local", "sandbox", "staging"},
+    )
+    return executor, fake_sandbox, audit_log
+
+
+def test_executor_denies_action_without_approval_and_records_evidence(tmp_path) -> None:
+    action = _proposal()
+    executor, sandbox, audit_log = _executor(tmp_path, InMemoryApprovalStore())
+
+    result = executor.execute(action)
+
+    assert result.status == "denied"
+    assert result.exit_code == 126
+    assert "No trusted approval" in result.stderr
+    assert sandbox.requests == []
+    record = JsonExecutionEvidenceStore(tmp_path / "evidence").get_execution(
+        result.evidence_ref
+    )
+    assert record["action_id"] == action.id
+    assert record["status"] == "denied"
+    assert audit_log.records()[0]["evidence_ref"] == result.evidence_ref
+
+
+def test_executor_denies_proposal_changed_after_approval(tmp_path) -> None:
+    approved_action = _proposal(parameters={"message": "original"})
+    approvals, _ = _approve(approved_action)
+    changed_action = approved_action.model_copy(
+        update={"parameters": {"message": "changed"}}
+    )
+
+    executor, _, _ = _executor(tmp_path, approvals)
+    result = executor.execute(changed_action)
+
+    assert result.status == "denied"
+    assert "changed after approval" in result.stderr
+
+
+def test_approval_rejects_mismatched_action_id() -> None:
+    action = _proposal(action_id="expected")
+    validation = ValidationResult(
+        approved=True,
+        action_id="different",
+        reason="test",
+    )
+
+    with pytest.raises(ValueError, match="does not match"):
+        InMemoryApprovalStore().record(action, validation)
+
+
+def test_denied_validation_cannot_create_approval() -> None:
+    action = _proposal()
+    validation = ValidationResult(
+        approved=False,
+        action_id=action.id,
+        reason="blocked by policy",
+    )
+
+    with pytest.raises(ValueError, match="Denied ValidationResult"):
+        InMemoryApprovalStore().record(action, validation)
+
+
+def test_executor_denies_unknown_registered_capability(tmp_path) -> None:
+    action = _proposal(tool="not_registered")
+    approvals = InMemoryApprovalStore()
+    approvals.record(
+        action,
+        ValidationResult(
+            approved=True,
+            action_id=action.id,
+            reason="synthetic defense-in-depth test",
+        ),
+    )
+
+    executor, sandbox, _ = _executor(tmp_path, approvals)
+    result = executor.execute(action)
+
+    assert result.status == "denied"
+    assert result.exit_code == 126
+    assert "Unknown executor tool" in result.stderr
+    assert sandbox.requests == []
+
+
+def test_executor_denies_production_environment(tmp_path) -> None:
+    action = _proposal()
+    approvals, _ = _approve(action)
+
+    executor, _, _ = _executor(tmp_path, approvals, environment="production")
+    result = executor.execute(action)
+
+    assert result.status == "denied"
+    assert "production" in result.stderr
+
+
+def test_health_capability_builds_only_trusted_sandbox_request(tmp_path) -> None:
+    action = _proposal(tool="check_sberlab_health")
+    approvals, _ = _approve(action)
+    sandbox = FakeSandbox(stdout='{"status":"ok","database":"ok"}')
+
+    executor, sandbox, audit_log = _executor(
+        tmp_path,
+        approvals,
+        sandbox=sandbox,
+    )
+    result = executor.execute(action)
+
+    assert result.status == "completed"
+    assert result.exit_code == 0
+    assert len(sandbox.requests) == 1
+    request = sandbox.requests[0]
+    assert request.tool == "check_sberlab_health"
+    assert request.base_url == "http://127.0.0.1:8000"
+    assert request.parameters == {}
+    assert request.request_timeout_seconds == 1.6
+    assert result.evidence_ref.startswith("execution-")
+    assert result.audit_ref.startswith("audit:")
+    assert len(result.artifacts) == 1
+    assert audit_log.records()[0]["run_id"] == result.run_id
+
+
+def test_health_capability_rejects_arbitrary_parameters_without_start(tmp_path) -> None:
+    action = _proposal(
+        tool="check_sberlab_health",
+        parameters={"command": "rm -rf /", "url": "http://example.com"},
+    )
+    approvals, _ = _approve(action)
+
+    executor, sandbox, _ = _executor(tmp_path, approvals)
+    result = executor.execute(action)
+
+    assert result.status == "failed"
+    assert result.exit_code == 2
+    assert "do not accept" in result.stderr
+    assert sandbox.requests == []
+
+
+def test_health_capability_reports_unavailable_target(tmp_path) -> None:
+    action = _proposal(tool="check_sberlab_health")
+    approvals, _ = _approve(action)
+    sandbox = FakeSandbox(
+        exit_code=1,
+        stderr="HTTP request failed: connection refused",
+    )
+
+    executor, _, _ = _executor(tmp_path, approvals, sandbox=sandbox)
+    result = executor.execute(action)
+
+    assert result.status == "failed"
+    assert result.exit_code == 1
+    assert "connection refused" in result.stderr
+
+
+def test_public_projects_capability_uses_registered_worker_tool(tmp_path) -> None:
+    action = _proposal(tool="get_sberlab_public_projects")
+    approvals, _ = _approve(action)
+    sandbox = FakeSandbox(stdout='[{"id":1,"title":"demo"}]')
+
+    executor, sandbox, _ = _executor(tmp_path, approvals, sandbox=sandbox)
+    result = executor.execute(action)
+
+    assert result.status == "completed"
+    assert sandbox.requests[0].tool == "get_sberlab_public_projects"
+    assert sandbox.requests[0].parameters == {}
+
+
+def test_executor_limits_replay_of_same_action(tmp_path) -> None:
+    action = _proposal()
+    approvals, _ = _approve(action)
+    executor, sandbox, audit_log = _executor(tmp_path, approvals)
+
+    first = executor.execute(action)
+    second = executor.execute(action)
+
+    assert first.status == "completed"
+    assert second.status == "denied"
+    assert second.exit_code == 75
+    assert "run limit reached" in second.stderr
+    assert len(sandbox.requests) == 1
+    assert len(audit_log.records()) == 2
+
+
+def test_unexpected_sandbox_error_becomes_structured_result(tmp_path) -> None:
+    action = _proposal()
+    approvals, _ = _approve(action)
+    executor, _, audit_log = _executor(
+        tmp_path,
+        approvals,
+        sandbox=FakeSandbox(raises=True),
+    )
+
+    result = executor.execute(action)
+
+    assert result.status == "failed"
+    assert result.exit_code == 127
+    assert "Sandbox failed" in result.stderr
+    assert audit_log.records()[0]["status"] == "failed"
+
+
+def test_executor_exposes_only_predefined_tools(tmp_path) -> None:
+    executor, _, _ = _executor(tmp_path, InMemoryApprovalStore())
+
+    assert executor.registered_tools() == (
+        "check_sberlab_health",
+        "get_sberlab_public_projects",
+        "safe_noop",
+    )

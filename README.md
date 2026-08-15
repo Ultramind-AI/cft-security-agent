@@ -85,11 +85,11 @@ DENY    → policy_blocked → финальный отчёт
 | `AgentReasoningModel` | ✅ готово |
 | Детерминированная модель для тестов | ✅ готово |
 | Базовый `Validator` | ✅ есть, будет заменён правилами Ромы |
-| Безопасный тестовый `Executor` | ✅ есть, будет расширен |
+| Ограниченный `Executor` с sandbox, approval, audit и evidence | ✅ готово |
 | `Evidence` и `FinalReport` | ✅ базовая реализация |
 | SberLab как Target v1 | ✅ зафиксирован |
 | Реальный CVSS 4.0 | ⏳ следующий этап |
-| Реальные проверки SberLab | ⏳ после готовности Docker |
+| Безопасные health/API-проверки SberLab | ✅ готовы в Executor |
 | Реальный end-to-end сценарий | ⏳ после первого SAST |
 
 ---
@@ -108,7 +108,7 @@ python3 -m pytest -q
 Для текущего состояния проекта:
 
 ```text
-9 passed
+31 passed
 ```
 
 Ручной тест графа:
@@ -128,6 +128,25 @@ Explanation: Controlled evidence confirmed the test hypothesis.
 ```
 
 Предупреждение `LangChainPendingDeprecationWarning` от текущей версии LangGraph не означает падение теста.
+
+### Проверка Executor на локальном SberLab
+
+Сначала поднимите SberLab target и убедитесь, что его backend доступен на
+`http://127.0.0.1:8000`. Затем выполните:
+
+```bash
+python3 -m app.executor_demo
+```
+
+Executor сформирует только заранее заданный `GET /health/`, вернёт
+структурированный `ExecutionResult`, сохранит JSON evidence в
+`executor_data/evidence/` и audit-событие в
+`executor_data/audit/executor.jsonl`.
+Другой адрес можно задать только через доверенную конфигурацию процесса:
+
+```bash
+CFT_TARGET_BASE_URL=http://127.0.0.1:8000 python3 -m app.executor_demo
+```
 
 ---
 
@@ -200,6 +219,62 @@ AgentState
 ### Executor
 
 `Executor` принимает только уже одобренный `ActionProposal` и запускает только зарегистрированные операции.
+
+Текущий прототип дополнительно:
+
+- ищет approval в доверенном in-memory store;
+- связывает approval с хешем полного `ActionProposal`;
+- запрещает выполнение изменённого после approval предложения;
+- разрешает только `local`, `sandbox` и `staging` target;
+- не принимает URL, path или shell-команду от агента;
+- запускает capability отдельным процессом без `shell=True`;
+- создаёт отдельную одноразовую рабочую директорию для каждого запуска;
+- ограничивает wall timeout, CPU, память, размер файлов и число процессов;
+- ограничивает повторный запуск одного `action_id` и число параллельных запусков;
+- ограничивает и собирает `stdout`/`stderr` и сохраняет `exit_code`;
+- записывает отдельный JSONL audit log для каждого решения Executor;
+- сохраняет evidence для успешного выполнения, ошибки и отказа;
+- агент повторно читает evidence по `evidence_ref`, а не доверяет только
+  объекту результата в памяти;
+- возвращает `run_id`, `status`, `stdout`, `stderr`, `exit_code`, `timed_out`,
+  `duration_ms`, `evidence_ref` и `audit_ref`.
+
+Лимиты прототипа по умолчанию:
+
+| Ограничение | Значение |
+|---|---:|
+| Wall timeout | 5 секунд |
+| CPU time | 2 секунды |
+| Память процесса | 256 MiB |
+| Размер создаваемого файла | 1 MiB |
+| Число процессов | 8 |
+| Сохранённый stdout/stderr | 16 KiB каждый |
+| Запусков одного `action_id` | 1 |
+| Параллельных запусков | 1 |
+| Итераций проверки finding | 5 |
+
+CPU/memory/process/file limits применяются в Linux/WSL через POSIX resource
+limits. Wall timeout, раздельная рабочая директория, ограниченный вывод,
+allowlist и отсутствие shell действуют на всех поддерживаемых платформах.
+Это защитная обвязка MVP, а не production-grade контейнерная изоляция.
+
+Зависший процесс принудительно завершается и возвращается как
+`status=failed`, `exit_code=124`, `timed_out=true`. Ошибка capability также
+становится структурированным результатом. LangGraph сохраняет evidence и может
+продолжить следующую ограниченную итерацию; после лимита формируется
+`inconclusive`, а не падение всего pipeline.
+
+Зарегистрированы три capabilities:
+
+```text
+safe_noop                     # только детерминированные тесты графа
+check_sberlab_health          # фиксированный GET /health/
+get_sberlab_public_projects   # фиксированный GET /api/projects/
+```
+
+Две HTTP-capabilities не принимают параметры из `ActionProposal`, поэтому LLM
+не может подменить URL, HTTP-метод или путь. Подробный контракт находится в
+[`docs/executor.md`](docs/executor.md).
 
 ---
 

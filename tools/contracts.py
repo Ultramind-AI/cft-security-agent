@@ -4,7 +4,7 @@ from schemas.action import ActionProposal
 from schemas.architecture import ArchitectureContext
 from schemas.evidence import Evidence
 from schemas.finding import Finding
-from schemas.scoring import CVSSResult, ContextPriority
+from schemas.scoring import ContextPriority, CVSSResult
 
 
 class FindingReader(Protocol):

@@ -1,11 +1,15 @@
+import json
 from uuid import uuid4
 
 from agent.model import get_agent_model
+from app.config import settings
+from evidence.store import JsonExecutionEvidenceStore
+from executor.approvals import InMemoryApprovalStore
 from executor.executor import SafeExecutor
 from schemas.architecture import ArchitectureContext
 from schemas.evidence import Evidence
 from schemas.report import FinalReport
-from schemas.scoring import CVSSResult, ContextPriority
+from schemas.scoring import ContextPriority, CVSSResult
 from schemas.state import AgentState
 from validator.validator import PolicyValidator
 
@@ -109,7 +113,7 @@ def propose_action(state: AgentState) -> dict:
 
 
 def validate_action(state: AgentState) -> dict:
-    validator = PolicyValidator.from_yaml("policies/default.yaml")
+    validator = PolicyValidator.from_yaml(settings.policy_file)
     validation = validator.validate(state["proposed_action"])
 
     return {
@@ -123,12 +127,30 @@ def validate_action(state: AgentState) -> dict:
 
 
 def execute_action(state: AgentState) -> dict:
-    executor = SafeExecutor()
+    action = state["proposed_action"]
+    validation = state["validation"]
 
-    execution = executor.execute(
-        state["proposed_action"],
-        state["validation"],
+    approvals = InMemoryApprovalStore()
+    approvals.record(action, validation)
+    executor = SafeExecutor.from_config(
+        approvals=approvals,
+        policy_file=settings.policy_file,
+        target_file=settings.target_file,
+        evidence_directory=settings.evidence_dir,
+        audit_log_path=settings.executor_audit_log,
+        workspace_directory=settings.executor_work_dir,
+        target_base_url=settings.target_base_url,
+        timeout_seconds=settings.executor_timeout_seconds,
+        cpu_time_seconds=settings.executor_cpu_time_seconds,
+        memory_mb=settings.executor_memory_mb,
+        max_file_bytes=settings.executor_max_file_bytes,
+        max_processes=settings.executor_max_processes,
+        max_output_bytes=settings.executor_max_output_bytes,
+        max_runs_per_action=settings.executor_max_runs_per_action,
+        max_concurrent_runs=settings.executor_max_concurrent_runs,
     )
+
+    execution = executor.execute(action)
 
     return {
         "execution": execution,
@@ -145,7 +167,36 @@ def collect_evidence(state: AgentState) -> dict:
     action = state["proposed_action"]
     evidence = list(state.get("evidence", []))
 
-    outcome = str(action.parameters.get("test_outcome", "confirmed"))
+    artifact_refs = list(execution.artifacts)
+    if execution.evidence_ref not in artifact_refs:
+        artifact_refs.append(execution.evidence_ref)
+    if execution.audit_ref not in artifact_refs:
+        artifact_refs.append(execution.audit_ref)
+
+    evidence_loaded = False
+    record: dict = {}
+    try:
+        record = JsonExecutionEvidenceStore(settings.evidence_dir).get_execution(
+            execution.evidence_ref
+        )
+        evidence_loaded = (
+            record.get("run_id") == execution.run_id
+            and record.get("action_id") == action.id
+        )
+    except (OSError, ValueError, json.JSONDecodeError):
+        evidence_loaded = False
+
+    record_status = (
+        str(record["status"])
+        if evidence_loaded
+        else execution.status
+    )
+    record_exit_code = (
+        int(record["exit_code"])
+        if evidence_loaded
+        else execution.exit_code
+    )
+    read_status = "read from persistent storage" if evidence_loaded else "unavailable"
 
     evidence.append(
         Evidence(
@@ -153,13 +204,14 @@ def collect_evidence(state: AgentState) -> dict:
             action_id=action.id,
             type="test_result",
             summary=(
-                "Controlled verification completed: "
-                f"outcome={outcome}, executor_status={execution.status}."
+                f"Executor evidence {execution.evidence_ref} {read_status}: "
+                f"executor_status={record_status}, exit_code={record_exit_code}, "
+                f"timed_out={execution.timed_out}."
             ),
-            artifact_refs=list(execution.artifacts),
+            artifact_refs=artifact_refs,
             reliability=(
                 "high"
-                if execution.status == "completed"
+                if evidence_loaded and record_status == "completed"
                 else "low"
             ),
         )

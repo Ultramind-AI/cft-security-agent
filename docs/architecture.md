@@ -34,7 +34,10 @@ Deterministic permission decision.
 
 ### Executor
 
-Controlled execution of registered capabilities.
+Controlled execution of registered capabilities. The current MVP adds a fixed
+worker process, a disposable per-run directory, OS resource limits, bounded
+output, persistent evidence and an append-only audit event. Timeout or worker
+failure returns data to the graph instead of raising through the pipeline.
 
 ### Scoring
 

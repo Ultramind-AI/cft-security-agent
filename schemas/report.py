@@ -3,7 +3,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from schemas.evidence import Evidence
-from schemas.scoring import CVSSResult, ContextPriority
+from schemas.scoring import ContextPriority, CVSSResult
 
 
 class FinalReport(BaseModel):

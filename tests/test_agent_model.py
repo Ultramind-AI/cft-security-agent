@@ -1,4 +1,3 @@
-import pytest
 
 from agent.model import DeterministicAgentModel
 from agent.prompts import SYSTEM_PROMPT

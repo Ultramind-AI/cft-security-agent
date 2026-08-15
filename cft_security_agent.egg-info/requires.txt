@@ -1,0 +1,7 @@
+pydantic<3,>=2.7
+pydantic-settings<3,>=2.2
+PyYAML<7,>=6.0
+
+[dev]
+pytest<9,>=8
+ruff<1,>=0.6

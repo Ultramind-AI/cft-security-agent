@@ -1,0 +1,22 @@
+version: 1
+
+targets:
+  allowed:
+    - sberlab-local
+
+environments:
+  allowed:
+    - local
+    - sandbox
+    - staging
+
+limits:
+  max_iterations: 5
+  max_execution_time_seconds: 30
+
+tools:
+  allowed:
+    - safe_noop
+
+logging:
+  required: true

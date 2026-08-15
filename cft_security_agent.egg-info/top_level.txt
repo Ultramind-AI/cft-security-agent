@@ -1,0 +1,10 @@
+agent
+app
+architecture
+evidence
+executor
+sast
+schemas
+scoring
+tools
+validator

@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cft-security-agent"
+version = "0.1.0"
+description = "Contract-first starter architecture for a safe CI/CD security analysis agent."
+requires-python = ">=3.11"
+dependencies = [
+  "pydantic>=2.7,<3",
+  "pydantic-settings>=2.2,<3",
+  "PyYAML>=6.0,<7",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8,<9",
+  "ruff>=0.6,<1",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = [
+    "app*",
+    "agent*",
+    "architecture*",
+    "evidence*",
+    "executor*",
+    "sast*",
+    "schemas*",
+    "scoring*",
+    "tools*",
+    "validator*",
+]
+exclude = [
+    "tests*",
+    "docs*",
+    "targets*",
+    "policies*",
+]

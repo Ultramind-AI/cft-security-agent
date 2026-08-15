@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field
 
+
 class ValidationResult(BaseModel):
     approved: bool
     action_id: str

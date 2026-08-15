@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field
 
+
 class ArchitectureContext(BaseModel):
     service: str
     public_exposure: bool = False

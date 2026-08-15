@@ -1,6 +1,9 @@
 from pathlib import Path
+
 import yaml
+
 from schemas.architecture import ArchitectureContext
+
 
 class ArchitectureService:
     def __init__(self, path: str | Path):
@@ -10,8 +13,15 @@ class ArchitectureService:
     def get_context(self, service: str) -> ArchitectureContext:
         services = self.data.get("services", {})
         node = services.get(service, {})
+
         connected = list(node.get("connects_to", []))
-        databases = [name for name in connected if services.get(name, {}).get("type") == "database"]
+
+        databases = [
+            name
+            for name in connected
+            if services.get(name, {}).get("type") == "database"
+        ]
+
         return ArchitectureContext(
             service=service,
             public_exposure=bool(node.get("public", False)),

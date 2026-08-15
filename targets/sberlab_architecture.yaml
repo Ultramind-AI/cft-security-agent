@@ -3,14 +3,17 @@ services:
     type: frontend
     public: true
     criticality: medium
-    connects_to: [backend]
+    connects_to:
+      - backend
 
   backend:
     type: api
     public: true
     criticality: high
     trust_zone: application
-    connects_to: [database, gigachat]
+    connects_to:
+      - database
+      - gigachat
 
   database:
     type: database

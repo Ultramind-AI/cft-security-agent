@@ -1,5 +1,6 @@
 from pydantic import BaseModel
 
+
 class Finding(BaseModel):
     id: str
     source: str

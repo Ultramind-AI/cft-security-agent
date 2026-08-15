@@ -1,10 +1,12 @@
 from pydantic import BaseModel, Field
 
+
 class CVSSResult(BaseModel):
     vector: str
     score: float
     severity: str
     reasoning: str = ""
+
 
 class ContextPriority(BaseModel):
     level: str

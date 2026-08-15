@@ -1,6 +1,7 @@
+from executor.executor import SafeExecutor
 from schemas.action import ActionProposal
 from validator.validator import PolicyValidator
-from executor.executor import SafeExecutor
+
 
 def test_allowed_noop_roundtrip() -> None:
     proposal = ActionProposal(
@@ -11,11 +12,20 @@ def test_allowed_noop_roundtrip() -> None:
         purpose="contract test",
         expected_evidence="successful structured no-op",
     )
-    validation = PolicyValidator.from_yaml("policies/default.yaml").validate(proposal)
+
+    validator = PolicyValidator.from_yaml("policies/default.yaml")
+    validation = validator.validate(proposal)
+
     assert validation.approved is True
-    result = SafeExecutor().execute(proposal, validation)
+
+    result = SafeExecutor().execute(
+        proposal,
+        validation,
+    )
+
     assert result.status == "completed"
     assert result.exit_code == 0
+
 
 def test_unknown_tool_is_denied() -> None:
     proposal = ActionProposal(
@@ -26,5 +36,8 @@ def test_unknown_tool_is_denied() -> None:
         purpose="negative test",
         expected_evidence="denial",
     )
-    validation = PolicyValidator.from_yaml("policies/default.yaml").validate(proposal)
+
+    validator = PolicyValidator.from_yaml("policies/default.yaml")
+    validation = validator.validate(proposal)
+
     assert validation.approved is False

@@ -33,6 +33,7 @@ schemas/state.py
 schemas/validation.py
 scoring/__init__.py
 scoring/service.py
+tests/test_agent_graph.py
 tests/test_contracts.py
 tools/__init__.py
 tools/contracts.py

@@ -1,12 +1,17 @@
 id: sberlab-local
 name: SberLab Target v1
+
 repository_path: ../sberlab-target
 environment: local
+
 architecture:
   file: targets/sberlab_architecture.yaml
+
 sast:
   adapter: semgrep
+
 runtime:
   type: docker_compose
+
 health:
   backend: /health/

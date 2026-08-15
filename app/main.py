@@ -1,21 +1,37 @@
-from schemas.action import ActionProposal
-from validator.validator import PolicyValidator
-from executor.executor import SafeExecutor
+from agent.graph import build_graph
+from schemas.finding import Finding
+
 
 def main() -> None:
-    proposal = ActionProposal(
-        id="demo-action-001",
-        tool="safe_noop",
-        target="sberlab-local",
-        parameters={"message": "contract-check"},
-        purpose="Validate starter integration",
-        expected_evidence="A structured successful no-op result",
-    )
-    validator = PolicyValidator.from_yaml("policies/default.yaml")
-    validation = validator.validate(proposal)
-    result = SafeExecutor().execute(proposal, validation)
-    print("Validation:", validation.model_dump())
-    print("Execution:", result.model_dump())
+    graph = build_graph()
+
+    initial_state = {
+        "finding": Finding(
+            id="demo-001",
+            source="semgrep",
+            rule_id="demo.rule",
+            title="Demo controlled finding",
+            description="Synthetic finding used only to validate the workflow.",
+            file="backend/example.py",
+            line_start=10,
+            line_end=12,
+            severity="TEST_CONFIRMED",
+            service="backend",
+        ),
+        "evidence": [],
+        "iteration_count": 0,
+        "max_iterations": 2,
+    }
+
+    result = graph.invoke(initial_state)
+    report = result["final_report"]
+
+    print("Workflow status:", report.status)
+    print("Finding:", report.finding_id)
+    print("Iterations:", report.iterations)
+    print("Evidence count:", len(report.evidence))
+    print("Explanation:", report.explanation)
+
 
 if __name__ == "__main__":
     main()

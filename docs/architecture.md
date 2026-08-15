@@ -25,16 +25,17 @@ SAST + Code + Architecture
 ## Responsibility boundaries
 
 ### Agent
-Owns reasoning and orchestration. Does not execute arbitrary actions.
+
+Reasoning and orchestration.
 
 ### Validator
-Owns permission decisions. Must be deterministic for hard restrictions.
+
+Deterministic permission decision.
 
 ### Executor
-Owns controlled execution. Only runs registered approved capabilities.
+
+Controlled execution of registered capabilities.
 
 ### Scoring
-Owns CVSS and Context Priority. CVSS is technical severity. Context Priority is system-specific importance.
 
-## First target
-SberLab is a local defensive test target and stays separate from the Agent repository.
+CVSS + Context Priority.

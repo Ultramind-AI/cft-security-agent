@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field
 
+
 class ExecutionResult(BaseModel):
     action_id: str
     status: str

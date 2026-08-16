@@ -57,10 +57,7 @@ tmp/
 temp/
 evidence_data/
 executor_data/
-<<<<<<< Updated upstream
-=======
 reports/
->>>>>>> Stashed changes
 
 # Local databases / runtime state
 *.sqlite3

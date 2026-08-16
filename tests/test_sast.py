@@ -40,7 +40,7 @@ def test_normalizer_detects_frontend_component() -> None:
 
 
 def test_normalize_payload_requires_results_list() -> None:
-    with pytest.raises(ValueError, match="results"):
+    with pytest.raises(TypeError, match="results"):
         normalize_semgrep_payload({"results": {}})
 
 

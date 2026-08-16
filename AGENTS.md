@@ -583,17 +583,24 @@ bypass Validator
 ```
 
 Current implementation keeps `safe_noop` as a deterministic graph stub and exposes
-three fixed local SberLab capabilities:
+operational runtime checks plus three reusable source-verification capability classes:
 
 ```text
 check_sberlab_health
 get_sberlab_public_projects
-check_sberlab_backend_dockerfile_user
+inspect_dockerfile_user
+inspect_python_password_assignment
+inspect_react_dangerous_html_flow
 ```
 
-The Dockerfile capability is a source-only verification for the first real E2E finding.
-It accepts no agent-controlled path or shell text and reads only the fixed
-`backend/Dockerfile` under the trusted operator-configured target repository root.
+`inspect_dockerfile_user` covers both backend and frontend Dockerfile findings through
+operator-owned artifact ids. `inspect_python_password_assignment` uses bounded Python AST
+inspection and never emits password literal values. `inspect_react_dangerous_html_flow`
+performs a static source-flow check only; it does not execute browser content.
+
+Source-verification capabilities accept stable artifact ids rather than repository paths.
+`targets/sberlab.yaml` owns the id -> relative-path mapping, Executor passes that trusted
+registry to the fixed worker, and the worker re-validates path containment before reading.
 
 The implementation also binds approval to a digest of the complete
 ActionProposal, checks the configured target environment and launches only the
@@ -857,9 +864,9 @@ Current correct order:
 5. Review 3–5 real findings.
 6. Keep Context Priority v0.1 and CVSS applicability semantics stable.
 7. Use the backend Docker missing-user finding as the first controlled E2E candidate.
-8. Keep the first Dockerfile capability and its source-only Evidence semantics stable.
-9. Run the backend Docker finding end-to-end to a real confirmed/rejected verdict.
-10. Derive the remaining small security-tool catalog from the other real findings.
+8. Keep capability-specific Evidence semantics stable: source checks must not overclaim runtime proof.
+9. Use reusable capability classes rather than one-off finding-specific tools.
+10. Run all four current SberLab findings through the mapped bounded verification strategies.
 11. Exercise and tune the real multi-provider LLM adapter behind AgentReasoningModel.
 12. Update Architecture v0.3 in Miro from the working system.
 ```

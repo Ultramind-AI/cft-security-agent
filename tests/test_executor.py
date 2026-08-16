@@ -10,7 +10,7 @@ from executor.sandbox import (
     SandboxRequest,
     SandboxResult,
 )
-from executor.targets import TargetDefinition, TargetRegistry
+from executor.targets import TargetArtifactDefinition, TargetDefinition, TargetRegistry
 from schemas.action import ActionProposal
 from schemas.validation import ValidationResult
 from validator.validator import PolicyValidator
@@ -103,6 +103,18 @@ def _executor(
                     environment=environment,
                     base_url="http://127.0.0.1:8000",
                     repository_path=tmp_path / "target",
+                    artifacts={
+                        "backend_dockerfile": TargetArtifactDefinition(
+                            id="backend_dockerfile",
+                            kind="dockerfile",
+                            relative_path="backend/Dockerfile",
+                        ),
+                        "demo_seed": TargetArtifactDefinition(
+                            id="demo_seed",
+                            kind="python",
+                            relative_path="backend/core/management/commands/seed_demo.py",
+                        ),
+                    },
                 )
             ]
         ),
@@ -323,23 +335,30 @@ def test_executor_exposes_only_predefined_tools(tmp_path) -> None:
     executor, _, _ = _executor(tmp_path, InMemoryApprovalStore())
 
     assert executor.registered_tools() == (
-        "check_sberlab_backend_dockerfile_user",
         "check_sberlab_health",
         "get_sberlab_public_projects",
+        "inspect_dockerfile_user",
+        "inspect_python_password_assignment",
+        "inspect_react_dangerous_html_flow",
         "safe_noop",
     )
 
 
-def test_dockerfile_user_capability_passes_only_trusted_repository_path(tmp_path) -> None:
-    action = _proposal(tool="check_sberlab_backend_dockerfile_user")
+def test_dockerfile_user_capability_passes_only_trusted_artifact_registry(tmp_path) -> None:
+    action = _proposal(
+        tool="inspect_dockerfile_user",
+        parameters={"artifact_id": "backend_dockerfile"},
+    )
     approvals, _ = _approve(action)
     sandbox = FakeSandbox(
         stdout=(
-            '{"schema":"cft.dockerfile_user_check.v1",'
+            '{"schema":"cft.dockerfile_user_check.v2",'
+            '"artifact_id":"backend_dockerfile",'
             '"dockerfile":"backend/Dockerfile","final_stage":1,'
             '"user_directive_present":false,"user":null,"user_line":null,'
-            '"verdict":"confirmed","scope":"source",'
-            '"runtime_user_verified":false,"explanation":"source condition present"}'
+            '"user_classification":"missing","verdict":"confirmed",'
+            '"scope":"source","runtime_user_verified":false,'
+            '"explanation":"source condition present"}'
         )
     )
 
@@ -349,6 +368,37 @@ def test_dockerfile_user_capability_passes_only_trusted_repository_path(tmp_path
     assert result.status == "completed"
     assert len(sandbox.requests) == 1
     request = sandbox.requests[0]
-    assert request.tool == "check_sberlab_backend_dockerfile_user"
-    assert request.parameters == {}
+    assert request.tool == "inspect_dockerfile_user"
+    assert request.parameters == {"artifact_id": "backend_dockerfile"}
     assert request.repository_path == str((tmp_path / "target").resolve())
+    assert request.artifacts["backend_dockerfile"] == {
+        "kind": "dockerfile",
+        "path": "backend/Dockerfile",
+    }
+
+
+def test_source_capability_rejects_extra_agent_parameters_before_sandbox(tmp_path) -> None:
+    action = _proposal(
+        tool="inspect_dockerfile_user",
+        parameters={
+            "artifact_id": "backend_dockerfile",
+            "path": "../../not-allowed",
+        },
+    )
+    approvals = InMemoryApprovalStore()
+    approvals.record(
+        action,
+        ValidationResult(
+            approved=True,
+            action_id=action.id,
+            reason="synthetic executor defense-in-depth test",
+        ),
+    )
+
+    executor, sandbox, _ = _executor(tmp_path, approvals)
+    result = executor.execute(action)
+
+    assert result.status == "failed"
+    assert result.exit_code == 2
+    assert "exactly one artifact_id" in result.stderr
+    assert sandbox.requests == []

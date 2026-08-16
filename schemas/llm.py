@@ -10,9 +10,21 @@ class _LLMActionFields(BaseModel):
 
 
 class LLMDockerfileUserActionChoice(_LLMActionFields):
-    """Only valid live-LLM action for the first Dockerfile missing-USER finding."""
+    """Only valid live-LLM action for a Dockerfile missing/root USER finding."""
 
-    tool: Literal["check_sberlab_backend_dockerfile_user"]
+    tool: Literal["inspect_dockerfile_user"]
+
+
+class LLMPythonPasswordActionChoice(_LLMActionFields):
+    """Only valid live-LLM action for the unvalidated password-assignment finding."""
+
+    tool: Literal["inspect_python_password_assignment"]
+
+
+class LLMReactHtmlFlowActionChoice(_LLMActionFields):
+    """Only valid live-LLM action for the React dangerous HTML finding."""
+
+    tool: Literal["inspect_react_dangerous_html_flow"]
 
 
 class LLMGeneralActionChoice(_LLMActionFields):

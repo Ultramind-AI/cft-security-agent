@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from typing import Any
 
 from agent.llm import ProviderFailoverClient, parse_route_specs
@@ -7,7 +8,12 @@ from agent.prompts import SYSTEM_PROMPT
 from schemas.action import ActionProposal
 from schemas.agent_outputs import AnalysisResult, ReevaluationResult
 from schemas.hypothesis import Hypothesis
-from schemas.llm import LLMDockerfileUserActionChoice, LLMGeneralActionChoice
+from schemas.llm import (
+    LLMDockerfileUserActionChoice,
+    LLMGeneralActionChoice,
+    LLMPythonPasswordActionChoice,
+    LLMReactHtmlFlowActionChoice,
+)
 from schemas.state import AgentState
 
 
@@ -63,11 +69,14 @@ class FallbackLLMAgentModel:
         hypothesis: Hypothesis,
     ) -> ActionProposal:
         allowed_tools = _allowed_execution_tools(state)
-        choice_model = (
-            LLMDockerfileUserActionChoice
-            if _is_backend_missing_user_finding(state)
-            else LLMGeneralActionChoice
-        )
+        if _is_missing_user_finding(state):
+            choice_model = LLMDockerfileUserActionChoice
+        elif _is_unvalidated_password_finding(state):
+            choice_model = LLMPythonPasswordActionChoice
+        elif _is_react_dangerous_html_finding(state):
+            choice_model = LLMReactHtmlFlowActionChoice
+        else:
+            choice_model = LLMGeneralActionChoice
         choice = self.client.complete_model(
             output_model=choice_model,
             system_prompt=SYSTEM_PROMPT,
@@ -98,7 +107,7 @@ class FallbackLLMAgentModel:
             target="sberlab-local",
             environment="local",
             iteration=next_iteration,
-            parameters=_sanitize_action_parameters(choice),
+            parameters=_sanitize_action_parameters(choice, state),
             purpose=choice.purpose,
             expected_evidence=choice.expected_evidence,
         )
@@ -106,6 +115,12 @@ class FallbackLLMAgentModel:
     def reevaluate(self, state: AgentState) -> ReevaluationResult:
         deterministic = _evidence_guard(state)
         if deterministic is not None:
+            if getattr(self.client, "trace", False):
+                print(
+                    "[agent] reevaluate: deterministic evidence guard "
+                    f"-> {deterministic.status}",
+                    file=sys.stderr,
+                )
             return deterministic
 
         result = self.client.complete_model(
@@ -158,14 +173,38 @@ def _reasoning_context(state: AgentState) -> dict[str, Any]:
 
 
 def _allowed_execution_tools(state: AgentState) -> list[dict[str, Any]]:
-    if _is_backend_missing_user_finding(state):
+    if _is_missing_user_finding(state):
         return [
             {
-                "name": "check_sberlab_backend_dockerfile_user",
-                "parameters": {},
+                "name": "inspect_dockerfile_user",
+                "parameters": _dockerfile_user_parameters(state),
                 "purpose": (
-                    "Read-only source verification of whether the final backend Dockerfile "
-                    "stage contains a USER directive."
+                    "Read-only source verification of the final-stage USER directive "
+                    "for the trusted Dockerfile artifact referenced by this finding."
+                ),
+            }
+        ]
+
+    if _is_unvalidated_password_finding(state):
+        return [
+            {
+                "name": "inspect_python_password_assignment",
+                "parameters": {"artifact_id": "demo_seed"},
+                "purpose": (
+                    "Read-only Python AST verification of password assignment and "
+                    "password-validation calls. Password literal values are never returned."
+                ),
+            }
+        ]
+
+    if _is_react_dangerous_html_finding(state):
+        return [
+            {
+                "name": "inspect_react_dangerous_html_flow",
+                "parameters": _react_html_flow_parameters(),
+                "purpose": (
+                    "Bounded static source-flow verification from a writable user field "
+                    "to dangerouslySetInnerHTML. No browser content is executed."
                 ),
             }
         ]
@@ -184,25 +223,44 @@ def _allowed_execution_tools(state: AgentState) -> list[dict[str, Any]]:
     ]
 
 
-
-def _is_backend_missing_user_finding(state: AgentState) -> bool:
-    finding = state["finding"]
-    return (
-        finding.service == "backend"
-        and finding.rule_id.lower().startswith("dockerfile.security.missing-user")
-    )
+def _is_missing_user_finding(state: AgentState) -> bool:
+    return state["finding"].rule_id.lower().startswith("dockerfile.security.missing-user")
 
 
-def _sanitize_action_parameters(choice) -> dict[str, object]:
-    # Every currently exposed live-LLM capability has an empty parameter contract.
-    # Ignore model-supplied parameters instead of letting them cross the policy boundary.
-    if choice.tool in {
-        "check_sberlab_health",
-        "get_sberlab_public_projects",
-        "check_sberlab_backend_dockerfile_user",
-    }:
+def _is_unvalidated_password_finding(state: AgentState) -> bool:
+    return "unvalidated-password" in state["finding"].rule_id.lower()
+
+
+def _is_react_dangerous_html_finding(state: AgentState) -> bool:
+    return "react-dangerouslysetinnerhtml" in state["finding"].rule_id.lower()
+
+
+def _dockerfile_user_parameters(state: AgentState) -> dict[str, str]:
+    from agent.model import _dockerfile_user_parameters as parameters_for_path
+
+    return parameters_for_path(state["finding"].file)
+
+
+def _react_html_flow_parameters() -> dict[str, str]:
+    from agent.model import _react_html_flow_parameters as parameters
+
+    return parameters()
+
+
+def _sanitize_action_parameters(choice, state: AgentState) -> dict[str, object]:
+    # The model may select only an allowlisted capability. Security-sensitive
+    # parameters are reconstructed from finding/target mappings, never trusted
+    # from model output.
+    if choice.tool == "inspect_dockerfile_user":
+        return _dockerfile_user_parameters(state)
+    if choice.tool == "inspect_python_password_assignment":
+        return {"artifact_id": "demo_seed"}
+    if choice.tool == "inspect_react_dangerous_html_flow":
+        return _react_html_flow_parameters()
+    if choice.tool in {"check_sberlab_health", "get_sberlab_public_projects"}:
         return {}
     raise ValueError(f"No deterministic parameter contract for tool: {choice.tool}")
+
 
 def _evidence_guard(state: AgentState) -> ReevaluationResult | None:
     action = state.get("proposed_action")

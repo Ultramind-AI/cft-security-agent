@@ -16,3 +16,28 @@ runtime:
 
 health:
   backend: /health/
+
+# Operator-owned source artifacts. Agent proposals reference stable artifact ids,
+# never arbitrary repository paths.
+artifacts:
+  backend_dockerfile:
+    kind: dockerfile
+    path: backend/Dockerfile
+  frontend_dockerfile:
+    kind: dockerfile
+    path: frontend/frontend/Dockerfile
+  demo_seed:
+    kind: python
+    path: backend/core/management/commands/seed_demo.py
+  user_model:
+    kind: python
+    path: backend/core/models.py
+  user_serializer:
+    kind: python
+    path: backend/core/serializers.py
+  user_views:
+    kind: python
+    path: backend/core/views.py
+  frontend_app:
+    kind: javascript
+    path: frontend/frontend/src/App.jsx

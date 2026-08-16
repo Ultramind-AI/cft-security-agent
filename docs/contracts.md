@@ -49,7 +49,7 @@ metadata only: it fixes names, typed input/output schemas, expected errors and
 permissions without granting the model any direct execution primitive. These
 agent-facing contracts are deliberately separate from Executor capabilities such
 as `safe_noop`, `check_sberlab_health`, or the fixed
-`check_sberlab_backend_dockerfile_user` source verifier.
+`inspect_dockerfile_user`, `inspect_python_password_assignment` and `inspect_react_dangerous_html_flow` bounded source verifiers.
 
 | Tool | Access | Purpose | Permission | Validator |
 |---|---|---|---|---|

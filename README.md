@@ -126,10 +126,12 @@ Real E2E foundation можно запустить на нормализован�
 python3 -m app.e2e_demo --findings reports/sast/findings.json --target ../sberlab_hack --index 0
 ```
 
-Для backend `Dockerfile missing USER` теперь есть capability-specific Evidence semantics:
-фиксированный read-only Executor tool проверяет только `backend/Dockerfile` и может вернуть
-`confirmed` или `rejected`. Execution success сам по себе по-прежнему не является verdict.
-Подробнее: [`docs/security-tools.md`](docs/security-tools.md).
+Для четырёх текущих SberLab findings теперь используется небольшой reusable-каталог
+verification capabilities: один Dockerfile USER inspector покрывает backend и frontend,
+отдельный Python AST inspector проверяет password-assignment semantics, а bounded React
+source-flow inspector проверяет опасный HTML sink без активного browser payload. Все source
+paths берутся только из trusted artifact registry в `targets/sberlab.yaml`. Execution success
+сам по себе по-прежнему не является verdict. Подробнее: [`docs/security-tools.md`](docs/security-tools.md).
 
 Ручной тест графа:
 

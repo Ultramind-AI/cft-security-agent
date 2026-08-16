@@ -106,16 +106,38 @@ class DeterministicAgentModel:
             parameters = {}
             purpose = "Exercise the deterministic Validator deny path."
             expected_evidence = hypothesis.expected_evidence
-        elif _is_backend_missing_user_finding(finding.rule_id, finding.service):
-            tool = "check_sberlab_backend_dockerfile_user"
-            parameters = {}
+        elif _is_missing_user_finding(finding.rule_id):
+            tool = "inspect_dockerfile_user"
+            parameters = _dockerfile_user_parameters(finding.file)
             purpose = (
-                "Verify whether the final backend Dockerfile stage explicitly "
-                "sets a USER directive using a fixed read-only source check."
+                "Inspect the trusted Dockerfile artifact for the effective final-stage "
+                "USER directive using a reusable read-only source capability."
             )
             expected_evidence = (
-                "Structured source evidence describing whether backend/Dockerfile "
-                "contains a USER directive in its final build stage."
+                "Structured source evidence classifying the final Dockerfile USER as "
+                "missing, root, non-root or dynamic."
+            )
+        elif _is_unvalidated_password_finding(finding.rule_id):
+            tool = "inspect_python_password_assignment"
+            parameters = {"artifact_id": "demo_seed"}
+            purpose = (
+                "Inspect the trusted Python seed artifact for password assignment and "
+                "Django password-validation calls without exposing password values."
+            )
+            expected_evidence = (
+                "Structured source evidence with password assignment/validation counts "
+                "and redacted hardcoded-password metadata."
+            )
+        elif _is_react_dangerous_html_finding(finding.rule_id):
+            tool = "inspect_react_dangerous_html_flow"
+            parameters = _react_html_flow_parameters()
+            purpose = (
+                "Perform a bounded static source-flow check from the writable user field "
+                "to the React dangerous HTML sink without executing browser content."
+            )
+            expected_evidence = (
+                "Structured source-flow evidence covering sink, sanitizer, serializer "
+                "writability and API update-route facts."
             )
         else:
             tool = "safe_noop"
@@ -261,8 +283,42 @@ def _requested_test_outcome(state: AgentState) -> str:
     return mapping.get(severity, "inconclusive")
 
 
-def _is_backend_missing_user_finding(rule_id: str, service: str | None) -> bool:
-    return (
-        service == "backend"
-        and rule_id.lower().startswith("dockerfile.security.missing-user")
-    )
+def _is_missing_user_finding(rule_id: str) -> bool:
+    return rule_id.lower().startswith("dockerfile.security.missing-user")
+
+
+def _is_unvalidated_password_finding(rule_id: str) -> bool:
+    return "unvalidated-password" in rule_id.lower()
+
+
+def _is_react_dangerous_html_finding(rule_id: str) -> bool:
+    return "react-dangerouslysetinnerhtml" in rule_id.lower()
+
+
+def _normalize_finding_path(path: str) -> str:
+    return path.replace("\\", "/")
+
+
+def _dockerfile_user_parameters(file_path: str) -> dict[str, str]:
+    normalized = _normalize_finding_path(file_path)
+    mapping = {
+        "backend/Dockerfile": "backend_dockerfile",
+        "frontend/frontend/Dockerfile": "frontend_dockerfile",
+    }
+    try:
+        artifact_id = mapping[normalized]
+    except KeyError as exc:
+        raise ValueError(
+            f"No trusted Dockerfile artifact mapping for finding path: {normalized}"
+        ) from exc
+    return {"artifact_id": artifact_id}
+
+
+def _react_html_flow_parameters() -> dict[str, str]:
+    return {
+        "frontend_artifact_id": "frontend_app",
+        "model_artifact_id": "user_model",
+        "serializer_artifact_id": "user_serializer",
+        "view_artifact_id": "user_views",
+        "field": "about",
+    }

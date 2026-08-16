@@ -1,15 +1,12 @@
 version: 1
-
 targets:
   allowed:
-    - sberlab-local
-
+  - sberlab-local
 environments:
   allowed:
-    - local
-    - sandbox
-    - staging
-
+  - local
+  - sandbox
+  - staging
 limits:
   max_iterations: 5
   executor:
@@ -21,39 +18,83 @@ limits:
     max_output_bytes: 16384
     max_runs_per_action: 1
     max_concurrent_runs: 1
-
 tools:
   allowed:
-    - safe_noop
-    - check_sberlab_health
-    - get_sberlab_public_projects
-    - check_sberlab_backend_dockerfile_user
-
+  - safe_noop
+  - check_sberlab_health
+  - get_sberlab_public_projects
+  - inspect_dockerfile_user
+  - inspect_python_password_assignment
+  - inspect_react_dangerous_html_flow
   parameter_contracts:
     safe_noop:
       allowed_keys:
-        - message
-        - test_outcome
+      - message
+      - test_outcome
       required_keys: []
       enum_values:
         test_outcome:
-          - confirmed
-          - rejected
-          - inconclusive
+        - confirmed
+        - rejected
+        - inconclusive
       max_string_lengths:
         message: 256
-
     check_sberlab_health:
       allowed_keys: []
       required_keys: []
-
     get_sberlab_public_projects:
       allowed_keys: []
       required_keys: []
-
-    check_sberlab_backend_dockerfile_user:
-      allowed_keys: []
-      required_keys: []
-
+    inspect_dockerfile_user:
+      allowed_keys:
+      - artifact_id
+      required_keys:
+      - artifact_id
+      enum_values:
+        artifact_id:
+        - backend_dockerfile
+        - frontend_dockerfile
+      max_string_lengths:
+        artifact_id: 64
+    inspect_python_password_assignment:
+      allowed_keys:
+      - artifact_id
+      required_keys:
+      - artifact_id
+      enum_values:
+        artifact_id:
+        - demo_seed
+      max_string_lengths:
+        artifact_id: 64
+    inspect_react_dangerous_html_flow:
+      allowed_keys:
+      - frontend_artifact_id
+      - model_artifact_id
+      - serializer_artifact_id
+      - view_artifact_id
+      - field
+      required_keys:
+      - frontend_artifact_id
+      - model_artifact_id
+      - serializer_artifact_id
+      - view_artifact_id
+      - field
+      enum_values:
+        frontend_artifact_id:
+        - frontend_app
+        model_artifact_id:
+        - user_model
+        serializer_artifact_id:
+        - user_serializer
+        view_artifact_id:
+        - user_views
+        field:
+        - about
+      max_string_lengths:
+        frontend_artifact_id: 64
+        model_artifact_id: 64
+        serializer_artifact_id: 64
+        view_artifact_id: 64
+        field: 64
 logging:
   required: true

@@ -68,9 +68,14 @@ class SafeExecutor:
         self._registry.register("safe_noop", self._safe_noop)
         self._registry.register("check_sberlab_health", self._no_parameters)
         self._registry.register("get_sberlab_public_projects", self._no_parameters)
+        self._registry.register("inspect_dockerfile_user", self._artifact_id_parameter)
         self._registry.register(
-            "check_sberlab_backend_dockerfile_user",
-            self._no_parameters,
+            "inspect_python_password_assignment",
+            self._artifact_id_parameter,
+        )
+        self._registry.register(
+            "inspect_react_dangerous_html_flow",
+            self._react_html_flow_parameters,
         )
 
     @classmethod
@@ -276,6 +281,7 @@ class SafeExecutor:
                         if target.repository_path is not None
                         else ""
                     ),
+                    artifacts=target.worker_artifacts(),
                 )
             )
         except Exception as exc:
@@ -335,6 +341,38 @@ class SafeExecutor:
                 "HTTP capabilities do not accept ActionProposal parameters"
             )
         return {}
+
+    @staticmethod
+    def _artifact_id_parameter(parameters: dict) -> dict:
+        if set(parameters) != {"artifact_id"}:
+            raise CapabilityInputError(
+                "This capability requires exactly one artifact_id parameter"
+            )
+        artifact_id = parameters.get("artifact_id")
+        if not isinstance(artifact_id, str) or not artifact_id.strip():
+            raise CapabilityInputError("artifact_id must be a non-empty string")
+        return {"artifact_id": artifact_id.strip()}
+
+    @staticmethod
+    def _react_html_flow_parameters(parameters: dict) -> dict:
+        required = {
+            "frontend_artifact_id",
+            "model_artifact_id",
+            "serializer_artifact_id",
+            "view_artifact_id",
+            "field",
+        }
+        if set(parameters) != required:
+            raise CapabilityInputError(
+                "React HTML flow verification requires the fixed source-flow parameter set"
+            )
+        normalized: dict[str, str] = {}
+        for name in sorted(required):
+            value = parameters.get(name)
+            if not isinstance(value, str) or not value.strip():
+                raise CapabilityInputError(f"{name} must be a non-empty string")
+            normalized[name] = value.strip()
+        return normalized
 
     def _finish(
         self,

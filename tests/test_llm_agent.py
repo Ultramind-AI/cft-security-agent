@@ -10,9 +10,10 @@ from schemas.llm import LLMDockerfileUserActionChoice
 
 
 class _FakeClient:
-    def __init__(self, outputs):
+    def __init__(self, outputs, *, trace: bool = False):
         self.outputs = iter(outputs)
         self.calls = []
+        self.trace = trace
 
     def complete_model(self, **kwargs):
         self.calls.append(kwargs)
@@ -58,7 +59,7 @@ def test_llm_model_returns_structured_reasoning() -> None:
 
 def test_llm_action_keeps_security_sensitive_fields_deterministic() -> None:
     choice = LLMDockerfileUserActionChoice(
-        tool="check_sberlab_backend_dockerfile_user",
+        tool="inspect_dockerfile_user",
         parameters={"path": "../../should-never-be-used"},
         purpose="Verify the Dockerfile user directive.",
         expected_evidence="Structured Dockerfile user evidence.",
@@ -75,11 +76,11 @@ def test_llm_action_keeps_security_sensitive_fields_deterministic() -> None:
 
     action = model.propose_action(state, analysis, hypothesis)
 
-    assert action.tool == "check_sberlab_backend_dockerfile_user"
+    assert action.tool == "inspect_dockerfile_user"
     assert action.target == "sberlab-local"
     assert action.environment == "local"
     assert action.iteration == 1
-    assert action.parameters == {}
+    assert action.parameters == {"artifact_id": "backend_dockerfile"}
     assert "/" not in action.id
 
 
@@ -98,7 +99,7 @@ def test_llm_cannot_confirm_without_matching_evidence() -> None:
     state["iteration_count"] = 1
     state["proposed_action"] = ActionProposal(
         id="action-1",
-        tool="check_sberlab_backend_dockerfile_user",
+        tool="inspect_dockerfile_user",
         target="sberlab-local",
         purpose="test",
         expected_evidence="test",
@@ -124,7 +125,7 @@ def test_capability_evidence_deterministically_controls_llm_verdict() -> None:
     state["iteration_count"] = 1
     state["proposed_action"] = ActionProposal(
         id="action-1",
-        tool="check_sberlab_backend_dockerfile_user",
+        tool="inspect_dockerfile_user",
         target="sberlab-local",
         purpose="test",
         expected_evidence="test",
@@ -152,3 +153,45 @@ def test_capability_evidence_deterministically_controls_llm_verdict() -> None:
 
     assert result.status == "confirmed"
     assert "structured Evidence" in result.explanation
+
+
+def test_evidence_guard_trace_makes_short_circuit_visible(capsys) -> None:
+    client = _FakeClient([], trace=True)
+    model = FallbackLLMAgentModel(client)
+    state = _state()
+    state["iteration_count"] = 1
+    state["proposed_action"] = ActionProposal(
+        id="action-trace",
+        tool="inspect_dockerfile_user",
+        target="sberlab-local",
+        purpose="test",
+        expected_evidence="test",
+    )
+    state["execution"] = ExecutionResult(
+        run_id="run-trace",
+        action_id="action-trace",
+        status="completed",
+        exit_code=0,
+        evidence_ref="ev-trace",
+        audit_ref="audit-trace",
+    )
+    state["evidence"] = [
+        Evidence(
+            id="ev-trace",
+            action_id="action-trace",
+            type="dockerfile_user_check",
+            summary="Final stage has no USER directive.",
+            reliability="high",
+            verdict="confirmed",
+        )
+    ]
+
+    result = model.reevaluate(state)
+    captured = capsys.readouterr()
+
+    assert result.status == "confirmed"
+    assert client.calls == []
+    assert (
+        "[agent] reevaluate: deterministic evidence guard -> confirmed"
+        in captured.err
+    )

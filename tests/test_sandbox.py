@@ -193,13 +193,22 @@ def test_worker_dockerfile_check_never_accepts_agent_path_parameter(tmp_path) ->
 
     result = worker._execute(
         {
-            "tool": "check_sberlab_backend_dockerfile_user",
+            "tool": "inspect_dockerfile_user",
             "repository_path": str(tmp_path),
-            "parameters": {"path": "../../outside"},
+            "artifacts": {
+                "backend_dockerfile": {
+                    "kind": "dockerfile",
+                    "path": "backend/Dockerfile",
+                }
+            },
+            "parameters": {
+                "artifact_id": "backend_dockerfile",
+                "path": "../../outside",
+            },
             "request_timeout_seconds": 1,
             "max_output_bytes": 1024,
         }
     )
 
-    assert result[0] == 2
-    assert "does not accept ActionProposal parameters" in result[2]
+    assert result[0] == 1
+    assert "Unsupported capability parameters" in result[2]

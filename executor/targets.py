@@ -1,8 +1,38 @@
-from dataclasses import dataclass
-from pathlib import Path
+from dataclasses import dataclass, field
+from pathlib import Path, PurePosixPath
 from urllib.parse import urljoin, urlsplit
 
 import yaml
+
+
+@dataclass(frozen=True)
+class TargetArtifactDefinition:
+    id: str
+    kind: str
+    relative_path: str
+
+    def __post_init__(self) -> None:
+        artifact_id = self.id.strip()
+        kind = self.kind.strip().lower()
+        relative_path = self.relative_path.replace("\\", "/").strip()
+        path = PurePosixPath(relative_path)
+
+        if not artifact_id or any(char.isspace() for char in artifact_id):
+            raise ValueError("Target artifact id must be a non-empty token")
+        if not kind:
+            raise ValueError("Target artifact kind is required")
+        if not relative_path or path.is_absolute() or ".." in path.parts:
+            raise ValueError("Target artifact path must stay inside the repository")
+
+        object.__setattr__(self, "id", artifact_id)
+        object.__setattr__(self, "kind", kind)
+        object.__setattr__(self, "relative_path", path.as_posix())
+
+    def worker_payload(self) -> dict[str, str]:
+        return {
+            "kind": self.kind,
+            "path": self.relative_path,
+        }
 
 
 @dataclass(frozen=True)
@@ -11,6 +41,7 @@ class TargetDefinition:
     environment: str
     base_url: str
     repository_path: Path | None = None
+    artifacts: dict[str, TargetArtifactDefinition] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         parsed = urlsplit(self.base_url)
@@ -24,6 +55,8 @@ class TargetDefinition:
                 "repository_path",
                 Path(self.repository_path).expanduser().resolve(),
             )
+        if any(key != artifact.id for key, artifact in self.artifacts.items()):
+            raise ValueError("Target artifact mapping key must match artifact id")
 
     def build_url(self, path: str) -> str:
         parsed_path = urlsplit(path)
@@ -38,6 +71,12 @@ class TargetDefinition:
             raise ValueError("Capability path must be a fixed absolute URL path")
 
         return urljoin(f"{self.base_url.rstrip('/')}/", path.lstrip("/"))
+
+    def worker_artifacts(self) -> dict[str, dict[str, str]]:
+        return {
+            artifact_id: artifact.worker_payload()
+            for artifact_id, artifact in self.artifacts.items()
+        }
 
 
 class TargetRegistry:
@@ -68,6 +107,19 @@ class TargetRegistry:
             else None
         )
 
+        raw_artifacts = data.get("artifacts", {}) or {}
+        if not isinstance(raw_artifacts, dict):
+            raise TypeError("Target artifacts must be a mapping")
+        artifacts: dict[str, TargetArtifactDefinition] = {}
+        for artifact_id, raw_definition in raw_artifacts.items():
+            if not isinstance(raw_definition, dict):
+                raise TypeError(f"Target artifact '{artifact_id}' must be an object")
+            artifacts[str(artifact_id)] = TargetArtifactDefinition(
+                id=str(artifact_id),
+                kind=str(raw_definition.get("kind", "")),
+                relative_path=str(raw_definition.get("path", "")),
+            )
+
         return cls(
             [
                 TargetDefinition(
@@ -75,6 +127,7 @@ class TargetRegistry:
                     environment=str(data.get("environment", "unknown")),
                     base_url=str(base_url),
                     repository_path=repository_path,
+                    artifacts=artifacts,
                 )
             ]
         )

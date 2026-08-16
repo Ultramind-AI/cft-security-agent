@@ -6,6 +6,7 @@ from pathlib import Path
 from agent.graph import build_graph
 from app.config import settings
 from app.e2e_inputs import build_real_initial_state
+from evidence.presentation import format_evidence_scope
 
 
 def _parse_args() -> argparse.Namespace:
@@ -82,11 +83,9 @@ def main() -> int:
                 f"Evidence verdict: {item.verdict} "
                 f"(type={item.type}, reliability={item.reliability})"
             )
-            if item.type == "dockerfile_user_check":
-                print(
-                    "Evidence scope: source-only "
-                    f"(runtime_user_verified={item.details.get('runtime_user_verified')})"
-                )
+            scope_line = format_evidence_scope(item.details)
+            if scope_line is not None:
+                print(scope_line)
     if report.cvss is None:
         print("CVSS: missing")
     else:

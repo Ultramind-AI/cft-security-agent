@@ -6,7 +6,11 @@ from schemas.finding import Finding
 from schemas.hypothesis import Hypothesis
 from schemas.report import FinalReport
 from schemas.scoring import ContextPriority, CVSSResult
-from schemas.security_tools import DockerfileUserCheckResult
+from schemas.security_tools import (
+    DockerfileUserCheckResult,
+    PythonPasswordAssignmentCheckResult,
+    ReactDangerousHtmlFlowCheckResult,
+)
 from schemas.validation import ValidationResult
 
 __all__ = [
@@ -20,5 +24,7 @@ __all__ = [
     "FinalReport",
     "Finding",
     "Hypothesis",
+    "PythonPasswordAssignmentCheckResult",
+    "ReactDangerousHtmlFlowCheckResult",
     "ValidationResult",
 ]

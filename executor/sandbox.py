@@ -6,7 +6,7 @@ import subprocess
 import sys
 import tempfile
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from time import perf_counter
 from typing import ClassVar, Protocol
@@ -42,6 +42,7 @@ class SandboxRequest:
     parameters: dict
     request_timeout_seconds: float
     repository_path: str = ""
+    artifacts: dict[str, dict[str, str]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -157,6 +158,7 @@ class ProcessSandbox:
                         "tool": request.tool,
                         "base_url": request.base_url,
                         "repository_path": request.repository_path,
+                        "artifacts": request.artifacts,
                         "parameters": request.parameters,
                         "request_timeout_seconds": request.request_timeout_seconds,
                         "max_output_bytes": self.limits.max_output_bytes,

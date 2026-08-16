@@ -85,6 +85,7 @@ DENY    → policy_blocked → финальный отчёт
 | `AgentReasoningModel` | ✅ готово |
 | Детерминированная модель для тестов | ✅ готово |
 | Детерминированный `Validator` / permission policy v0.1 | ✅ готово |
+| Формальные tool contracts v0.1 | ✅ готово |
 | Ограниченный `Executor` с sandbox, approval, audit и evidence | ✅ готово |
 | `Evidence` и `FinalReport` | ✅ базовая реализация |
 | SberLab как Target v1 | ✅ зафиксирован |
@@ -105,10 +106,13 @@ python3 -m pip install -e ".[dev]"
 python3 -m pytest -q
 ```
 
-Для текущего состояния проекта:
+Для текущего состояния проекта полный тестовый набор должен завершаться без ошибок.
 
-```text
-31 passed
+Контракты tools можно отдельно проверить и вывести как JSON Schema:
+
+```bash
+python3 -m app.tool_contracts
+python3 -m pytest -q tests/test_tool_contracts.py
 ```
 
 Ручной тест графа:

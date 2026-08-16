@@ -36,3 +36,41 @@ artifacts
 
 `evidence_ref` is resolved by `JsonExecutionEvidenceStore`; the agent reads the
 persisted record and checks its `run_id` and `action_id` before using it.
+
+## Tool contracts v0.1
+
+The agent-facing tool catalog is defined in `tools/contracts.py`. The catalog is
+metadata only: it fixes names, typed input/output schemas, expected errors and
+permissions without granting the model any direct execution primitive. These
+agent-facing contracts are deliberately separate from Executor capabilities such
+as `safe_noop` or `check_sberlab_health`.
+
+| Tool | Access | Purpose | Permission | Validator |
+|---|---|---|---|---|
+| `read_finding` | read-only | Load one normalized SAST finding | `finding:read` | no |
+| `read_code_context` | read-only | Read a bounded source-code window | `code:read` | no |
+| `get_architecture_context` | read-only | Load context for one service | `architecture:read` | no |
+| `calculate_cvss` | scoring | Calculate CVSS 4.0 from explicit metrics | `scoring:calculate` | no |
+| `calculate_context_priority` | scoring | Calculate architecture-aware priority | `architecture:read`, `scoring:calculate` | no |
+| `request_verification` | execution request | Submit an `ActionProposal` for policy review | `verification:request` | yes |
+| `read_evidence` | read-only | Load persisted Executor evidence | `evidence:read` | no |
+
+`request_verification` is intentionally not an executor tool. It returns a
+structured request that must cross the deterministic Validator boundary before
+Executor can run a registered capability. The catalog contains no
+`execution:direct` permission.
+
+For CVSS, the contract accepts explicit metric values and documents that the
+scoring implementation must not invent missing metrics. This keeps metric
+selection/reasoning separate from the deterministic score calculation.
+
+The contracts can be inspected as machine-readable JSON Schema:
+
+```bash
+python -m app.tool_contracts
+python -m app.tool_contracts --name request_verification
+```
+
+A future LangChain adapter can build structured tools from these schemas without
+changing the shared project models or the Validator/Executor boundary.
+

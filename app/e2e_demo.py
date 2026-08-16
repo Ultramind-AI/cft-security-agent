@@ -64,6 +64,7 @@ def main() -> int:
     print(f"Location: {finding.file}:{finding.line_start or '?'}")
     print(f"Service: {finding.service or 'unknown'}")
     print("Context source: real target repository + architecture YAML")
+    print(f"Agent mode: {settings.agent_mode}")
 
     result = build_graph().invoke(state)
     report = result["final_report"]

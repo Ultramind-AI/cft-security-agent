@@ -84,6 +84,7 @@ DENY    → policy_blocked → финальный отчёт
 | Системный промпт агента | ✅ готово |
 | `AgentReasoningModel` | ✅ готово |
 | Детерминированная модель для тестов | ✅ готово |
+| Multi-provider LLM fallback adapter | ✅ готово |
 | Детерминированный `Validator` / permission policy v0.1 | ✅ готово |
 | Формальные tool contracts v0.1 | ✅ готово |
 | Ограниченный `Executor` с sandbox, approval, audit и evidence | ✅ готово |
@@ -369,14 +370,11 @@ main
 
 ## Что делаем дальше
 
-1. Кирилл стабильно поднимает SberLab в Docker.
-2. Рома фиксирует policy для `Validator`, критерии Evidence и список security tools.
-3. После готовности SberLab запускаем первый SAST.
-4. Лёха применяет `CVSS 4.0` и контекстный приоритет к 3–5 реальным findings.
-5. Выбираем один безопасный finding для демонстрации.
-6. Подменяем тестовые заглушки реальными компонентами.
-7. Проводим один полный end-to-end проход.
-8. После рабочего сценария обновляем Architecture v0.3.
+1. Прогоняем первый реальный E2E в `CFT_AGENT_MODE=llm` через fallback adapter.
+2. Сохраняем `DeterministicAgentModel` как воспроизводимый режим для CI/tests.
+3. Расширяем capability-specific security tools только под реальные выбранные findings.
+4. Добавляем deterministic CVSS calculator после явных CVSS 4.0 metric inputs.
+5. После стабильного AI E2E синхронизируем CI/CD decision и Architecture v0.3.
 
 ---
 
@@ -402,3 +400,31 @@ SAST
 ```
 
 И каждый этап можно воспроизвести и объяснить на демонстрации.
+
+
+## Live LLM mode
+
+For deterministic tests keep `CFT_AGENT_MODE=stub`. For a live demo the same
+`AgentReasoningModel` boundary can use the provider-diverse fallback adapter:
+
+```bash
+cp .env.example .env
+# Fill only local API keys in .env. Never commit that file.
+CFT_AGENT_MODE=llm CFT_LLM_TRACE=true python3 -m app.e2e_demo \
+  --findings artifacts/sast/findings.json \
+  --target ../sberlab_hack \
+  --architecture targets/sberlab_architecture.yaml \
+  --index 0 --max-iterations 1
+```
+
+Probe the fallback chain without running the security workflow:
+
+```bash
+CFT_AGENT_MODE=llm python3 -m app.llm_probe
+```
+
+The LLM never receives direct Executor access. It returns Pydantic-validated
+reasoning objects; target, environment, action id and iteration are assigned by
+deterministic application code, and every active action still passes through
+Validator. A model output cannot turn execution success into `confirmed`; a
+terminal finding verdict still requires matching structured Evidence.

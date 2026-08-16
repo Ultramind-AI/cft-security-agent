@@ -231,11 +231,9 @@ def get_agent_model() -> AgentReasoningModel:
         return DeterministicAgentModel()
 
     if settings.agent_mode == "llm":
-        raise RuntimeError(
-            "CFT_AGENT_MODE=llm is selected, but no real LLM adapter is "
-            "connected yet. Implement AgentReasoningModel and register it "
-            "inside get_agent_model()."
-        )
+        from agent.llm_model import FallbackLLMAgentModel
+
+        return FallbackLLMAgentModel.from_settings(settings)
 
     raise RuntimeError(f"Unsupported agent mode: {settings.agent_mode}")
 

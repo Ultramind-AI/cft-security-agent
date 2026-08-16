@@ -418,19 +418,20 @@ propose_action(
 reevaluate(state) -> ReevaluationResult
 ```
 
-Current implementation:
+Current implementations:
 
 ```text
 DeterministicAgentModel
+FallbackLLMAgentModel
 ```
 
-Purpose:
+`DeterministicAgentModel` remains the default for local tests. `FallbackLLMAgentModel`
+uses a provider-diverse API route chain and validates every model response against
+the existing Pydantic schemas before it reaches LangGraph. Target, environment,
+action id and iteration remain deterministic application fields. A provider or model
+failure may trigger fallback, but no provider can bypass Validator or Executor policy.
 
-- no external API;
-- deterministic local tests;
-- prove graph integration before connecting a real LLM.
-
-A future LLM adapter must implement the same interface. Do not rewrite LangGraph nodes around a provider SDK.
+Do not rewrite LangGraph nodes around a provider SDK.
 
 ---
 
@@ -859,7 +860,7 @@ Current correct order:
 8. Keep the first Dockerfile capability and its source-only Evidence semantics stable.
 9. Run the backend Docker finding end-to-end to a real confirmed/rejected verdict.
 10. Derive the remaining small security-tool catalog from the other real findings.
-11. Add the real LLM adapter behind AgentReasoningModel.
+11. Exercise and tune the real multi-provider LLM adapter behind AgentReasoningModel.
 12. Update Architecture v0.3 in Miro from the working system.
 ```
 

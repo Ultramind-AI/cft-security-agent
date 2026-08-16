@@ -1,6 +1,7 @@
 from pathlib import Path
 from typing import Literal
 
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -26,12 +27,69 @@ class Settings(BaseSettings):
     agent_mode: Literal["stub", "llm"] = "stub"
     agent_model_provider: str = ""
     agent_model_name: str = ""
+    llm_routes: str = ""
+    llm_timeout_seconds: float = 25.0
+    llm_max_output_tokens: int = 1200
+    llm_trace: bool = False
+
+    groq_api_key: SecretStr | None = Field(
+        default=None,
+        validation_alias="GROQ_API_KEY",
+    )
+    zai_api_key: SecretStr | None = Field(
+        default=None,
+        validation_alias="ZAI_API_KEY",
+    )
+    mistral_api_key: SecretStr | None = Field(
+        default=None,
+        validation_alias="MISTRAL_API_KEY",
+    )
+    gemini_api_key: SecretStr | None = Field(
+        default=None,
+        validation_alias="GEMINI_API_KEY",
+    )
+    openrouter_api_key: SecretStr | None = Field(
+        default=None,
+        validation_alias="OPENROUTER_API_KEY",
+    )
+    nvidia_nim_api_key: SecretStr | None = Field(
+        default=None,
+        validation_alias="NVIDIA_NIM_API_KEY",
+    )
+    cloudflare_api_token: SecretStr | None = Field(
+        default=None,
+        validation_alias="CLOUDFLARE_API_TOKEN",
+    )
+    cloudflare_account_id: str = Field(
+        default="",
+        validation_alias="CLOUDFLARE_ACCOUNT_ID",
+    )
 
     model_config = SettingsConfigDict(
         env_file=".env",
         env_prefix="CFT_",
         extra="ignore",
     )
+
+    def llm_provider_credentials(self) -> dict[str, str]:
+        """Return only configured provider credentials for the LLM transport."""
+        secret_values = {
+            "GROQ_API_KEY": self.groq_api_key,
+            "ZAI_API_KEY": self.zai_api_key,
+            "MISTRAL_API_KEY": self.mistral_api_key,
+            "GEMINI_API_KEY": self.gemini_api_key,
+            "OPENROUTER_API_KEY": self.openrouter_api_key,
+            "NVIDIA_NIM_API_KEY": self.nvidia_nim_api_key,
+            "CLOUDFLARE_API_TOKEN": self.cloudflare_api_token,
+        }
+        credentials = {
+            name: secret.get_secret_value()
+            for name, secret in secret_values.items()
+            if secret is not None and secret.get_secret_value().strip()
+        }
+        if self.cloudflare_account_id.strip():
+            credentials["CLOUDFLARE_ACCOUNT_ID"] = self.cloudflare_account_id.strip()
+        return credentials
 
 
 settings = Settings()

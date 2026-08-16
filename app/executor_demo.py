@@ -15,12 +15,17 @@ def main() -> None:
         id=f"executor-demo-health-{uuid4().hex[:8]}",
         tool="check_sberlab_health",
         target="sberlab-local",
+        environment="local",
+        iteration=1,
         parameters={},
         purpose="Check that the approved local SberLab target is ready.",
         expected_evidence="HTTP 200 with status=ok and database=ok.",
     )
 
-    validator = PolicyValidator.from_yaml(settings.policy_file)
+    validator = PolicyValidator.from_yaml(
+        settings.policy_file,
+        target_file=settings.target_file,
+    )
     validation = validator.validate(action)
     approvals = InMemoryApprovalStore()
     if validation.approved:

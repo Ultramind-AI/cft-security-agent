@@ -28,5 +28,27 @@ tools:
     - check_sberlab_health
     - get_sberlab_public_projects
 
+  parameter_contracts:
+    safe_noop:
+      allowed_keys:
+        - message
+        - test_outcome
+      required_keys: []
+      enum_values:
+        test_outcome:
+          - confirmed
+          - rejected
+          - inconclusive
+      max_string_lengths:
+        message: 256
+
+    check_sberlab_health:
+      allowed_keys: []
+      required_keys: []
+
+    get_sberlab_public_projects:
+      allowed_keys: []
+      required_keys: []
+
 logging:
   required: true

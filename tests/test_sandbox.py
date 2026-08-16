@@ -128,12 +128,15 @@ def test_process_sandbox_applies_os_resource_limits(tmp_path) -> None:
     applied = json.loads(result.stdout)
 
     assert result.exit_code == 0
-    assert applied == {
-        "cpu": limits.cpu_time_seconds,
-        "memory": limits.memory_bytes,
-        "file": limits.max_file_bytes,
-        "processes": limits.max_processes,
-    }
+    assert applied["cpu"] == limits.cpu_time_seconds
+    assert applied["file"] == limits.max_file_bytes
+    assert applied["processes"] == limits.max_processes
+    if sys.platform == "darwin":
+        # macOS exposes RLIMIT_AS but rejects the configured address-space cap
+        # during subprocess pre-exec, so memory is intentionally left unchanged.
+        assert applied["memory"] != limits.memory_bytes
+    else:
+        assert applied["memory"] == limits.memory_bytes
 
 
 def test_worker_maps_health_tool_to_fixed_path(monkeypatch) -> None:

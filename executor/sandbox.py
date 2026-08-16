@@ -254,10 +254,15 @@ def _resource_limiter(limits: SandboxLimits):
         os.umask(0o077)
         cpu_limit = max(1, math.ceil(limits.cpu_time_seconds))
         resource.setrlimit(resource.RLIMIT_CPU, (cpu_limit, cpu_limit))
-        resource.setrlimit(
-            resource.RLIMIT_AS,
-            (limits.memory_bytes, limits.memory_bytes),
-        )
+        # macOS exposes RLIMIT_AS, but lowering it for a fresh Python child can
+        # fail during subprocess pre-exec with ``ValueError: current limit exceeds
+        # maximum limit``. Keep the address-space limit on Linux/other supported
+        # POSIX platforms, and rely on the remaining sandbox controls on Darwin.
+        if sys.platform != "darwin" and hasattr(resource, "RLIMIT_AS"):
+            resource.setrlimit(
+                resource.RLIMIT_AS,
+                (limits.memory_bytes, limits.memory_bytes),
+            )
         resource.setrlimit(
             resource.RLIMIT_FSIZE,
             (limits.max_file_bytes, limits.max_file_bytes),

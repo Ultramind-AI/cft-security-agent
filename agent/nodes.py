@@ -113,7 +113,10 @@ def propose_action(state: AgentState) -> dict:
 
 
 def validate_action(state: AgentState) -> dict:
-    validator = PolicyValidator.from_yaml(settings.policy_file)
+    validator = PolicyValidator.from_yaml(
+        settings.policy_file,
+        target_file=settings.target_file,
+    )
     validation = validator.validate(state["proposed_action"])
 
     return {

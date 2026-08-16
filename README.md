@@ -84,7 +84,7 @@ DENY    → policy_blocked → финальный отчёт
 | Системный промпт агента | ✅ готово |
 | `AgentReasoningModel` | ✅ готово |
 | Детерминированная модель для тестов | ✅ готово |
-| Базовый `Validator` | ✅ есть, будет заменён правилами Ромы |
+| Детерминированный `Validator` / permission policy v0.1 | ✅ готово |
 | Ограниченный `Executor` с sandbox, approval, audit и evidence | ✅ готово |
 | `Evidence` и `FinalReport` | ✅ базовая реализация |
 | SberLab как Target v1 | ✅ зафиксирован |
@@ -206,6 +206,8 @@ AgentState
 Агент **не выполняет действие сам**.
 
 ### Validator
+
+`Validator` работает как детерминированный policy gate. Текущие правила описаны в [`docs/validator.md`](docs/validator.md).
 
 `Validator` проверяет:
 

@@ -66,7 +66,10 @@ def _proposal(
 
 
 def _approve(action: ActionProposal) -> tuple[InMemoryApprovalStore, ValidationResult]:
-    validation = PolicyValidator.from_yaml("policies/default.yaml").validate(action)
+    validation = PolicyValidator.from_yaml(
+        "policies/default.yaml",
+        target_file="targets/sberlab.yaml",
+    ).validate(action)
     assert validation.approved is True
     approvals = InMemoryApprovalStore()
     approvals.record(action, validation)
@@ -232,9 +235,17 @@ def test_health_capability_builds_only_trusted_sandbox_request(tmp_path) -> None
 def test_health_capability_rejects_arbitrary_parameters_without_start(tmp_path) -> None:
     action = _proposal(
         tool="check_sberlab_health",
-        parameters={"command": "rm -rf /", "url": "http://example.com"},
+        parameters={"unexpected": "value", "url": "http://example.invalid"},
     )
-    approvals, _ = _approve(action)
+    approvals = InMemoryApprovalStore()
+    approvals.record(
+        action,
+        ValidationResult(
+            approved=True,
+            action_id=action.id,
+            reason="synthetic executor defense-in-depth test",
+        ),
+    )
 
     executor, sandbox, _ = _executor(tmp_path, approvals)
     result = executor.execute(action)

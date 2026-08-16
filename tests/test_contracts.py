@@ -15,7 +15,10 @@ def test_allowed_noop_roundtrip(tmp_path) -> None:
         expected_evidence="successful structured no-op",
     )
 
-    validator = PolicyValidator.from_yaml("policies/default.yaml")
+    validator = PolicyValidator.from_yaml(
+        "policies/default.yaml",
+        target_file="targets/sberlab.yaml",
+    )
     validation = validator.validate(proposal)
 
     assert validation.approved is True
@@ -55,7 +58,10 @@ def test_unknown_tool_is_denied() -> None:
         expected_evidence="denial",
     )
 
-    validator = PolicyValidator.from_yaml("policies/default.yaml")
+    validator = PolicyValidator.from_yaml(
+        "policies/default.yaml",
+        target_file="targets/sberlab.yaml",
+    )
     validation = validator.validate(proposal)
 
     assert validation.approved is False

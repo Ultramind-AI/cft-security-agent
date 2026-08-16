@@ -152,3 +152,11 @@ Executor has no capability for:
 - production targets;
 - automatic privilege escalation;
 - unbounded retries or parallel starts.
+
+### macOS resource-limit compatibility
+
+On macOS (`sys.platform == "darwin"`) the sandbox keeps wall timeout, CPU,
+file-size and process-count limits, workspace isolation, output bounds, allowlists
+and `shell=False`. `RLIMIT_AS` is intentionally not applied because Darwin can
+reject that address-space cap during subprocess pre-exec before the worker starts.
+Linux keeps the configured `RLIMIT_AS` memory limit.

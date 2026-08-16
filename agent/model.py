@@ -111,6 +111,8 @@ class DeterministicAgentModel:
             id=f"action-{finding.id}-{next_iteration}",
             tool=tool,
             target="sberlab-local",
+            environment="local",
+            iteration=next_iteration,
             parameters={
                 "message": f"verify:{finding.id}:iteration:{next_iteration}",
                 "test_outcome": _requested_test_outcome(state),

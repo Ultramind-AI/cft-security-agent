@@ -487,6 +487,16 @@ The final numeric score must be produced by deterministic code/library.
 
 The LLM may help propose justified metric values, but it must not invent the final score.
 
+Current scoring integration v0.1:
+
+```text
+Docker missing-user hardening finding -> CVSS N/A, score=null
+other findings without explicit metrics -> UNASSESSED
+Semgrep ERROR/WARNING -> never converted directly into CVSS
+```
+
+The generic numeric CVSS calculator is still pending explicit metric inputs.
+
 ## 12.2. Context Priority
 
 Purpose:
@@ -509,6 +519,11 @@ blast radius
 Keep CVSS and Context Priority separate.
 
 Do not add them together into a synthetic score.
+
+Context Priority v0.1 is now deterministic code. It scores explicit architecture
+facts using the current project weights and records each contribution in
+`ContextPriority.reasons`. Unknown authentication/blast-radius facts remain explicit
+and contribute zero rather than being guessed.
 
 ---
 
@@ -832,12 +847,13 @@ Current correct order:
 3. Finish Validator policy, Evidence criteria and security tool list.
 4. Run first SAST against SberLab.
 5. Review 3–5 real findings.
-6. Complete CVSS/Context Priority implementation using real inputs.
-7. Select one safe demo finding.
-8. Replace the remaining Validator/scoring stubs and connect the selected real
-   finding to the bounded Executor capabilities.
-9. Run one end-to-end workflow.
-10. Update Architecture v0.3 in Miro from the working system.
+6. Keep Context Priority v0.1 and CVSS applicability semantics stable.
+7. Use the backend Docker missing-user finding as the first controlled E2E candidate.
+8. Define capability-specific verification requirements and Evidence semantics for it.
+9. Add one fixed safe Executor capability if the selected check requires it.
+10. Run one end-to-end workflow to a real confirmed/rejected/inconclusive verdict.
+11. Add the real LLM adapter behind AgentReasoningModel.
+12. Update Architecture v0.3 in Miro from the working system.
 ```
 
 Do not invent new architecture work merely to fill waiting time. Integrate only when the required component is ready.

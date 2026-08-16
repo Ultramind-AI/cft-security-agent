@@ -22,6 +22,13 @@ class ArchitectureService:
             if services.get(name, {}).get("type") == "database"
         ]
 
+        critical_paths = [
+            f"{service} -> {name}"
+            for name in connected
+            if str(services.get(name, {}).get("criticality", "unknown")).lower()
+            in {"high", "critical"}
+        ]
+
         return ArchitectureContext(
             service=service,
             public_exposure=bool(node.get("public", False)),
@@ -29,5 +36,7 @@ class ArchitectureService:
             trust_zone=node.get("trust_zone"),
             connected_services=connected,
             databases=databases,
-            critical_paths=[],
+            critical_paths=critical_paths,
+            authentication=str(node.get("authentication", "unknown")),
+            blast_radius=str(node.get("blast_radius", "unknown")),
         )

@@ -9,3 +9,5 @@ class ArchitectureContext(BaseModel):
     connected_services: list[str] = Field(default_factory=list)
     databases: list[str] = Field(default_factory=list)
     critical_paths: list[str] = Field(default_factory=list)
+    authentication: str = "unknown"
+    blast_radius: str = "unknown"

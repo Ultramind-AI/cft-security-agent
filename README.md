@@ -89,7 +89,9 @@ DENY    → policy_blocked → финальный отчёт
 | Ограниченный `Executor` с sandbox, approval, audit и evidence | ✅ готово |
 | `Evidence` и `FinalReport` | ✅ базовая реализация |
 | SberLab как Target v1 | ✅ зафиксирован |
-| Реальный CVSS 4.0 | ⏳ следующий этап |
+| Context Priority v0.1 на реальной архитектуре | ✅ готово |
+| CVSS applicability для первого E2E finding | ✅ `N/A` без ложного numeric score |
+| Универсальный numeric CVSS 4.0 calculator | ⏳ после явных metric inputs |
 | Безопасные health/API-проверки SberLab | ✅ готовы в Executor |
 | Реальные Finding/Code/Architecture inputs для E2E | ✅ foundation v0.1 |
 | Capability-specific Evidence verdict для demo finding | ⏳ следующий этап |

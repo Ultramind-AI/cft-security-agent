@@ -3,7 +3,7 @@ from pydantic import BaseModel, Field
 
 class CVSSResult(BaseModel):
     vector: str
-    score: float
+    score: float | None = None
     severity: str
     reasoning: str = ""
 

@@ -56,3 +56,15 @@ report still has that finding first. Prefer `--finding-id` for a stable demo scr
 
 Until the matching verification capability and Evidence semantics are implemented, a real
 finding is expected to finish as `inconclusive`, not `confirmed`.
+
+## Scoring status after v0.1 integration
+
+The first real Docker hardening finding no longer produces placeholder scoring:
+
+```text
+CVSS: N/A
+Context Priority: HIGH (7.0)
+```
+
+`N/A` is intentional for this hardening finding. Other CVSS-applicable findings remain
+`UNASSESSED` until explicit metrics are available. See `docs/scoring.md`.

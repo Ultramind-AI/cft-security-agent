@@ -73,11 +73,24 @@ def main() -> int:
         print(f"Validator: {decision} - {validation.reason}")
     print("Iterations:", report.iterations)
     print("Evidence count:", len(report.evidence))
-    print("CVSS:", report.cvss.severity if report.cvss else "missing")
-    print(
-        "Context priority:",
-        report.context_priority.level if report.context_priority else "missing",
-    )
+    if report.cvss is None:
+        print("CVSS: missing")
+    else:
+        score = "N/A" if report.cvss.score is None else f"{report.cvss.score:.1f}"
+        print(
+            f"CVSS: {report.cvss.severity} "
+            f"(score={score}, vector={report.cvss.vector})"
+        )
+
+    if report.context_priority is None:
+        print("Context priority: missing")
+    else:
+        print(
+            f"Context priority: {report.context_priority.level} "
+            f"(score={report.context_priority.score})"
+        )
+        for reason in report.context_priority.reasons:
+            print(f"  - {reason}")
     print("Explanation:", report.explanation)
 
     if report.status == "confirmed":

@@ -6,3 +6,6 @@ langgraph<1,>=0.2
 [dev]
 pytest<9,>=8
 ruff<1,>=0.6
+
+[sast]
+semgrep<2,>=1

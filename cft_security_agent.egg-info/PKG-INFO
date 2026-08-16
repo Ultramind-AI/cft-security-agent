@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: cft-security-agent
-Version: 0.2.0
+Version: 0.3.0
 Summary: Contract-first starter architecture for a safe CI/CD security analysis agent.
 Requires-Python: >=3.11
 Requires-Dist: pydantic<3,>=2.7
@@ -10,3 +10,5 @@ Requires-Dist: langgraph<1,>=0.2
 Provides-Extra: dev
 Requires-Dist: pytest<9,>=8; extra == "dev"
 Requires-Dist: ruff<1,>=0.6; extra == "dev"
+Provides-Extra: sast
+Requires-Dist: semgrep<2,>=1; extra == "sast"

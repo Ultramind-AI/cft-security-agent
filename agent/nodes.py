@@ -6,8 +6,8 @@ from evidence.interpreter import build_evidence
 from evidence.store import JsonExecutionEvidenceStore
 from executor.approvals import InMemoryApprovalStore
 from executor.executor import SafeExecutor
+from reporting.builder import build_final_report
 from schemas.architecture import ArchitectureContext
-from schemas.report import FinalReport
 from schemas.state import AgentState
 from scoring.service import ScoringService
 from validator.validator import PolicyValidator
@@ -199,40 +199,9 @@ def reevaluate(state: AgentState) -> dict:
 
 
 def build_report(state: AgentState) -> dict:
-    status = state.get("status", "inconclusive")
-
-    allowed_statuses = {
-        "confirmed",
-        "rejected",
-        "inconclusive",
-        "policy_blocked",
-    }
-
-    if status not in allowed_statuses:
-        status = "inconclusive"
-
-    explanations = {
-        "confirmed": "Controlled evidence confirmed the test hypothesis.",
-        "rejected": "Controlled evidence rejected the test hypothesis.",
-        "inconclusive": (
-            "Evidence was insufficient before the iteration limit."
-        ),
-        "policy_blocked": (
-            "Validator denied the proposed action according to policy."
-        ),
-    }
-
-    report = FinalReport(
-        finding_id=state["finding"].id,
-        status=status,
-        cvss=state.get("cvss"),
-        context_priority=state.get("context_priority"),
-        evidence=list(state.get("evidence", [])),
-        explanation=explanations[status],
-        iterations=int(state.get("iteration_count", 0)),
-    )
+    report = build_final_report(state)
 
     return {
         "final_report": report,
-        "status": status,
+        "status": report.status,
     }

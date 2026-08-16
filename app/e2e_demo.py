@@ -6,7 +6,7 @@ from pathlib import Path
 from agent.graph import build_graph
 from app.config import settings
 from app.e2e_inputs import build_real_initial_state
-from evidence.presentation import format_evidence_scope
+from reporting.presentation import render_final_report
 
 
 def _parse_args() -> argparse.Namespace:
@@ -45,6 +45,13 @@ def _parse_args() -> argparse.Namespace:
         default=1,
         help="Controlled workflow iteration limit for this demo run",
     )
+    parser.add_argument(
+        "--report-json",
+        help=(
+            "Optional path for the machine-readable FinalReport JSON artifact. "
+            "Parent directories are created automatically."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -69,48 +76,14 @@ def main() -> int:
 
     result = build_graph().invoke(state)
     report = result["final_report"]
+    print()
+    print(render_final_report(report))
 
-    print("Workflow status:", report.status)
-    validation = result.get("validation")
-    if validation is not None:
-        decision = "APPROVE" if validation.approved else "DENY"
-        print(f"Validator: {decision} - {validation.reason}")
-    print("Iterations:", report.iterations)
-    print("Evidence count:", len(report.evidence))
-    for item in report.evidence:
-        if item.verdict is not None:
-            print(
-                f"Evidence verdict: {item.verdict} "
-                f"(type={item.type}, reliability={item.reliability})"
-            )
-            scope_line = format_evidence_scope(item.details)
-            if scope_line is not None:
-                print(scope_line)
-    if report.cvss is None:
-        print("CVSS: missing")
-    else:
-        score = "N/A" if report.cvss.score is None else f"{report.cvss.score:.1f}"
-        print(
-            f"CVSS: {report.cvss.severity} "
-            f"(score={score}, vector={report.cvss.vector})"
-        )
-
-    if report.context_priority is None:
-        print("Context priority: missing")
-    else:
-        print(
-            f"Context priority: {report.context_priority.level} "
-            f"(score={report.context_priority.score})"
-        )
-        for reason in report.context_priority.reasons:
-            print(f"  - {reason}")
-    print("Explanation:", report.explanation)
-
-    if report.status == "confirmed":
-        print(
-            "WARNING: a real finding must only become confirmed from capability-specific "
-            "Evidence semantics."
-        )
+    if args.report_json:
+        report_path = Path(args.report_json).expanduser()
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        report_path.write_text(report.model_dump_json(indent=2) + "\n")
+        print(f"Report JSON: {report_path}")
 
     return 0
 

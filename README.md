@@ -139,15 +139,15 @@ paths берутся только из trusted artifact registry в `targets/sbe
 python3 -m app.main
 ```
 
-Пример результата:
+Пример результата теперь формируется из стабильного `FinalReport v1.0` и показывает finding,
+выбранный capability, решение Validator, Evidence, CVSS/context priority, ограничения проверки и
+следующий шаг. Тот же отчёт можно сохранить как JSON для CI/CD или будущего UI:
 
-```text
-Workflow status: confirmed
-Finding: demo-001
-Iterations: 1
-Evidence count: 1
-Explanation: Controlled evidence confirmed the test hypothesis.
+```bash
+python -m app.e2e_demo ... --report-json artifacts/reports/finding-0.json
 ```
+
+Подробнее: [`docs/reporting.md`](docs/reporting.md).
 
 Предупреждение `LangChainPendingDeprecationWarning` от текущей версии LangGraph не означает падение теста.
 

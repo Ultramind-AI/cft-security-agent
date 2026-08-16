@@ -1,3 +1,4 @@
+import re
 from typing import Protocol
 
 from app.config import settings
@@ -108,7 +109,7 @@ class DeterministicAgentModel:
         )
 
         return ActionProposal(
-            id=f"action-{finding.id}-{next_iteration}",
+            id=_build_action_id(finding.id, next_iteration),
             tool=tool,
             target="sberlab-local",
             environment="local",
@@ -205,6 +206,15 @@ def get_agent_model() -> AgentReasoningModel:
         )
 
     raise RuntimeError(f"Unsupported agent mode: {settings.agent_mode}")
+
+
+def _build_action_id(finding_id: str, iteration: int) -> str:
+    """Build a Validator-safe, human-readable action id from an arbitrary finding id."""
+    normalized = re.sub(r"[^A-Za-z0-9._:-]+", "-", finding_id).strip("-")
+    normalized = normalized or "finding"
+    # Keep room for the action prefix, iteration suffix and separators.
+    normalized = normalized[:96]
+    return f"action-{normalized}-{iteration}"
 
 
 def _requested_test_outcome(state: AgentState) -> str:

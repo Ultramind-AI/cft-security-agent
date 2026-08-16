@@ -67,6 +67,10 @@ def main() -> int:
     report = result["final_report"]
 
     print("Workflow status:", report.status)
+    validation = result.get("validation")
+    if validation is not None:
+        decision = "APPROVE" if validation.approved else "DENY"
+        print(f"Validator: {decision} - {validation.reason}")
     print("Iterations:", report.iterations)
     print("Evidence count:", len(report.evidence))
     print("CVSS:", report.cvss.severity if report.cvss else "missing")

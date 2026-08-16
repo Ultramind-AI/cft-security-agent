@@ -5,6 +5,7 @@ from schemas.action import ActionProposal
 from schemas.architecture import ArchitectureContext
 from schemas.execution import ExecutionResult
 from schemas.finding import Finding
+from validator.validator import PolicyValidator
 
 
 def _state() -> dict:
@@ -108,3 +109,27 @@ def test_successful_non_stub_execution_is_not_a_verdict() -> None:
     assert result.status == "inconclusive"
     assert "execution" in result.explanation.lower()
     assert "verdict" in result.explanation.lower() or "hypothesis" in result.explanation.lower()
+
+
+def test_real_finding_id_produces_validator_safe_action_id() -> None:
+    model = DeterministicAgentModel()
+    state = _state()
+    state["finding"] = state["finding"].model_copy(
+        update={
+            "id": "docker.rule:backend/Dockerfile:14",
+            "severity": "ERROR",
+        }
+    )
+
+    analysis = model.analyse(state)
+    hypothesis = model.form_hypothesis(state, analysis)
+    proposal = model.propose_action(state, analysis, hypothesis)
+
+    assert "/" not in proposal.id
+    assert proposal.id.startswith("action-docker.rule:backend-Dockerfile:14-")
+
+    validation = PolicyValidator.from_yaml(
+        "policies/default.yaml",
+        target_file="targets/sberlab.yaml",
+    ).validate(proposal)
+    assert validation.approved is True

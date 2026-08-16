@@ -91,7 +91,9 @@ DENY    → policy_blocked → финальный отчёт
 | SberLab как Target v1 | ✅ зафиксирован |
 | Реальный CVSS 4.0 | ⏳ следующий этап |
 | Безопасные health/API-проверки SberLab | ✅ готовы в Executor |
-| Реальный end-to-end сценарий | ⏳ после первого SAST |
+| Реальные Finding/Code/Architecture inputs для E2E | ✅ foundation v0.1 |
+| Capability-specific Evidence verdict для demo finding | ⏳ следующий этап |
+| Реальный end-to-end сценарий | ⏳ после выбора demo finding |
 
 ---
 
@@ -114,6 +116,16 @@ python3 -m pytest -q
 python3 -m app.tool_contracts
 python3 -m pytest -q tests/test_tool_contracts.py
 ```
+
+Real E2E foundation можно запустить на нормализованном SAST finding:
+
+```bash
+python3 -m app.e2e_demo --findings reports/sast/findings.json --target ../sberlab_hack --index 0
+```
+
+На этом этапе реальный finding не должен становиться `confirmed` только потому, что
+Executor успешно завершил действие. До capability-specific Evidence semantics корректный
+результат такого прохода может быть `inconclusive`. Подробнее: [`docs/e2e-foundation.md`](docs/e2e-foundation.md).
 
 Ручной тест графа:
 

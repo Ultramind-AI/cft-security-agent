@@ -9,8 +9,8 @@ from executor.executor import SafeExecutor
 from schemas.architecture import ArchitectureContext
 from schemas.evidence import Evidence
 from schemas.report import FinalReport
-from schemas.scoring import ContextPriority, CVSSResult
 from schemas.state import AgentState
+from scoring.service import ScoringService
 from validator.validator import PolicyValidator
 
 
@@ -45,30 +45,14 @@ def load_context(state: AgentState) -> dict:
 
 
 def score_finding(state: AgentState) -> dict:
-    context = state["architecture_context"]
-
-    reasons: list[str] = []
-    if context.public_exposure:
-        reasons.append("public_exposure")
-    if context.databases:
-        reasons.append("database_connectivity")
-    if context.criticality.lower() in {"high", "critical"}:
-        reasons.append(f"criticality:{context.criticality.lower()}")
+    cvss, context_priority = ScoringService().score(
+        state["finding"],
+        state["architecture_context"],
+    )
 
     return {
-        "cvss": CVSSResult(
-            vector="CVSS:4.0/PLACEHOLDER",
-            score=0.0,
-            severity="UNASSESSED",
-            reasoning=(
-                "Test stub. Replace with deterministic CVSS implementation."
-            ),
-        ),
-        "context_priority": ContextPriority(
-            level="HIGH" if reasons else "LOW",
-            score=None,
-            reasons=reasons,
-        ),
+        "cvss": cvss,
+        "context_priority": context_priority,
         "status": "scored",
     }
 

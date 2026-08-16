@@ -1,7 +1,9 @@
 
 from agent.model import DeterministicAgentModel
 from agent.prompts import SYSTEM_PROMPT
+from schemas.action import ActionProposal
 from schemas.architecture import ArchitectureContext
+from schemas.execution import ExecutionResult
 from schemas.finding import Finding
 
 
@@ -66,3 +68,43 @@ def test_system_prompt_contains_security_boundaries() -> None:
 
     for phrase in required_phrases:
         assert phrase in SYSTEM_PROMPT
+
+
+def test_real_sast_severity_does_not_become_fake_confirmation() -> None:
+    model = DeterministicAgentModel()
+    state = _state()
+    state["finding"] = state["finding"].model_copy(update={"severity": "ERROR"})
+
+    analysis = model.analyse(state)
+    hypothesis = model.form_hypothesis(state, analysis)
+    proposal = model.propose_action(state, analysis, hypothesis)
+
+    assert proposal.parameters["test_outcome"] == "inconclusive"
+
+
+def test_successful_non_stub_execution_is_not_a_verdict() -> None:
+    model = DeterministicAgentModel()
+    state = _state()
+    state["iteration_count"] = 1
+    state["max_iterations"] = 1
+    state["proposed_action"] = ActionProposal(
+        id="action-real-capability",
+        tool="check_sberlab_health",
+        target="sberlab-local",
+        purpose="Controlled capability semantics test.",
+        expected_evidence="Structured result.",
+    )
+    state["execution"] = ExecutionResult(
+        run_id="run-real-capability",
+        action_id="action-real-capability",
+        status="completed",
+        exit_code=0,
+        evidence_ref="execution-test",
+        audit_ref="audit:test",
+    )
+
+    result = model.reevaluate(state)
+
+    assert result.status == "inconclusive"
+    assert "execution" in result.explanation.lower()
+    assert "verdict" in result.explanation.lower() or "hypothesis" in result.explanation.lower()

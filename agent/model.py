@@ -138,9 +138,20 @@ class DeterministicAgentModel:
             )
 
         if state["proposed_action"].tool != "safe_noop":
+            if iteration_count >= max_iterations:
+                return ReevaluationResult(
+                    status="inconclusive",
+                    explanation=(
+                        "Execution completed, but no capability-specific Evidence "
+                        "interpreter established whether the hypothesis was true."
+                    ),
+                )
             return ReevaluationResult(
-                status="confirmed",
-                explanation="A predefined safe capability completed successfully.",
+                status="continue",
+                explanation=(
+                    "Execution completed, but execution success is not a vulnerability "
+                    "verdict. More controlled Evidence is required."
+                ),
             )
 
         outcome = str(
@@ -205,4 +216,6 @@ def _requested_test_outcome(state: AgentState) -> str:
         "TEST_INCONCLUSIVE": "inconclusive",
     }
 
-    return mapping.get(severity, "confirmed")
+    # Real SAST severity is not a verification verdict. Only synthetic TEST_*
+    # severities may drive the safe_noop integration fixture.
+    return mapping.get(severity, "inconclusive")

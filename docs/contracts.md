@@ -37,13 +37,19 @@ artifacts
 `evidence_ref` is resolved by `JsonExecutionEvidenceStore`; the agent reads the
 persisted record and checks its `run_id` and `action_id` before using it.
 
+`Evidence` may additionally contain a capability-specific deterministic `verdict`
+(`confirmed`, `rejected`, or `inconclusive`) plus structured `details`. A verdict is
+accepted only after the persisted Executor output has been parsed against the matching
+capability schema. Generic execution records remain verdict-free.
+
 ## Tool contracts v0.1
 
 The agent-facing tool catalog is defined in `tools/contracts.py`. The catalog is
 metadata only: it fixes names, typed input/output schemas, expected errors and
 permissions without granting the model any direct execution primitive. These
 agent-facing contracts are deliberately separate from Executor capabilities such
-as `safe_noop` or `check_sberlab_health`.
+as `safe_noop`, `check_sberlab_health`, or the fixed
+`check_sberlab_backend_dockerfile_user` source verifier.
 
 | Tool | Access | Purpose | Permission | Validator |
 |---|---|---|---|---|

@@ -4,6 +4,7 @@ import argparse
 from pathlib import Path
 
 from agent.graph import build_graph
+from app.config import settings
 from app.e2e_inputs import build_real_initial_state
 
 
@@ -48,6 +49,7 @@ def _parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = _parse_args()
+    settings.target_repository_path = Path(args.target).expanduser().resolve()
     state = build_real_initial_state(
         findings_path=Path(args.findings),
         target_root=Path(args.target),
@@ -73,6 +75,17 @@ def main() -> int:
         print(f"Validator: {decision} - {validation.reason}")
     print("Iterations:", report.iterations)
     print("Evidence count:", len(report.evidence))
+    for item in report.evidence:
+        if item.verdict is not None:
+            print(
+                f"Evidence verdict: {item.verdict} "
+                f"(type={item.type}, reliability={item.reliability})"
+            )
+            if item.type == "dockerfile_user_check":
+                print(
+                    "Evidence scope: source-only "
+                    f"(runtime_user_verified={item.details.get('runtime_user_verified')})"
+                )
     if report.cvss is None:
         print("CVSS: missing")
     else:

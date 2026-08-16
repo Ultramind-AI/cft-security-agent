@@ -94,8 +94,8 @@ DENY    → policy_blocked → финальный отчёт
 | Универсальный numeric CVSS 4.0 calculator | ⏳ после явных metric inputs |
 | Безопасные health/API-проверки SberLab | ✅ готовы в Executor |
 | Реальные Finding/Code/Architecture inputs для E2E | ✅ foundation v0.1 |
-| Capability-specific Evidence verdict для demo finding | ⏳ следующий этап |
-| Реальный end-to-end сценарий | ⏳ после выбора demo finding |
+| Capability-specific Evidence verdict для backend Dockerfile finding | ✅ source-check v0.1 |
+| Первый deterministic end-to-end сценарий | ✅ backend Dockerfile missing USER |
 
 ---
 
@@ -125,9 +125,10 @@ Real E2E foundation можно запустить на нормализован�
 python3 -m app.e2e_demo --findings reports/sast/findings.json --target ../sberlab_hack --index 0
 ```
 
-На этом этапе реальный finding не должен становиться `confirmed` только потому, что
-Executor успешно завершил действие. До capability-specific Evidence semantics корректный
-результат такого прохода может быть `inconclusive`. Подробнее: [`docs/e2e-foundation.md`](docs/e2e-foundation.md).
+Для backend `Dockerfile missing USER` теперь есть capability-specific Evidence semantics:
+фиксированный read-only Executor tool проверяет только `backend/Dockerfile` и может вернуть
+`confirmed` или `rejected`. Execution success сам по себе по-прежнему не является verdict.
+Подробнее: [`docs/security-tools.md`](docs/security-tools.md).
 
 Ручной тест графа:
 

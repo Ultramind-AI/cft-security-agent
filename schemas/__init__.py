@@ -6,6 +6,7 @@ from schemas.finding import Finding
 from schemas.hypothesis import Hypothesis
 from schemas.report import FinalReport
 from schemas.scoring import ContextPriority, CVSSResult
+from schemas.security_tools import DockerfileUserCheckResult
 from schemas.validation import ValidationResult
 
 __all__ = [
@@ -13,6 +14,7 @@ __all__ = [
     "ArchitectureContext",
     "CVSSResult",
     "ContextPriority",
+    "DockerfileUserCheckResult",
     "Evidence",
     "ExecutionResult",
     "FinalReport",

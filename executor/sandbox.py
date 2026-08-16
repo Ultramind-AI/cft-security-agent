@@ -41,6 +41,7 @@ class SandboxRequest:
     base_url: str
     parameters: dict
     request_timeout_seconds: float
+    repository_path: str = ""
 
 
 @dataclass(frozen=True)
@@ -155,6 +156,7 @@ class ProcessSandbox:
                         "run_id": request.run_id,
                         "tool": request.tool,
                         "base_url": request.base_url,
+                        "repository_path": request.repository_path,
                         "parameters": request.parameters,
                         "request_timeout_seconds": request.request_timeout_seconds,
                         "max_output_bytes": self.limits.max_output_bytes,

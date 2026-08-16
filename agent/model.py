@@ -101,12 +101,30 @@ class DeterministicAgentModel:
         finding = state["finding"]
         next_iteration = int(state.get("iteration_count", 0)) + 1
 
-        # Test-only branch used to verify that Validator can block a proposal.
-        tool = (
-            "unknown_tool"
-            if finding.service == "force-deny"
-            else "safe_noop"
-        )
+        if finding.service == "force-deny":
+            tool = "unknown_tool"
+            parameters = {}
+            purpose = "Exercise the deterministic Validator deny path."
+            expected_evidence = hypothesis.expected_evidence
+        elif _is_backend_missing_user_finding(finding.rule_id, finding.service):
+            tool = "check_sberlab_backend_dockerfile_user"
+            parameters = {}
+            purpose = (
+                "Verify whether the final backend Dockerfile stage explicitly "
+                "sets a USER directive using a fixed read-only source check."
+            )
+            expected_evidence = (
+                "Structured source evidence describing whether backend/Dockerfile "
+                "contains a USER directive in its final build stage."
+            )
+        else:
+            tool = "safe_noop"
+            parameters = {
+                "message": f"verify:{finding.id}:iteration:{next_iteration}",
+                "test_outcome": _requested_test_outcome(state),
+            }
+            purpose = "Run one predefined safe verification stub."
+            expected_evidence = hypothesis.expected_evidence
 
         return ActionProposal(
             id=_build_action_id(finding.id, next_iteration),
@@ -114,12 +132,9 @@ class DeterministicAgentModel:
             target="sberlab-local",
             environment="local",
             iteration=next_iteration,
-            parameters={
-                "message": f"verify:{finding.id}:iteration:{next_iteration}",
-                "test_outcome": _requested_test_outcome(state),
-            },
-            purpose="Run one predefined safe verification stub.",
-            expected_evidence=hypothesis.expected_evidence,
+            parameters=parameters,
+            purpose=purpose,
+            expected_evidence=expected_evidence,
         )
 
     def reevaluate(self, state: AgentState) -> ReevaluationResult:
@@ -139,12 +154,29 @@ class DeterministicAgentModel:
             )
 
         if state["proposed_action"].tool != "safe_noop":
+            current_action_id = state["proposed_action"].id
+            capability_evidence = [
+                item
+                for item in state.get("evidence", [])
+                if item.action_id == current_action_id and item.verdict is not None
+            ]
+            if capability_evidence:
+                verdict = capability_evidence[-1].verdict
+                if verdict in {"confirmed", "rejected"}:
+                    return ReevaluationResult(
+                        status=verdict,
+                        explanation=(
+                            "Capability-specific structured Evidence established "
+                            f"the finding verdict: {verdict}."
+                        ),
+                    )
+
             if iteration_count >= max_iterations:
                 return ReevaluationResult(
                     status="inconclusive",
                     explanation=(
-                        "Execution completed, but no capability-specific Evidence "
-                        "interpreter established whether the hypothesis was true."
+                        "Execution completed, but capability-specific Evidence did not "
+                        "establish a confirmed or rejected verdict."
                     ),
                 )
             return ReevaluationResult(
@@ -229,3 +261,10 @@ def _requested_test_outcome(state: AgentState) -> str:
     # Real SAST severity is not a verification verdict. Only synthetic TEST_*
     # severities may drive the safe_noop integration fixture.
     return mapping.get(severity, "inconclusive")
+
+
+def _is_backend_missing_user_finding(rule_id: str, service: str | None) -> bool:
+    return (
+        service == "backend"
+        and rule_id.lower().startswith("dockerfile.security.missing-user")
+    )

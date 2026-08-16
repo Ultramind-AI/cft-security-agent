@@ -27,6 +27,7 @@ tools:
     - safe_noop
     - check_sberlab_health
     - get_sberlab_public_projects
+    - check_sberlab_backend_dockerfile_user
 
   parameter_contracts:
     safe_noop:
@@ -47,6 +48,10 @@ tools:
       required_keys: []
 
     get_sberlab_public_projects:
+      allowed_keys: []
+      required_keys: []
+
+    check_sberlab_backend_dockerfile_user:
       allowed_keys: []
       required_keys: []
 

@@ -102,6 +102,7 @@ def _executor(
                     id="sberlab-local",
                     environment=environment,
                     base_url="http://127.0.0.1:8000",
+                    repository_path=tmp_path / "target",
                 )
             ]
         ),
@@ -322,7 +323,32 @@ def test_executor_exposes_only_predefined_tools(tmp_path) -> None:
     executor, _, _ = _executor(tmp_path, InMemoryApprovalStore())
 
     assert executor.registered_tools() == (
+        "check_sberlab_backend_dockerfile_user",
         "check_sberlab_health",
         "get_sberlab_public_projects",
         "safe_noop",
     )
+
+
+def test_dockerfile_user_capability_passes_only_trusted_repository_path(tmp_path) -> None:
+    action = _proposal(tool="check_sberlab_backend_dockerfile_user")
+    approvals, _ = _approve(action)
+    sandbox = FakeSandbox(
+        stdout=(
+            '{"schema":"cft.dockerfile_user_check.v1",'
+            '"dockerfile":"backend/Dockerfile","final_stage":1,'
+            '"user_directive_present":false,"user":null,"user_line":null,'
+            '"verdict":"confirmed","scope":"source",'
+            '"runtime_user_verified":false,"explanation":"source condition present"}'
+        )
+    )
+
+    executor, sandbox, _ = _executor(tmp_path, approvals, sandbox=sandbox)
+    result = executor.execute(action)
+
+    assert result.status == "completed"
+    assert len(sandbox.requests) == 1
+    request = sandbox.requests[0]
+    assert request.tool == "check_sberlab_backend_dockerfile_user"
+    assert request.parameters == {}
+    assert request.repository_path == str((tmp_path / "target").resolve())

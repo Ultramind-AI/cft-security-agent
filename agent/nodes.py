@@ -1,13 +1,12 @@
 import json
-from uuid import uuid4
 
 from agent.model import get_agent_model
 from app.config import settings
+from evidence.interpreter import build_evidence
 from evidence.store import JsonExecutionEvidenceStore
 from executor.approvals import InMemoryApprovalStore
 from executor.executor import SafeExecutor
 from schemas.architecture import ArchitectureContext
-from schemas.evidence import Evidence
 from schemas.report import FinalReport
 from schemas.state import AgentState
 from scoring.service import ScoringService
@@ -127,6 +126,7 @@ def execute_action(state: AgentState) -> dict:
         audit_log_path=settings.executor_audit_log,
         workspace_directory=settings.executor_work_dir,
         target_base_url=settings.target_base_url,
+        target_repository_path=settings.target_repository_path,
         timeout_seconds=settings.executor_timeout_seconds,
         cpu_time_seconds=settings.executor_cpu_time_seconds,
         memory_mb=settings.executor_memory_mb,
@@ -173,34 +173,13 @@ def collect_evidence(state: AgentState) -> dict:
     except (OSError, ValueError, json.JSONDecodeError):
         evidence_loaded = False
 
-    record_status = (
-        str(record["status"])
-        if evidence_loaded
-        else execution.status
-    )
-    record_exit_code = (
-        int(record["exit_code"])
-        if evidence_loaded
-        else execution.exit_code
-    )
-    read_status = "read from persistent storage" if evidence_loaded else "unavailable"
-
     evidence.append(
-        Evidence(
-            id=f"evidence-{uuid4().hex[:10]}",
-            action_id=action.id,
-            type="test_result",
-            summary=(
-                f"Executor evidence {execution.evidence_ref} {read_status}: "
-                f"executor_status={record_status}, exit_code={record_exit_code}, "
-                f"timed_out={execution.timed_out}."
-            ),
+        build_evidence(
+            action=action,
+            execution=execution,
+            record=record,
+            evidence_loaded=evidence_loaded,
             artifact_refs=artifact_refs,
-            reliability=(
-                "high"
-                if evidence_loaded and record_status == "completed"
-                else "low"
-            ),
         )
     )
 

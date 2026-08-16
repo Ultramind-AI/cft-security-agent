@@ -68,6 +68,10 @@ class SafeExecutor:
         self._registry.register("safe_noop", self._safe_noop)
         self._registry.register("check_sberlab_health", self._no_parameters)
         self._registry.register("get_sberlab_public_projects", self._no_parameters)
+        self._registry.register(
+            "check_sberlab_backend_dockerfile_user",
+            self._no_parameters,
+        )
 
     @classmethod
     def from_config(
@@ -80,6 +84,7 @@ class SafeExecutor:
         audit_log_path: str | Path,
         workspace_directory: str | Path,
         target_base_url: str | None = None,
+        target_repository_path: str | Path | None = None,
         timeout_seconds: float = 5.0,
         cpu_time_seconds: int = 2,
         memory_mb: int = 256,
@@ -155,6 +160,7 @@ class SafeExecutor:
             targets=TargetRegistry.from_yaml(
                 target_file,
                 base_url_override=target_base_url,
+                repository_path_override=target_repository_path,
             ),
             evidence_store=JsonExecutionEvidenceStore(evidence_directory),
             audit_log=JsonlAuditLog(audit_log_path),
@@ -265,6 +271,11 @@ class SafeExecutor:
                     base_url=target.base_url,
                     parameters=parameters,
                     request_timeout_seconds=request_timeout,
+                    repository_path=(
+                        str(target.repository_path)
+                        if target.repository_path is not None
+                        else ""
+                    ),
                 )
             )
         except Exception as exc:

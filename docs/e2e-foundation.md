@@ -54,8 +54,10 @@ python -m app.e2e_demo \
 For the first Docker hardening candidate, index `0` is expected only if the local SAST
 report still has that finding first. Prefer `--finding-id` for a stable demo script.
 
-Until the matching verification capability and Evidence semantics are implemented, a real
-finding is expected to finish as `inconclusive`, not `confirmed`.
+The backend Docker missing-USER finding now has one matching fixed verification capability.
+Its terminal result comes from structured source Evidence, not from Executor exit code. Other
+real findings remain `inconclusive` until they receive their own capability-specific Evidence
+semantics. See `docs/security-tools.md`.
 
 ## Scoring status after v0.1 integration
 

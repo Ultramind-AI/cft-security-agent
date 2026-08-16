@@ -581,13 +581,18 @@ execute unknown tools
 bypass Validator
 ```
 
-Current implementation keeps `safe_noop` as a deterministic graph stub and adds
-two fixed local SberLab capabilities:
+Current implementation keeps `safe_noop` as a deterministic graph stub and exposes
+three fixed local SberLab capabilities:
 
 ```text
 check_sberlab_health
 get_sberlab_public_projects
+check_sberlab_backend_dockerfile_user
 ```
+
+The Dockerfile capability is a source-only verification for the first real E2E finding.
+It accepts no agent-controlled path or shell text and reads only the fixed
+`backend/Dockerfile` under the trusted operator-configured target repository root.
 
 The implementation also binds approval to a digest of the complete
 ActionProposal, checks the configured target environment and launches only the
@@ -612,7 +617,9 @@ inconclusive  -> evidence remains insufficient
 policy_blocked -> required action was denied
 ```
 
-The final Evidence criteria are owned by Рома.
+Capability-specific Evidence may carry a deterministic `verdict` plus structured details.
+For the first Dockerfile case, `confirmed` means only that the reported source condition is
+present; it does not claim that runtime UID 0 was observed.
 
 An LLM conclusion alone is not Evidence.
 
@@ -849,9 +856,9 @@ Current correct order:
 5. Review 3–5 real findings.
 6. Keep Context Priority v0.1 and CVSS applicability semantics stable.
 7. Use the backend Docker missing-user finding as the first controlled E2E candidate.
-8. Define capability-specific verification requirements and Evidence semantics for it.
-9. Add one fixed safe Executor capability if the selected check requires it.
-10. Run one end-to-end workflow to a real confirmed/rejected/inconclusive verdict.
+8. Keep the first Dockerfile capability and its source-only Evidence semantics stable.
+9. Run the backend Docker finding end-to-end to a real confirmed/rejected verdict.
+10. Derive the remaining small security-tool catalog from the other real findings.
 11. Add the real LLM adapter behind AgentReasoningModel.
 12. Update Architecture v0.3 in Miro from the working system.
 ```

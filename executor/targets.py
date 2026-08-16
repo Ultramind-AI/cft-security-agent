@@ -10,6 +10,7 @@ class TargetDefinition:
     id: str
     environment: str
     base_url: str
+    repository_path: Path | None = None
 
     def __post_init__(self) -> None:
         parsed = urlsplit(self.base_url)
@@ -17,6 +18,12 @@ class TargetDefinition:
             raise ValueError("Target base_url must be an absolute HTTP(S) URL")
         if parsed.username or parsed.password or parsed.query or parsed.fragment:
             raise ValueError("Target base_url cannot contain credentials, query, or fragment")
+        if self.repository_path is not None:
+            object.__setattr__(
+                self,
+                "repository_path",
+                Path(self.repository_path).expanduser().resolve(),
+            )
 
     def build_url(self, path: str) -> str:
         parsed_path = urlsplit(path)
@@ -45,6 +52,7 @@ class TargetRegistry:
         path: str | Path,
         *,
         base_url_override: str | None = None,
+        repository_path_override: str | Path | None = None,
     ) -> "TargetRegistry":
         data = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
         runtime = data.get("runtime", {})
@@ -53,12 +61,20 @@ class TargetRegistry:
         if not base_url:
             raise ValueError("Target runtime.base_url is required")
 
+        configured_repository = repository_path_override or data.get("repository_path")
+        repository_path = (
+            Path(configured_repository).expanduser().resolve()
+            if configured_repository
+            else None
+        )
+
         return cls(
             [
                 TargetDefinition(
                     id=str(data["id"]),
                     environment=str(data.get("environment", "unknown")),
                     base_url=str(base_url),
+                    repository_path=repository_path,
                 )
             ]
         )

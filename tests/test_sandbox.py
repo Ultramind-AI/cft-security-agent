@@ -184,3 +184,22 @@ def test_worker_never_uses_parameter_as_url(monkeypatch) -> None:
 
     assert result[0] == 2
     assert called is False
+
+
+def test_worker_dockerfile_check_never_accepts_agent_path_parameter(tmp_path) -> None:
+    dockerfile = tmp_path / "backend" / "Dockerfile"
+    dockerfile.parent.mkdir(parents=True)
+    dockerfile.write_text("FROM python:3.11-slim\n", encoding="utf-8")
+
+    result = worker._execute(
+        {
+            "tool": "check_sberlab_backend_dockerfile_user",
+            "repository_path": str(tmp_path),
+            "parameters": {"path": "../../outside"},
+            "request_timeout_seconds": 1,
+            "max_output_bytes": 1024,
+        }
+    )
+
+    assert result[0] == 2
+    assert "does not accept ActionProposal parameters" in result[2]

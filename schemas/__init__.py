@@ -4,6 +4,7 @@ from schemas.evidence import Evidence
 from schemas.execution import ExecutionResult
 from schemas.finding import Finding
 from schemas.hypothesis import Hypothesis
+from schemas.pipeline import GateResult, PipelineFindingResult
 from schemas.report import FinalReport, ReportFinding, VerificationSummary
 from schemas.scoring import ContextPriority, CVSSResult
 from schemas.security_tools import (
@@ -23,7 +24,9 @@ __all__ = [
     "ExecutionResult",
     "FinalReport",
     "Finding",
+    "GateResult",
     "Hypothesis",
+    "PipelineFindingResult",
     "PythonPasswordAssignmentCheckResult",
     "ReactDangerousHtmlFlowCheckResult",
     "ReportFinding",

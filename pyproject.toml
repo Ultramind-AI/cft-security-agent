@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cft-security-agent"
-version = "0.3.0"
+version = "0.4.0"
 description = "Contract-first starter architecture for a safe CI/CD security analysis agent."
 requires-python = ">=3.11"
 dependencies = [
@@ -13,6 +13,9 @@ dependencies = [
   "PyYAML>=6.0,<7",
   "langgraph>=0.2,<1",
 ]
+
+[project.scripts]
+cft-security-pipeline = "app.pipeline_run:main"
 
 [project.optional-dependencies]
 dev = [
@@ -35,6 +38,7 @@ target-version = "py311"
 where = ["."]
 include = [
     "app*",
+    "pipeline*",
     "agent*",
     "architecture*",
     "evidence*",

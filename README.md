@@ -370,19 +370,17 @@ main
 
 ---
 
-## Что делаем дальше
+## Текущее состояние
 
-1. Прогоняем первый реальный E2E в `CFT_AGENT_MODE=llm` через fallback adapter.
-2. Сохраняем `DeterministicAgentModel` как воспроизводимый режим для CI/tests.
-3. Расширяем capability-specific security tools только под реальные выбранные findings.
-4. Добавляем deterministic CVSS calculator после явных CVSS 4.0 metric inputs.
-5. После стабильного AI E2E синхронизируем CI/CD decision и Architecture v0.3.
+MVP уже проходит реальный end-to-end цикл с live LLM fallback, deterministic Validator,
+reusable verification capabilities, capability-specific Evidence и FinalReport v1.0.
+Следующий production-facing слой — детерминированный CI/CD gate и интеграция с target pipeline.
 
 ---
 
-## MVP готов, когда
+## MVP pipeline
 
-Один реальный finding из SberLab проходит всю цепочку:
+Реальный finding из SberLab проходит всю цепочку:
 
 ```text
 SAST
@@ -430,3 +428,43 @@ reasoning objects; target, environment, action id and iteration are assigned by
 deterministic application code, and every active action still passes through
 Validator. A model output cannot turn execution success into `confirmed`; a
 terminal finding verdict still requires matching structured Evidence.
+
+---
+
+## One-command security pipeline + CI/CD gate
+
+The current MVP can run SAST, verify **all** normalized findings, write one
+`FinalReport` JSON per finding, and aggregate them into a deterministic
+`PASS / WARN / FAIL` CI decision:
+
+```bash
+CFT_AGENT_MODE=llm CFT_LLM_TRACE=true python -m app.pipeline_run \
+  --target ../sberlab_hack \
+  --architecture targets/sberlab_architecture.yaml \
+  --output-dir artifacts/security-pipeline \
+  --max-iterations 1
+```
+
+For a faster demo that reuses the current SAST artifact:
+
+```bash
+CFT_AGENT_MODE=llm CFT_LLM_TRACE=true python -m app.pipeline_run \
+  --target ../sberlab_hack \
+  --architecture targets/sberlab_architecture.yaml \
+  --findings artifacts/sast/findings.json \
+  --output-dir artifacts/security-pipeline \
+  --max-iterations 1
+```
+
+Gate policy v1 is intentionally deterministic:
+
+- `FAIL`: confirmed HIGH/CRITICAL risk, or a mandatory pipeline stage failed;
+- `WARN`: lower-priority confirmed finding, inconclusive result, or policy block;
+- `PASS`: no warning/blocking condition remains.
+
+The LLM does **not** make the CI decision. It remains behind the same structured
+reasoning boundary, while Validator, capability-specific Evidence, FinalReport,
+and the gate determine the final result.
+
+See `docs/ci-cd.md` for exit codes, artifacts, and the GitHub Actions target-repo
+template in `examples/github-actions/sberlab-security-gate.yml`.

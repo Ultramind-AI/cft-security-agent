@@ -12,3 +12,6 @@ class ToolRegistry:
             return self._tools[name]
         except KeyError as exc:
             raise KeyError(f"Unknown tool: {name}") from exc
+
+    def names(self) -> tuple[str, ...]:
+        return tuple(sorted(self._tools))

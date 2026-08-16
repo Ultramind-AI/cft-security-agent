@@ -566,7 +566,21 @@ execute unknown tools
 bypass Validator
 ```
 
-Current `safe_noop` is a deterministic integration stub.
+Current implementation keeps `safe_noop` as a deterministic graph stub and adds
+two fixed local SberLab capabilities:
+
+```text
+check_sberlab_health
+get_sberlab_public_projects
+```
+
+The implementation also binds approval to a digest of the complete
+ActionProposal, checks the configured target environment and launches only the
+fixed `executor/worker.py` in a disposable working directory. Linux/WSL runs
+receive wall-time, CPU, memory, file-size and process-count limits. Output is
+bounded, every decision gets persistent JSON evidence and a JSONL audit event,
+and exact `action_id` replay/concurrent runs are limited. It still does not
+accept arbitrary URLs, paths or shell text from the agent.
 
 ---
 
@@ -666,8 +680,6 @@ Miro is the source of truth for current team status.
 ### Кирилл
 
 ```text
-Сделать прототип Executor
-Добавить ограничения и логирование Executor
 Набросать CI/CD интеграцию
 ```
 
@@ -767,14 +779,32 @@ python3 -m pytest -q
 Current expected result:
 
 ```text
-9 passed
+31 passed
 ```
 
 Covered behavior:
 
 ```text
 safe Executor roundtrip
+missing approval denial
+denied validation cannot create approval
+proposal mutation after approval denial
+approval/action id mismatch denial
 unknown tool denial
+production environment denial
+fixed SberLab health capability
+fixed SberLab public-projects capability
+arbitrary parameter denial
+execution evidence persistence
+separate disposable working directory
+wall timeout with process-group termination
+POSIX CPU/memory/file/process limits
+stdout/stderr/exit-code collection
+per-action and concurrent run limits
+JSONL audit logging
+agent readback of persisted evidence
+timeout recovery without pipeline failure
+repeated failure clean stop at iteration limit
 confirmed workflow
 rejected workflow
 policy_blocked workflow
@@ -804,7 +834,8 @@ Current correct order:
 5. Review 3–5 real findings.
 6. Complete CVSS/Context Priority implementation using real inputs.
 7. Select one safe demo finding.
-8. Replace starter Validator/Executor/scoring stubs with real components.
+8. Replace the remaining Validator/scoring stubs and connect the selected real
+   finding to the bounded Executor capabilities.
 9. Run one end-to-end workflow.
 10. Update Architecture v0.3 in Miro from the working system.
 ```

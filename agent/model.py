@@ -120,6 +120,27 @@ class DeterministicAgentModel:
         )
 
     def reevaluate(self, state: AgentState) -> ReevaluationResult:
+        execution = state["execution"]
+        iteration_count = int(state.get("iteration_count", 0))
+        max_iterations = int(state.get("max_iterations", 2))
+
+        if execution.status != "completed" or execution.exit_code != 0:
+            if iteration_count >= max_iterations:
+                return ReevaluationResult(
+                    status="inconclusive",
+                    explanation="Approved verification did not complete successfully.",
+                )
+            return ReevaluationResult(
+                status="continue",
+                explanation="Execution failed; another controlled iteration is allowed.",
+            )
+
+        if state["proposed_action"].tool != "safe_noop":
+            return ReevaluationResult(
+                status="confirmed",
+                explanation="A predefined safe capability completed successfully.",
+            )
+
         outcome = str(
             state["proposed_action"].parameters.get(
                 "test_outcome",
@@ -138,9 +159,6 @@ class DeterministicAgentModel:
                 status="rejected",
                 explanation="Controlled evidence rejected the hypothesis.",
             )
-
-        iteration_count = int(state.get("iteration_count", 0))
-        max_iterations = int(state.get("max_iterations", 2))
 
         if iteration_count >= max_iterations:
             return ReevaluationResult(

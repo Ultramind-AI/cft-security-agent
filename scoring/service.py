@@ -1,6 +1,6 @@
 from schemas.architecture import ArchitectureContext
 from schemas.finding import Finding
-from schemas.scoring import CVSSResult, ContextPriority
+from schemas.scoring import ContextPriority, CVSSResult
 
 
 class ScoringService:

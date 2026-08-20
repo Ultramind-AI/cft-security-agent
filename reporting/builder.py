@@ -53,6 +53,7 @@ _VERIFICATION_LIMITATIONS = {
 
 
 def build_final_report(state: AgentState) -> FinalReport:
+    # В отчет попадает только терминальный статус, промежуточное состояние не должно выглядеть вердиктом
     status = str(state.get("status", "inconclusive"))
     if status not in _ALLOWED_STATUSES:
         status = "inconclusive"
@@ -120,6 +121,7 @@ def _decision_basis(state: AgentState, status: str) -> str:
         return "validator_policy"
 
     evidence = list(state.get("evidence", []))
+    # Терминальный Evidence > интерпретация LLM
     if status in {"confirmed", "rejected"} and any(
         item.verdict == status for item in evidence
     ):

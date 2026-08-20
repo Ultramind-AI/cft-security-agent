@@ -19,7 +19,7 @@ _BASIS_LABELS = {
 
 
 def render_final_report(report: FinalReport) -> str:
-    """Render the stable FinalReport schema as a compact demo-friendly text report."""
+    """Отобразить стабильную схему FinalReport в компактном удобном для демо текстовом отчете."""
     finding = report.finding
     line = finding.line_start if finding.line_start is not None else "?"
     severity = finding.severity or "unknown"

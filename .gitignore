@@ -8,3 +8,5 @@ artifacts/
 executor_data/
 .DS_Store
 .idea/
+.codex/
+.agents/

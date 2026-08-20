@@ -81,6 +81,7 @@ def main() -> int:
     print(f"Agent mode: {settings.agent_mode}")
 
     stage_errors: list[str] = []
+    # Без списка финдингов дальше проверять нечего, сразу возвращаем фейл гейт
     try:
         findings_path = _resolve_findings(
             existing_findings=args.findings,
@@ -130,7 +131,8 @@ def main() -> int:
             if args.full_reports:
                 print()
                 print(render_final_report(report))
-        except Exception as exc:  # noqa: BLE001 - stage boundary must become a gate failure
+        # Падение одного финдинга не прячет остальные, но гейт это обязательно увидит
+        except Exception as exc:  # noqa: BLE001 - граница этапа должна стать ошибкой гейта
             message = f"{finding.id}: {type(exc).__name__}: {exc}"
             stage_errors.append(message)
             print(f"  ERROR: {message}")

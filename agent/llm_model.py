@@ -18,7 +18,7 @@ from schemas.state import AgentState
 
 
 class FallbackLLMAgentModel:
-    """Real LLM reasoning adapter behind the existing AgentReasoningModel boundary."""
+    """Адаптер рассуждений LLM с резервированием за существующей границей AgentReasoningModel."""
 
     def __init__(self, client: ProviderFailoverClient) -> None:
         self.client = client
@@ -136,7 +136,7 @@ class FallbackLLMAgentModel:
             operation="reevaluate",
         )
 
-        # Final safety guard: an LLM conclusion is not Evidence.
+        # Последняя защитная проверка: вывод LLM не является Evidence
         if result.status in {"confirmed", "rejected"}:
             iteration_count = int(state.get("iteration_count", 0))
             max_iterations = int(state.get("max_iterations", 2))
@@ -248,9 +248,8 @@ def _react_html_flow_parameters() -> dict[str, str]:
 
 
 def _sanitize_action_parameters(choice, state: AgentState) -> dict[str, object]:
-    # The model may select only an allowlisted capability. Security-sensitive
-    # parameters are reconstructed from finding/target mappings, never trusted
-    # from model output.
+    # Модель может выбрать только возможность из списка разрешений; чувствительные параметры
+    # восстанавливаются из находки и таргета, а не принимаются из вывода модели
     if choice.tool == "inspect_dockerfile_user":
         return _dockerfile_user_parameters(state)
     if choice.tool == "inspect_python_password_assignment":
@@ -284,6 +283,7 @@ def _evidence_guard(state: AgentState) -> ReevaluationResult | None:
         for item in state.get("evidence", [])
         if item.action_id == action.id and item.verdict is not None
     ]
+    # Терминальный verdict допускается только от Evidence этой ActionProposal
     if matching:
         verdict = matching[-1].verdict
         if verdict in {"confirmed", "rejected"}:
@@ -311,7 +311,7 @@ def _dump_model(value: Any) -> Any:
 
 
 def _build_action_id(finding_id: str, iteration: int) -> str:
-    # Import here avoids making the LLM transport depend on deterministic model internals.
+    # Локальный импорт не связывает LLM-транспорт с деталями детерминированной модели
     from agent.model import _build_action_id as build_action_id
 
     return build_action_id(finding_id, iteration)

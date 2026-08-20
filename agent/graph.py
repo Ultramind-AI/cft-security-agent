@@ -18,11 +18,13 @@ from schemas.state import AgentState
 def _after_validation(state: AgentState) -> str:
     if state["validation"].approved:
         return "execute"
+    # Отказ валидатора завершает ветку: обход политики не предусмотрен
     return "report"
 
 
 def _after_reevaluation(state: AgentState) -> str:
     if state.get("status") == "continue":
+        # Повторный круг всегда остается под общим лимитом итераций
         return "analyse"
     return "report"
 

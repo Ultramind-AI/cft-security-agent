@@ -61,7 +61,7 @@ class Sandbox(Protocol):
 
 
 class RunLimiter:
-    """Bound starts and parallel executions for one trusted process."""
+    """Ограничивает запуски и параллельное выполнение в одном доверенном процессе."""
 
     _shared: ClassVar[dict[tuple[str, int, int], "RunLimiter"]] = {}
     _shared_lock: ClassVar[threading.Lock] = threading.Lock()
@@ -122,7 +122,7 @@ class RunLimiter:
 
 
 class ProcessSandbox:
-    """Run the fixed executor worker with bounded OS resources and no shell."""
+    """Запускает фиксированный worker Executor с ограниченными ресурсами ОС и без shell."""
 
     def __init__(
         self,
@@ -171,6 +171,7 @@ class ProcessSandbox:
                 with stdout_path.open("wb") as stdout_file, stderr_path.open(
                     "wb"
                 ) as stderr_file:
+                    # Worker запускается фиксированным argv; shell и произвольная команда запрещены
                     process = subprocess.Popen(
                         [self.python_executable, str(self.worker_path)],
                         cwd=workspace,
@@ -180,7 +181,7 @@ class ProcessSandbox:
                         stderr=stderr_file,
                         shell=False,
                         start_new_session=os.name == "posix",
-                        preexec_fn=(  # noqa: PLW1509 - POSIX sandbox limits.
+                        preexec_fn=(  # noqa: PLW1509 - ограничения песочницы POSIX
                             _resource_limiter(self.limits)
                             if os.name == "posix"
                             else None
@@ -255,13 +256,13 @@ def _resource_limiter(limits: SandboxLimits):
     def apply_limits() -> None:
         import resource
 
+        # POSIX-лимиты сужают последствия сбоя worker, но не заменяют полноценную изоляцию
         os.umask(0o077)
         cpu_limit = max(1, math.ceil(limits.cpu_time_seconds))
         resource.setrlimit(resource.RLIMIT_CPU, (cpu_limit, cpu_limit))
-        # macOS exposes RLIMIT_AS, but lowering it for a fresh Python child can
-        # fail during subprocess pre-exec with ``ValueError: current limit exceeds
-        # maximum limit``. Keep the address-space limit on Linux/other supported
-        # POSIX platforms, and rely on the remaining sandbox controls on Darwin.
+        # macOS предоставляет RLIMIT_AS, но снижение лимита для нового Python-процесса
+        # может упасть с ValueError до запуска; на Linux и поддерживаемых POSIX-платформах лимит
+        # сохраняется, а в Darwin используются остальные ограничения песочницы
         if sys.platform != "darwin" and hasattr(resource, "RLIMIT_AS"):
             resource.setrlimit(
                 resource.RLIMIT_AS,

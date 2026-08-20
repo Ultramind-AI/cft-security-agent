@@ -23,7 +23,7 @@ class InMemoryEvidenceStore:
 
 
 class JsonExecutionEvidenceStore:
-    """Persist executor evidence outside disposable sandbox workspaces."""
+    """Сохраняет Evidence Executor вне временных рабочих каталогов песочницы."""
 
     def __init__(self, directory: str | Path) -> None:
         self.directory = Path(directory).resolve()
@@ -40,6 +40,7 @@ class JsonExecutionEvidenceStore:
             "created_at": datetime.now(UTC).isoformat(),
             **record,
         }
+        # Источник истины - отдельный закрытый файл, не рабочая папка
         descriptor = os.open(
             temporary,
             os.O_CREAT | os.O_TRUNC | os.O_WRONLY,

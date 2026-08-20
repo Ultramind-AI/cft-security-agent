@@ -12,7 +12,7 @@ from schemas.finding import Finding
 
 
 class SemgrepError(RuntimeError):
-    """Raised when the local Semgrep scan cannot be started or completed."""
+    """Ошибка, когда локальный скан Semgrep не удалось запустить или завершить."""
 
 
 @dataclass(frozen=True)
@@ -30,10 +30,10 @@ def run_semgrep_scan(
     config: str = "auto",
     timeout_seconds: int = 600,
 ) -> SemgrepScanResult:
-    """Run a read-only Semgrep SAST scan against a local source tree.
+    """Запустить скан SAST Semgrep только для чтения по локальному дереву исходников.
 
-    The target is used only as the process working directory. No application
-    server is started and no network request is sent to the target by this code.
+    Таргет используется только как рабочий каталог процесса. Сервер приложения не
+    запускается, и этот код не отправляет сетевые запросы к таргету.
     """
     target_path = Path(target).expanduser().resolve()
     if not target_path.is_dir():
@@ -63,6 +63,7 @@ def run_semgrep_scan(
         ".",
     ]
 
+    # SAST запускается только для чтения в каталоге таргета
     try:
         completed = subprocess.run(
             command,

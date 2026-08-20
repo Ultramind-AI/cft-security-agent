@@ -2,7 +2,7 @@ from __future__ import annotations
 
 
 def format_evidence_scope(details: dict[str, object]) -> str | None:
-    """Return a compact human-readable scope line for structured Evidence."""
+    """Возвращает компактную строку области для структурированного Evidence."""
     raw_scope = details.get("scope")
     if raw_scope is None:
         return None

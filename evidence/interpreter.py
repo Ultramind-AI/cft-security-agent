@@ -38,7 +38,7 @@ def build_evidence(
     evidence_loaded: bool,
     artifact_refs: list[str],
 ) -> Evidence:
-    """Convert persisted Executor output into capability-aware Evidence."""
+    """Преобразует сохраненный результат Executor в Evidence с учетом capability."""
     specialized = _SPECIALIZED_RESULTS.get(action.tool)
     if specialized is not None:
         evidence = _structured_capability_evidence(

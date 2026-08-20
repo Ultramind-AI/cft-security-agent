@@ -14,6 +14,7 @@ class ArchitectureService:
         services = self.data.get("services", {})
         node = services.get(service, {})
 
+        # Связи и критические пути берем только из явного connects_to графа
         connected = list(node.get("connects_to", []))
 
         databases = [

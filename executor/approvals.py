@@ -7,7 +7,8 @@ from schemas.validation import ValidationResult
 
 
 def proposal_digest(action: ActionProposal) -> str:
-    """Return a stable digest that binds approval to the complete proposal."""
+    """Возвращает стабильный хеш, связывающий одобрение со всем предложением."""
+    # Digest связывает одобрение со всеми полями предложения, включая параметры
     payload = action.model_dump(mode="json")
     encoded = json.dumps(
         payload,
@@ -27,7 +28,7 @@ class ApprovalRecord:
 
 
 class InMemoryApprovalStore:
-    """Trusted in-process approval store for the executor prototype."""
+    """Доверенное хранилище одобрений в процессе для прототипа Executor."""
 
     def __init__(self) -> None:
         self._records: dict[str, ApprovalRecord] = {}

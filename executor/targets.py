@@ -17,6 +17,7 @@ class TargetArtifactDefinition:
         relative_path = self.relative_path.replace("\\", "/").strip()
         path = PurePosixPath(relative_path)
 
+        # Путь артефакта принадлежит профилю цели, а не агенту
         if not artifact_id or any(char.isspace() for char in artifact_id):
             raise ValueError("Target artifact id must be a non-empty token")
         if not kind:
@@ -59,6 +60,7 @@ class TargetDefinition:
             raise ValueError("Target artifact mapping key must match artifact id")
 
     def build_url(self, path: str) -> str:
+        # Capability получает только фиксированный endpoint без URL-компонентов
         parsed_path = urlsplit(path)
         if (
             not path.startswith("/")

@@ -154,6 +154,7 @@ def collect_evidence(state: AgentState) -> dict:
     action = state["proposed_action"]
     evidence = list(state.get("evidence", []))
 
+    # Источник истины после песочницы - сохраненная запись, а не объект в памяти
     artifact_refs = list(execution.artifacts)
     if execution.evidence_ref not in artifact_refs:
         artifact_refs.append(execution.evidence_ref)

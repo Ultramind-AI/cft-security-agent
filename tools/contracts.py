@@ -76,6 +76,7 @@ class VerificationRequestInput(BaseModel):
     action: ActionProposal
 
 
+# Запрос проверки только передает proposal в Validator; прямого выполнения здесь нет
 class VerificationRequestResult(BaseModel):
     action: ActionProposal
     requires_validator: bool = True
@@ -87,6 +88,7 @@ class EvidenceLookupInput(BaseModel):
 
 @dataclass(frozen=True, slots=True)
 class ToolContract:
+    # Контракт фиксирует границу capability для runtime-диспетчера и модели
     name: str
     purpose: str
     access: ToolAccess

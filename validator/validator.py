@@ -12,7 +12,7 @@ _SUPPORTED_POLICY_VERSIONS = {1}
 
 
 class PolicyValidator:
-    """Deterministic policy gate between Agent and Executor."""
+    """Детерминированный шлюз политики между Agent и Executor."""
 
     def __init__(
         self,
@@ -88,6 +88,7 @@ class PolicyValidator:
             )
         rules.append("environment_allowed")
 
+        # Среда сверяется с профилем цели, чтобы policy не была единственным источником доверия
         expected_environment = self.target_environments.get(action.target)
         if (
             expected_environment is not None
@@ -157,6 +158,7 @@ class PolicyValidator:
             ]
         )
 
+        # Без обязательного аудита одобрение не считается допустимым
         if self.policy.get("logging", {}).get("required") is not True:
             return self._deny(
                 action,

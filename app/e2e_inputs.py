@@ -32,6 +32,7 @@ def build_real_initial_state(
             f"Finding {finding.id} has no service, architecture context cannot be resolved"
         )
 
+    # Состояние собираем из реального таргета, чтобы агент не дорисовывал контекст
     code = LocalCodeReader(target_root).read_code(
         finding.file,
         finding.line_start,

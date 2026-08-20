@@ -1,4 +1,4 @@
-"""Fixed capability worker. It is intentionally not a command interpreter."""
+"""Фиксированный worker для capability, не являющийся интерпретатором команд."""
 
 import ast
 import json

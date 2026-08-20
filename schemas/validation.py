@@ -2,6 +2,7 @@ from pydantic import BaseModel, Field
 
 
 class ValidationResult(BaseModel):
+    # Одобрение означает прохождение политики, а не факт выполнения
     approved: bool
     action_id: str
     reason: str

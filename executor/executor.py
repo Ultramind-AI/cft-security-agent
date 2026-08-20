@@ -42,7 +42,7 @@ def _bounded(text: str, limit: int) -> str:
 
 
 class SafeExecutor:
-    """Execute approved capabilities inside a bounded process sandbox."""
+    """Выполняет одобренные capability в ограниченной песочнице процесса."""
 
     def __init__(
         self,
@@ -222,6 +222,7 @@ class SafeExecutor:
                 decision_reason=reason,
             )
 
+        # Реестр capability исключает произвольный запуск по имени из предложения
         try:
             handler = cast(CapabilityHandler, self._registry.get(action.tool))
         except KeyError:

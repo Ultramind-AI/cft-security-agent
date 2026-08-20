@@ -10,25 +10,25 @@ class _LLMActionFields(BaseModel):
 
 
 class LLMDockerfileUserActionChoice(_LLMActionFields):
-    """Only valid live-LLM action for a Dockerfile missing/root USER finding."""
+    """Единственное допустимое действие живого LLM для находки о пропущенном или root USER в Dockerfile."""
 
     tool: Literal["inspect_dockerfile_user"]
 
 
 class LLMPythonPasswordActionChoice(_LLMActionFields):
-    """Only valid live-LLM action for the unvalidated password-assignment finding."""
+    """Единственное допустимое действие живого LLM для находки о присвоении пароля без валидации."""
 
     tool: Literal["inspect_python_password_assignment"]
 
 
 class LLMReactHtmlFlowActionChoice(_LLMActionFields):
-    """Only valid live-LLM action for the React dangerous HTML finding."""
+    """Единственное допустимое действие живого LLM для находки об опасном HTML в React."""
 
     tool: Literal["inspect_react_dangerous_html_flow"]
 
 
 class LLMGeneralActionChoice(_LLMActionFields):
-    """Current generic non-shell capabilities exposed to live LLM reasoning."""
+    """Текущие общие возможности без shell, доступные для рассуждений живого LLM."""
 
     tool: Literal[
         "check_sberlab_health",

@@ -4,7 +4,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class DockerfileUserCheckResult(BaseModel):
-    """Structured source evidence for a trusted Dockerfile artifact."""
+    """Структурированное доказательство по исходному коду доверенного Dockerfile."""
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -26,7 +26,7 @@ class DockerfileUserCheckResult(BaseModel):
 
 
 class PythonPasswordAssignmentCheckResult(BaseModel):
-    """Structured source evidence for Python password-assignment handling."""
+    """Структурированное доказательство обработки присваивания пароля в Python."""
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -48,7 +48,7 @@ class PythonPasswordAssignmentCheckResult(BaseModel):
 
 
 class ReactDangerousHtmlFlowCheckResult(BaseModel):
-    """Bounded static source-flow evidence for a React dangerous HTML sink."""
+    """Ограниченное статическое доказательство потока к опасному HTML sink в React."""
 
     model_config = ConfigDict(populate_by_name=True)
 

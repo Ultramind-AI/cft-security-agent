@@ -10,10 +10,10 @@ from schemas.state import AgentState
 
 class AgentReasoningModel(Protocol):
     """
-    Boundary between LangGraph nodes and the reasoning implementation.
+    Граница между узлами LangGraph и реализацией рассуждений.
 
-    A future real LLM adapter should implement exactly this interface and return
-    the existing structured project schemas.
+    Будущий настоящий адаптер LLM должен реализовывать именно этот интерфейс и
+    возвращать существующие структурированные схемы проекта.
     """
 
     def analyse(self, state: AgentState) -> AnalysisResult: ...
@@ -36,9 +36,9 @@ class AgentReasoningModel(Protocol):
 
 class DeterministicAgentModel:
     """
-    Test implementation used until a real LLM provider is connected.
+    Тестовая реализация до подключения настоящего провайдера LLM.
 
-    It contains no external calls and keeps integration tests deterministic.
+    Она не делает внешних вызовов и сохраняет детерминированность интеграционных тестов.
     """
 
     def analyse(self, state: AgentState) -> AnalysisResult:
@@ -177,6 +177,7 @@ class DeterministicAgentModel:
 
         if state["proposed_action"].tool != "safe_noop":
             current_action_id = state["proposed_action"].id
+            # Для реальных возможностей успех запуска еще не является вердиктом
             capability_evidence = [
                 item
                 for item in state.get("evidence", [])
@@ -244,10 +245,10 @@ class DeterministicAgentModel:
 
 def get_agent_model() -> AgentReasoningModel:
     """
-    Central model factory.
+    Центральная фабрика моделей.
 
-    LangGraph nodes depend only on AgentReasoningModel. When the team connects a
-    real provider, add an adapter here without rewriting graph topology.
+    Узлы LangGraph зависят только от AgentReasoningModel. После подключения настоящего
+    провайдера адаптер можно добавить сюда без переписывания топологии графа.
     """
     if settings.agent_mode == "stub":
         return DeterministicAgentModel()
@@ -261,10 +262,10 @@ def get_agent_model() -> AgentReasoningModel:
 
 
 def _build_action_id(finding_id: str, iteration: int) -> str:
-    """Build a Validator-safe, human-readable action id from an arbitrary finding id."""
+    """Создать безопасный для валидатора понятный идентификатор действия из произвольного идентификатора находки."""
     normalized = re.sub(r"[^A-Za-z0-9._:-]+", "-", finding_id).strip("-")
     normalized = normalized or "finding"
-    # Keep room for the action prefix, iteration suffix and separators.
+    # Оставляем место для префикса действия, суффикса итерации и разделителей
     normalized = normalized[:96]
     return f"action-{normalized}-{iteration}"
 
@@ -278,8 +279,8 @@ def _requested_test_outcome(state: AgentState) -> str:
         "TEST_INCONCLUSIVE": "inconclusive",
     }
 
-    # Real SAST severity is not a verification verdict. Only synthetic TEST_*
-    # severities may drive the safe_noop integration fixture.
+    # Серьезность реального SAST не является вердиктом проверки; только синтетические TEST_*
+    # значения серьезности могут управлять тестовым safe_noop
     return mapping.get(severity, "inconclusive")
 
 

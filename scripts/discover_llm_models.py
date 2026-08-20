@@ -1,17 +1,13 @@
-"""
-Discover LLM models visible to the current API accounts.
+"""Показывает LLM-модели, доступные текущим API аккаунтам
 
-Important:
-- API keys are read from environment variables or a local .env file.
-- Keys are never printed.
-- By default this script only LISTS models. It does not send inference requests.
-- "free_status" is exact only where the provider exposes enough metadata.
-  Otherwise the script reports "account_accessible" / "unknown" instead of guessing.
+API keys берем из environment variables или .env и никогда не печатаем
+По умолчанию только LISTS модели, inference requests не отправляет
+free_status точен только при достаточных metadata, иначе возвращаем account_accessible или unknown
 
-Supported providers:
+Поддерживаемые провайдеры:
   groq, zai, mistral, gemini, openrouter, nvidia, cloudflare
 
-Example:
+Пример:
   python scripts/discover_llm_models.py --env .env
   python scripts/discover_llm_models.py --env .env --json artifacts/llm-models.json
   python scripts/discover_llm_models.py --env .env --provider groq openrouter gemini
@@ -32,18 +28,16 @@ from typing import Any
 
 TIMEOUT_SECONDS = 20
 
-# Cloudflare's pricing docs currently call these paid-plan-only.
-# Keep this intentionally tiny and visible instead of pretending the catalog
-# gives a perfect machine-readable free/paid flag.
+# Документация Cloudflare относит их только к paid plan
+# Список короткий и явный: каталог не дает надежный free/paid флаг
 CLOUDFLARE_KNOWN_PAID_ONLY = {
     "@cf/moonshotai/kimi-k2.6",
     "@cf/moonshotai/kimi-k2.7-code",
     "@cf/zai-org/glm-5.2",
 }
 
-# Official Z.AI chat-completion docs list these model IDs. This is only used
-# when a /models endpoint is not available. These are NOT automatically marked
-# free because plan eligibility is account-specific.
+# Это IDs из документации Z.AI, fallback если нет /models endpoint
+# Не считаем их free автоматически: доступ зависит от аккаунта
 ZAI_DOCUMENTED_CHAT_MODELS = [
     "glm-5.1",
     "glm-5-turbo",
@@ -83,7 +77,7 @@ class ProviderResult:
 
 
 def load_dotenv(path: Path) -> None:
-    """Small .env reader so the script has no external dependency."""
+    """Читает .env без внешней зависимости"""
     if not path.exists():
         return
 
@@ -99,7 +93,7 @@ def load_dotenv(path: Path) -> None:
         if value and value[0] in {"'", '"'} and value[-1:] == value[0]:
             value = value[1:-1]
 
-        # Do not overwrite variables explicitly exported by the shell.
+        # Явно переданные shell-переменные не перетираем
         os.environ.setdefault(key, value)
 
 
@@ -124,7 +118,7 @@ def request_json(
             return json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         body = exc.read().decode("utf-8", errors="replace")
-        # Never include request headers or credentials in errors.
+        # В ошибки не должны попасть headers и credentials
         compact = " ".join(body.split())
         if len(compact) > 350:
             compact = compact[:347] + "..."
@@ -355,8 +349,7 @@ def list_zai() -> ProviderResult:
     else:
         api_error = "empty /models response"
 
-    # Graceful fallback: useful for Z.AI keys whose endpoint does not implement
-    # OpenAI-style model listing.
+    # Fallback для Z.AI, если endpoint не умеет OpenAI-style список моделей
     models = [
         ModelInfo(
             provider=provider,
@@ -441,7 +434,7 @@ def list_cloudflare() -> ProviderResult:
                     )
                 )
 
-            # Cloudflare pagination metadata has varied across API wrappers.
+            # Pagination Cloudflare отличается между API wrappers
             result_info = payload.get("result_info") or {}
             total_pages = _int_or_none(result_info.get("total_pages"))
             if total_pages is not None and page >= total_pages:
@@ -456,8 +449,7 @@ def list_cloudflare() -> ProviderResult:
 
 
 def _openrouter_pricing_is_free(pricing: dict[str, Any]) -> bool:
-    # For our text-agent use case, prompt/completion/request are the important
-    # billable dimensions. Missing values are not treated as zero.
+    # Для text-agent важны prompt/completion/request, пропуски не считаем нулем
     wanted = ("prompt", "completion", "request")
     values = []
     for key in wanted:

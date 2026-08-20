@@ -16,18 +16,19 @@ def evaluate_gate(
     stage_errors: list[str] | None = None,
     report_paths: dict[str, str] | None = None,
 ) -> GateResult:
-    """Convert terminal reports into one deterministic CI/CD decision.
+    """Преобразовать итоговые отчеты в одно детерминированное решение CI/CD.
 
-    Policy v1:
-    - FAIL: a mandatory stage failed, or a confirmed finding is HIGH/CRITICAL by
-      CVSS or contextual priority.
-    - WARN: a confirmed lower-priority finding, inconclusive result, or policy block.
-    - PASS: no blocking/warning condition remains (for example, no findings or all
-      investigated findings were rejected).
+    Политика v1:
+    - FAIL: обязательный этап завершился с ошибкой или подтвержденная находка имеет
+      HIGH/CRITICAL по CVSS или контекстному приоритету
+    - WARN: подтвержденная находка с более низким приоритетом, неопределенный результат
+      или блокировка политики
+    - PASS: предупреждений и блокирующих условий нет (например, находок нет или все
+      проверенные находки отклонены)
 
-    WARN intentionally exits with code 0 so a pipeline may remain non-blocking while
-    still surfacing review-required results. FAIL exits with code 1. Internal stage
-    failures use code 2.
+    WARN намеренно завершается с кодом 0, чтобы пайплайн мог остаться неблокирующим и
+    при этом показать результаты для проверки. FAIL завершается с кодом 1. Внутренние
+    ошибки этапов используют код 2.
     """
 
     errors = list(stage_errors or [])
@@ -36,6 +37,7 @@ def evaluate_gate(
         _classify_report(report, report_path=paths.get(report.finding_id)) for report in reports
     ]
 
+    # Ошибка пайплайна и риск финдинга - разные причины отказа, но обе блокируют CI
     if errors:
         decision = "fail"
         exit_code = 2

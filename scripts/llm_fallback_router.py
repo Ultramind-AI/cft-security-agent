@@ -1,23 +1,17 @@
-"""
-Failover router / probe for CFT Security Agent LLM providers.
+"""Проверяет fallback-цепочку LLM провайдеров для CFT Security Agent
 
-Reads credentials from a local .env or environment variables.
-Never prints API keys.
+Берет credentials из локального .env или environment variables
+Никогда не печатает API keys
 
-The route order is intentionally provider-diversified: we try one strong model
-from each provider before degrading to second-choice models. This is better for
-demo reliability than burning through several models on one provider during a
-provider-wide outage or quota event.
+Сначала пробуем сильную модель каждого провайдера, потом фоллбечим на следующие
+Так демо не упирается в outage или quota одного провайдера
 
-Usage:
+Запуск:
   python scripts/llm_fallback_router.py --env .env --probe-all
   python scripts/llm_fallback_router.py --env .env --prompt "Return JSON with keys status and note"
   python scripts/llm_fallback_router.py --env .env --show-routes
 
-Exit code:
-  0 = at least one route produced valid JSON
-  2 = every configured route failed
-"""
+Exit code: 0 - хотя бы один route вернул valid JSON, 2 - все route упали"""
 
 from __future__ import annotations
 
@@ -36,11 +30,11 @@ from typing import Any
 TIMEOUT_SECONDS = 25
 MAX_OUTPUT_TOKENS = 350
 
-# Operational ranking for THIS project, not a universal benchmark ranking.
-# Wave 1: strongest practical candidate per provider.
-# Wave 2+: degrade while preserving provider diversity.
+# Ранжирование только для этого проекта, не универсальный benchmark
+# Волна 1: самый сильный практичный вариант у каждого провайдера
+# Волны 2+: деградируем, но сохраняем diversity провайдеров
 ROUTES = [
-    # Wave 1
+    # Волна 1
     ("groq", "openai/gpt-oss-120b", "GROQ_API_KEY", "openai"),
     ("zai", "glm-5.3", "ZAI_API_KEY", "openai"),
     ("mistral", "mistral-large-latest", "MISTRAL_API_KEY", "openai"),
@@ -49,7 +43,7 @@ ROUTES = [
     ("cloudflare", "@cf/openai/gpt-oss-120b", "CLOUDFLARE_API_TOKEN", "cloudflare"),
     ("openrouter", "nvidia/nemotron-3-super-120b-a12b:free", "OPENROUTER_API_KEY", "openai"),
 
-    # Wave 2
+    # Волна 2
     ("groq", "qwen/qwen3.6-27b", "GROQ_API_KEY", "openai"),
     ("zai", "glm-5.2", "ZAI_API_KEY", "openai"),
     ("mistral", "mistral-medium-2604", "MISTRAL_API_KEY", "openai"),
@@ -58,7 +52,7 @@ ROUTES = [
     ("cloudflare", "@cf/nvidia/nemotron-3-120b-a12b", "CLOUDFLARE_API_TOKEN", "cloudflare"),
     ("openrouter", "google/gemma-4-31b-it:free", "OPENROUTER_API_KEY", "openai"),
 
-    # Wave 3
+    # Волна 3
     ("groq", "openai/gpt-oss-20b", "GROQ_API_KEY", "openai"),
     ("zai", "glm-5.1", "ZAI_API_KEY", "openai"),
     ("mistral", "devstral-medium-latest", "MISTRAL_API_KEY", "openai"),
@@ -67,7 +61,7 @@ ROUTES = [
     ("cloudflare", "@cf/qwen/qwen3-30b-a3b-fp8", "CLOUDFLARE_API_TOKEN", "cloudflare"),
     ("openrouter", "openai/gpt-oss-20b:free", "OPENROUTER_API_KEY", "openai"),
 
-    # Final lightweight fallbacks
+    # Последние легкие fallback
     ("groq", "llama-3.1-8b-instant", "GROQ_API_KEY", "openai"),
     ("mistral", "mistral-small-latest", "MISTRAL_API_KEY", "openai"),
     ("gemini", "gemini-2.5-flash-lite", "GEMINI_API_KEY", "gemini"),
@@ -164,7 +158,7 @@ def call_openai_compatible(route: Route, system: str, prompt: str) -> str:
     url = f"{base}/chat/completions"
     headers = {"Authorization": f"Bearer {key}"}
 
-    # Helpful OpenRouter attribution headers. They are not secrets.
+    # Заголовки атрибуции OpenRouter, это не секреты
     if route.provider == "openrouter":
         headers["HTTP-Referer"] = "https://github.com/Ultramind-AI/cft-security-agent"
         headers["X-Title"] = "CFT Security Agent"
@@ -180,9 +174,8 @@ def call_openai_compatible(route: Route, system: str, prompt: str) -> str:
         "stream": False,
     }
 
-    # JSON object mode is widely accepted and less brittle across providers than
-    # provider-specific JSON Schema dialects. The project layer should still
-    # validate the returned object with Pydantic before trusting it.
+    # JSON object mode работает у большинства провайдеров и менее хрупкий
+    # Pydantic все равно валидирует ответ, прежде чем ему доверять
     payload["response_format"] = {"type": "json_object"}
 
     result = post_json(url, payload, headers=headers)
@@ -297,7 +290,7 @@ def extract_json(text: str) -> dict[str, Any]:
 
 
 def classify_error(message: str) -> tuple[str, bool]:
-    """Return (status, block_provider_for_this_run)."""
+    """Возвращает status и признак блокировки провайдера до конца запуска"""
     lower = message.lower()
     if "http 429" in lower:
         return "rate_limited", True

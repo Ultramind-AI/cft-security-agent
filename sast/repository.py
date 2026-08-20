@@ -9,7 +9,7 @@ from schemas.finding import Finding
 
 
 class JsonFindingRepository:
-    """Read normalized SAST findings produced by app.sast_scan."""
+    """Прочитать нормализованные SAST-находки, созданные app.sast_scan."""
 
     def __init__(self, path: str | Path):
         self.path = Path(path)
@@ -25,6 +25,7 @@ class JsonFindingRepository:
         if not isinstance(payload, list):
             raise TypeError("Normalized findings JSON must contain a list")
 
+        # Граница репозитория принимает только уже нормализованный массив Finding
         try:
             return [Finding.model_validate(item) for item in payload]
         except ValidationError as exc:

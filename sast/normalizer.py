@@ -4,7 +4,7 @@ from schemas.finding import Finding
 
 
 def _infer_service(path: str) -> str | None:
-    """Map a repository path to the coarse SberLab component used by the MVP."""
+    """Сопоставить путь репозитория с укрупненным компонентом SberLab для MVP."""
     normalized = path.replace("\\", "/").lstrip("./")
     parts = PurePosixPath(normalized).parts
     if not parts:
@@ -24,6 +24,7 @@ def normalize_semgrep_result(raw: dict) -> Finding:
     check_id = str(raw.get("check_id", "unknown"))
     path = str(raw.get("path", ""))
     line_start = start.get("line")
+    # Идентификатор связывает правило с конкретным местом и переживает повторный импорт
     stable_location = line_start if line_start is not None else 0
 
     message = str(extra.get("message", ""))

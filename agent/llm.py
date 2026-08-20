@@ -29,8 +29,6 @@ DEFAULT_ROUTE_SPECS: tuple[str, ...] = (
     "groq:llama-3.1-8b-instant",
     "mistral:mistral-small-latest",
     "cloudflare:@cf/zai-org/glm-4.7-flash",
-    # These were rate-limited during the latest probe, but remain useful as
-    # late fallbacks when their free quota is available again.
     "zai:glm-5.3",
     "gemini:gemini-3.1-pro-preview",
 )
@@ -121,8 +119,6 @@ def parse_route_specs(specs: str | None) -> tuple[LLMRoute, ...]:
 
 
 class ProviderFailoverClient:
-    """Small multi-provider JSON client with schema validation and failover."""
-
     def __init__(
         self,
         *,
@@ -168,6 +164,7 @@ class ProviderFailoverClient:
         for route in self.routes:
             if route.provider in blocked_providers:
                 continue
+            # Маршрут без секрета пропускается без сетевой попытки
             if not self._credential(route.key_env):
                 continue
             if route.provider == "cloudflare" and not self._credential(
@@ -202,6 +199,7 @@ class ProviderFailoverClient:
                 )
                 self._trace(operation, route, elapsed, status)
                 if block_provider:
+                    # Ошибка доступа или лимита блокирует провайдера до конца запроса
                     blocked_providers.add(route.provider)
 
         attempted = ", ".join(item.route for item in self.last_attempts) or "no configured route"

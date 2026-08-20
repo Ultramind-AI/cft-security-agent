@@ -5,7 +5,7 @@ from threading import Lock
 
 
 class JsonlAuditLog:
-    """Append one compact immutable event for every executor decision."""
+    """Добавляет одно компактное неизменяемое событие для каждого решения Executor."""
 
     def __init__(self, path: str | Path) -> None:
         self.path = Path(path).resolve()
@@ -17,6 +17,7 @@ class JsonlAuditLog:
             json.dumps(event, ensure_ascii=False, separators=(",", ":")) + "\n"
         ).encode("utf-8")
         with self._lock:
+            # Аудит отделен от потенциально большого stdout/stderr и хранит только решение
             descriptor = os.open(
                 self.path,
                 os.O_APPEND | os.O_CREAT | os.O_WRONLY,

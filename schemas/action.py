@@ -2,6 +2,7 @@ from pydantic import BaseModel, Field
 
 
 class ActionProposal(BaseModel):
+    # Это запрос на проверку; право на выполнение появляется только после валидатора
     id: str
     tool: str
     target: str

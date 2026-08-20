@@ -6,7 +6,7 @@ from tools.contracts import CodeContextResult
 
 
 class LocalCodeReader:
-    """Read a bounded source window from one explicitly configured target root."""
+    """Читает ограниченное окно исходного кода из явно настроенного корня цели."""
 
     def __init__(self, target_root: str | Path):
         self.target_root = Path(target_root).resolve()
@@ -22,6 +22,7 @@ class LocalCodeReader:
         if context_lines < 0 or context_lines > 50:
             raise ValueError("context_lines must be between 0 and 50")
 
+        # Чтение ограничено корнем target; абсолютные и traversal-пути отбрасываются
         relative = _normalise_relative_path(file)
         candidate = (self.target_root / Path(*relative.parts)).resolve()
 

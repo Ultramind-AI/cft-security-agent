@@ -72,7 +72,7 @@ class Settings(BaseSettings):
     )
 
     def llm_provider_credentials(self) -> dict[str, str]:
-        """Return only configured provider credentials for the LLM transport."""
+        """Вернуть только настроенные учетные данные провайдеров для транспорта LLM."""
         secret_values = {
             "GROQ_API_KEY": self.groq_api_key,
             "ZAI_API_KEY": self.zai_api_key,

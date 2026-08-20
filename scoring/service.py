@@ -49,9 +49,10 @@ class ScoringService:
         return self.score_cvss(finding), self.score_context_priority(context)
 
     def score_cvss(self, finding: Finding) -> CVSSResult:
-        """Return an evidence-safe CVSS state without inventing missing metrics."""
+        """Вернуть безопасное для доказательств состояние CVSS без выдумывания отсутствующих метрик."""
         rule_id = finding.rule_id.lower()
 
+        # Серьезность Semgrep сама по себе не дает оснований для числового CVSS
         if rule_id.startswith(_NON_CVSS_RULE_PREFIXES):
             return CVSSResult(
                 vector="N/A",
@@ -78,7 +79,8 @@ class ScoringService:
         self,
         context: ArchitectureContext,
     ) -> ContextPriority:
-        """Calculate Context Priority v0.1 from explicit architecture facts."""
+        """Рассчитать Context Priority v0.1 по явным фактам архитектуры."""
+        # Приоритет архитектуры не смешивается с технической тяжестью CVSS
         score = 0.0
         reasons: list[str] = []
 

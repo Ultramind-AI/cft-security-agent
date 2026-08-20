@@ -12,5 +12,6 @@ class Evidence(BaseModel):
     summary: str
     artifact_refs: list[str] = Field(default_factory=list)
     reliability: str = "unknown"
+    # Вердикт допускает только три терминальные интерпретации Evidence
     verdict: EvidenceVerdict | None = None
     details: dict[str, object] = Field(default_factory=dict)

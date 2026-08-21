@@ -1,4 +1,9 @@
+import json
+import subprocess
+
+from pipeline.errors import error_from_exception
 from pipeline.gate import evaluate_gate
+from schemas.errors import ErrorDetail
 from schemas.pipeline import GateResult
 from schemas.report import FinalReport, ReportFinding, VerificationSummary
 from schemas.scoring import ContextPriority, CVSSResult
@@ -106,3 +111,56 @@ def test_stage_error_is_mandatory_failure() -> None:
     assert gate.decision == "fail"
     assert gate.exit_code == 2
     assert gate.stage_errors == ["SAST stage failed: timeout"]
+    assert gate.errors == [
+        ErrorDetail(
+            code="INTERNAL_ERROR",
+            layer="pipeline",
+            message="SAST stage failed: timeout",
+        )
+    ]
+
+
+def test_structured_stage_error_is_machine_readable_mandatory_failure() -> None:
+    error = ErrorDetail(
+        code="TIMEOUT",
+        layer="sast",
+        message="SAST scan timed out",
+        retryable=True,
+    )
+
+    gate = evaluate_gate([_report(status="rejected")], errors=[error])
+    payload = json.loads(gate.model_dump_json())
+
+    assert gate.decision == "fail"
+    assert gate.exit_code == 2
+    assert gate.errors == [error]
+    assert gate.stage_errors == ["SAST scan timed out"]
+    assert payload["errors"] == [
+        {
+            "code": "TIMEOUT",
+            "layer": "sast",
+            "message": "SAST scan timed out",
+            "retryable": True,
+        }
+    ]
+
+
+def test_policy_blocked_is_not_a_system_error() -> None:
+    gate = evaluate_gate([_report(status="policy_blocked")])
+
+    assert gate.decision == "warn"
+    assert gate.errors == []
+    assert gate.stage_errors == []
+
+
+def test_pipeline_exception_normalizer_classifies_timeout_without_raw_text() -> None:
+    raw_secret = "token=must-not-appear"
+    error = error_from_exception(
+        subprocess.TimeoutExpired(["semgrep"], 5, stderr=raw_secret),
+        layer="sast",
+        public_message="SAST scan timed out",
+    )
+
+    assert error.code == "TIMEOUT"
+    assert error.retryable is True
+    assert raw_secret not in error.message

@@ -33,6 +33,12 @@ Exit codes:
 - `2`: mandatory pipeline stage failure, for example SAST or agent execution did
   not complete.
 
+`gate.json` exposes mandatory system failures through `errors`, whose entries
+contain `code`, `layer`, `message` and `retryable`. The legacy `stage_errors`
+array is retained as a human-readable projection of those structured errors.
+Validator denial and `policy_blocked` remain normal security-workflow outcomes,
+not internal errors.
+
 The exact policy can later be made customer-configurable without changing the
 agent/Validator/Executor boundaries.
 

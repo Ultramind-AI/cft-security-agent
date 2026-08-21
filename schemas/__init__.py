@@ -17,7 +17,14 @@ from schemas.execution import ExecutionResult
 from schemas.finding import Finding
 from schemas.hypothesis import Hypothesis
 from schemas.pipeline import GateResult, PipelineFindingResult
-from schemas.report import FinalReport, ReportFinding, VerificationSummary
+from schemas.report import (
+    CIGateImpact,
+    FinalReport,
+    PolicyDecisionSummary,
+    ReportFinding,
+    SandboxActionSummary,
+    VerificationSummary,
+)
 from schemas.scoring import ContextPriority, CVSSResult
 from schemas.security_tools import (
     DockerfileUserCheckResult,
@@ -38,6 +45,7 @@ __all__ = [
     "DiscoveryCommandCandidate",
     "DiscoverySignal",
     "ProjectDiscoveryResult",
+    "CIGateImpact",
     "DockerfileUserCheckResult",
     "Evidence",
     "ExecutionResult",
@@ -46,6 +54,7 @@ __all__ = [
     "GateResult",
     "Hypothesis",
     "PipelineFindingResult",
+    "PolicyDecisionSummary",
     "ProjectDescription",
     "ProjectServiceDescription",
     "PythonPasswordAssignmentCheckResult",
@@ -53,6 +62,7 @@ __all__ = [
     "ReportFinding",
     "TargetProfile",
     "TargetService",
+    "SandboxActionSummary",
     "ValidationResult",
     "VerificationSummary",
 ]

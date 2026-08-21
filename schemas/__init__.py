@@ -14,6 +14,13 @@ from schemas.discovery import (
 )
 from schemas.evidence import Evidence
 from schemas.execution import ExecutionResult
+from schemas.evaluation import (
+    BenchmarkMetrics,
+    BenchmarkReport,
+    EvaluationDataset,
+    EvaluationTarget,
+    ExpectedFinding,
+)
 from schemas.fix import (
     FixCheck,
     FixCheckResult,
@@ -55,8 +62,13 @@ __all__ = [
     "DiscoverySignal",
     "ProjectDiscoveryResult",
     "CIGateImpact",
+    "BenchmarkMetrics",
+    "BenchmarkReport",
     "DockerfileUserCheckResult",
     "Evidence",
+    "EvaluationDataset",
+    "EvaluationTarget",
+    "ExpectedFinding",
     "ExecutionResult",
     "FixCheck",
     "FixCheckResult",

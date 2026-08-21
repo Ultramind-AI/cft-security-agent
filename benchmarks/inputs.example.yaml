@@ -1,0 +1,11 @@
+targets:
+  demo-commerce:
+    reports:
+      - artifacts/demo-commerce/report-1.json
+      - artifacts/demo-commerce/report-2.json
+    gate: artifacts/demo-commerce/gate.json
+  demo-collaboration:
+    reports:
+      - artifacts/demo-collaboration/report-1.json
+      - artifacts/demo-collaboration/report-2.json
+    gate: artifacts/demo-collaboration/gate.json

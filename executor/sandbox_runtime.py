@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Sequence
 
 from executor.sandbox_policy import SandboxPolicy
 
@@ -10,7 +9,7 @@ from executor.sandbox_policy import SandboxPolicy
 @dataclass(frozen=True)
 class ContainerRuntimeSpec:
     """Неизменяемые свойства команды CLI и выполнения для Docker Sandbox"""
-    argv: List[str]
+    argv: list[str]
     container_name: str
     workspace_id: str
     network: str
@@ -24,6 +23,21 @@ class DockerRuntimeBuilder:
 
     def __init__(self, policy: SandboxPolicy) -> None:
         self.policy = policy
+
+    def _workspace_tmpfs_options(self) -> str:
+        """Derive tmpfs ownership from the configured non-root Docker user."""
+        # tmpfs получает UID/GID non-root пользователя, иначе /workspace недоступен для записи.
+        user_parts = self.policy.container_user.split(":", maxsplit=1)
+        if len(user_parts) != 2 or not all(part.isdecimal() for part in user_parts):
+            raise ValueError(
+                "Docker sandbox container_user must be a numeric UID:GID "
+                "so the tmpfs workspace can be owned safely"
+            )
+        uid, gid = user_parts
+        return (
+            "/workspace:rw,noexec,nosuid,nodev,"
+            f"size={self.policy.limits.tmpfs_size_bytes},uid={uid},gid={gid},mode=0700"
+        )
 
     def build_spec(
             self,
@@ -53,7 +67,7 @@ class DockerRuntimeBuilder:
                 f"{worker_script_host_path}"
             )
 
-        cmd: List[str] = [
+        cmd: list[str] = [
             "docker",
             "run",
             "--rm",
@@ -76,10 +90,7 @@ class DockerRuntimeBuilder:
             "--network",
             network_arg,
             "--tmpfs",
-            (
-                "/workspace:rw,noexec,nosuid,nodev,"
-                f"size={limits.tmpfs_size_bytes}"
-            ),
+            self._workspace_tmpfs_options(),
             "-w",
             "/workspace",
         ]

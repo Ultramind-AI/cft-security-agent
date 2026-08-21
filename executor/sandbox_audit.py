@@ -4,7 +4,7 @@ import hashlib
 import json
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
-from typing import Any, Dict
+from typing import Any
 
 
 def calculate_sha256_digest(data: Any) -> str:
@@ -42,9 +42,9 @@ class AuditRecord:
         exit_code: int,
         duration_ms: int,
         evidence_ref: str,
-        action_proposal_dict: Dict[str, Any],
-        evidence_dict: Dict[str, Any],
-        policy_dict: Dict[str, Any],
+        action_proposal_dict: dict[str, Any],
+        evidence_dict: dict[str, Any],
+        policy_dict: dict[str, Any],
         runtime_backend: str,
         network_mode: str,
     ) -> AuditRecord:
@@ -65,5 +65,5 @@ class AuditRecord:
             evidence_ref=evidence_ref,
         )
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return asdict(self)

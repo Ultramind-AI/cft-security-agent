@@ -1,14 +1,14 @@
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 from pathlib import Path
 
 import pytest
 
-from executor.sandbox import DockerSandbox, SandboxLimits, SandboxRequest
+from executor.sandbox import DockerSandbox, SandboxRequest
 from executor.sandbox_policy import SandboxPolicy
-
 
 pytestmark = pytest.mark.integration
 
@@ -34,10 +34,12 @@ def _docker_available() -> bool:
 pytestmark = [
     pytest.mark.integration,
     pytest.mark.skipif(
-        not _docker_available(),
-        reason="Docker integration tests require a working Docker daemon",
+        not _docker_available() or not os.getenv("CFT_SANDBOX_IMAGE"),
+        reason="Docker integration tests require a working Docker daemon and CFT_SANDBOX_IMAGE pinned by digest",
     ),
 ]
+
+TEST_SANDBOX_IMAGE = os.environ.get("CFT_SANDBOX_IMAGE", "")
 
 def test_docker_socket_is_not_available_inside_sandbox(
     tmp_path: Path,
@@ -65,6 +67,7 @@ print("socket-absent")
         policy=SandboxPolicy(
             backend="docker",
             network_mode="none",
+            sandbox_image=TEST_SANDBOX_IMAGE,
         ),
         worker_path=worker,
     )
@@ -106,6 +109,7 @@ else:
         policy=SandboxPolicy(
             backend="docker",
             network_mode="none",
+            sandbox_image=TEST_SANDBOX_IMAGE,
         ),
         worker_path=worker,
     )
@@ -143,6 +147,7 @@ print(path.read_text())
         policy=SandboxPolicy(
             backend="docker",
             network_mode="none",
+            sandbox_image=TEST_SANDBOX_IMAGE,
         ),
         worker_path=worker,
     )
@@ -192,6 +197,7 @@ else:
         policy=SandboxPolicy(
             backend="docker",
             network_mode="none",
+            sandbox_image=TEST_SANDBOX_IMAGE,
         ),
         worker_path=worker,
     )
@@ -241,6 +247,7 @@ finally:
         policy=SandboxPolicy(
             backend="docker",
             network_mode="none",
+            sandbox_image=TEST_SANDBOX_IMAGE,
         ),
         worker_path=worker,
     )

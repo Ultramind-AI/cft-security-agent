@@ -1,7 +1,8 @@
+import shutil
+from pathlib import Path
+
 import pytest
 
-from pathlib import Path
-import shutil
 from evidence.audit import JsonlAuditLog
 from evidence.store import JsonExecutionEvidenceStore
 from executor.approvals import InMemoryApprovalStore
@@ -11,7 +12,7 @@ from executor.sandbox import (
     SandboxRequest,
     SandboxResult,
 )
-from executor.sandbox_policy import SandboxPolicy, SandboxLimits
+from executor.sandbox_policy import SandboxLimits, SandboxPolicy
 from executor.targets import TargetArtifactDefinition, TargetDefinition, TargetRegistry
 from schemas.action import ActionProposal
 from schemas.validation import ValidationResult

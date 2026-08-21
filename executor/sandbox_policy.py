@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Literal, Set
-
+from typing import Literal
 
 RuntimeBackendType = Literal["process", "docker"]
 NetworkModeType = Literal["none", "internal_bridge"]
@@ -31,7 +29,7 @@ class SandboxPolicy:
     network_mode: NetworkModeType = "none"
     allowed_internal_network: str = "cft_internal_security_net"
 
-    allowed_environments: Set[str] = field(
+    allowed_environments: set[str] = field(
         default_factory=lambda: {"local", "sandbox", "staging"}
     )
 

@@ -42,6 +42,8 @@ class TargetDefinition:
     environment: str
     base_url: str
     repository_path: Path | None = None
+    compose_file: Path | None = None
+    health_path: str = "/health/"
     artifacts: dict[str, TargetArtifactDefinition] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -56,6 +58,24 @@ class TargetDefinition:
                 "repository_path",
                 Path(self.repository_path).expanduser().resolve(),
             )
+        if self.compose_file is not None:
+            compose_file = Path(self.compose_file).expanduser().resolve()
+            if (
+                self.repository_path is None
+                or not compose_file.is_relative_to(self.repository_path)
+            ):
+                raise ValueError("Target compose_file must stay inside the repository")
+            object.__setattr__(self, "compose_file", compose_file)
+        parsed_health_path = urlsplit(self.health_path)
+        if (
+            not self.health_path.startswith("/")
+            or parsed_health_path.scheme
+            or parsed_health_path.netloc
+            or parsed_health_path.query
+            or parsed_health_path.fragment
+            or ".." in parsed_health_path.path.split("/")
+        ):
+            raise ValueError("Target health_path must be a fixed absolute URL path")
         if any(key != artifact.id for key, artifact in self.artifacts.items()):
             raise ValueError("Target artifact mapping key must match artifact id")
 
@@ -122,6 +142,13 @@ class TargetRegistry:
                 relative_path=str(raw_definition.get("path", "")),
             )
 
+        compose_file: Path | None = None
+        compose_value = runtime.get("compose_file")
+        if compose_value:
+            if repository_path is None:
+                raise ValueError("runtime.compose_file requires repository_path")
+            compose_file = (repository_path / str(compose_value)).resolve()
+
         return cls(
             [
                 TargetDefinition(
@@ -129,6 +156,8 @@ class TargetRegistry:
                     environment=str(data.get("environment", "unknown")),
                     base_url=str(base_url),
                     repository_path=repository_path,
+                    compose_file=compose_file,
+                    health_path=str(data.get("health", {}).get("backend", "/health/")),
                     artifacts=artifacts,
                 )
             ]

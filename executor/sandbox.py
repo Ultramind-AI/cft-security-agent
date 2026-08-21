@@ -13,7 +13,7 @@ import uuid
 from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, Optional, Protocol, Tuple, Literal
+from typing import ClassVar, Literal, Protocol
 
 from executor.sandbox_policy import SandboxLimits, SandboxPolicy
 from executor.sandbox_runtime import DockerRuntimeBuilder
@@ -63,7 +63,7 @@ def _communicate_bounded(
     input_data: bytes,
     timeout_s: float,
     max_bytes: int,
-) -> Tuple[bytes, bool, bytes, bool, bool]:
+) -> tuple[bytes, bool, bytes, bool, bool]:
     """
     Считывает вывод процесса с жестким ограничением объема данных (в байтах) для предотвращения DoS-атак, исчерпывающих память.
     Возвращает (raw_stdout, stdout_truncated, raw_stderr, stderr_truncated, timed_out)
@@ -159,9 +159,9 @@ BLOCKED_SECRET_PATTERNS = (
 )
 
 
-def get_minimal_environment(source_env: Optional[Dict[str, str]] = None) -> Dict[str, str]:
+def get_minimal_environment(source_env: dict[str, str] | None = None) -> dict[str, str]:
     src = source_env if source_env is not None else os.environ
-    clean_env: Dict[str, str] = {
+    clean_env: dict[str, str] = {
         "PYTHONIOENCODING": "utf-8",
         "PYTHONDONTWRITEBYTECODE": "1",
         "LANG": "C.UTF-8",
@@ -169,9 +169,8 @@ def get_minimal_environment(source_env: Optional[Dict[str, str]] = None) -> Dict
         "PYTHONHASHSEED": "random",
     }
     for key in STRICT_ALLOWED_ENV:
-        if key in src:
-            if not any(pat in key.upper() for pat in BLOCKED_SECRET_PATTERNS):
-                clean_env[key] = src[key]
+        if key in src and not any(pat in key.upper() for pat in BLOCKED_SECRET_PATTERNS):
+            clean_env[key] = src[key]
     return clean_env
 
 
@@ -207,7 +206,7 @@ def _apply_posix_resource_limits(limits: SandboxLimits) -> None:
 # RunLimiter
 
 class RunLimiter:
-    _instances: dict[str, RunLimiter] = {}
+    _instances: ClassVar[dict[str, RunLimiter]] = {}
     _global_lock = threading.Lock()
 
     def __init__(self, scope: str | Path | None = None, max_runs_per_action: int = 1, max_concurrent_runs: int = 1) -> None:
@@ -229,7 +228,7 @@ class RunLimiter:
     def acquire(self, action_id: str) -> tuple[bool, str]:
         with self._lock:
             if self._action_counts[action_id] >= self.max_runs_per_action:
-                return False, f"Action '{action_id}' reached max execution limit ({self.max_runs_per_action})"
+                return False, f"Action '{action_id}' run limit reached ({self.max_runs_per_action})"
             self._action_counts[action_id] += 1
         if not self._semaphore.acquire(blocking=False):
             with self._lock:
@@ -289,7 +288,7 @@ class ProcessSandbox:
                 cwd=str(workspace_dir),
                 env=env,
                 shell=False,
-                preexec_fn=preexec,
+                preexec_fn=preexec,  # noqa: PLW1509 - POSIX resource limits need child setup before exec.
             )
 
             raw_stdout, stdout_trunc, raw_stderr, stderr_trunc, timed_out = _communicate_bounded(
@@ -298,12 +297,12 @@ class ProcessSandbox:
             exit_code = 124 if timed_out else (proc.returncode if proc.returncode is not None else 1)
 
             if timed_out:
-                raw_stderr = f"Process timed out after {self.limits.wall_time_seconds}s\n".encode("utf-8") + raw_stderr
+                raw_stderr = f"Process timed out after {self.limits.wall_time_seconds}s\n".encode() + raw_stderr
 
             stdout_str = _format_bounded_output(raw_stdout, stdout_trunc)
             stderr_str = _format_bounded_output(raw_stderr, stderr_trunc)
 
-        except Exception as exc:
+        except (OSError, subprocess.SubprocessError, ValueError) as exc:
             stdout_str = ""
             stderr_str = f"Process sandbox execution failed: {type(exc).__name__}: {exc}"
             exit_code = 127
@@ -381,12 +380,12 @@ class DockerSandbox:
 
             if timed_out:
                 subprocess.run(["docker", "rm", "-f", spec.container_name], capture_output=True, check=False)
-                raw_stderr = f"Container timed out after {self.policy.limits.wall_time_seconds}s\n".encode("utf-8") + raw_stderr
+                raw_stderr = f"Container timed out after {self.policy.limits.wall_time_seconds}s\n".encode() + raw_stderr
 
             stdout_str = _format_bounded_output(raw_stdout, stdout_trunc)
             stderr_str = _format_bounded_output(raw_stderr, stderr_trunc)
 
-        except Exception as exc:
+        except (OSError, subprocess.SubprocessError, ValueError) as exc:
             stdout_str = ""
             stderr_str = f"Docker container launch failed: {type(exc).__name__}: {exc}"
             exit_code = 127

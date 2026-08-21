@@ -1,7 +1,6 @@
 import logging
 import shutil
 from dataclasses import asdict
-from datetime import UTC, datetime
 from pathlib import Path
 from time import perf_counter
 from typing import Literal, cast
@@ -19,7 +18,7 @@ from executor.sandbox import (
     Sandbox,
     SandboxRequest,
 )
-from executor.sandbox_audit import AuditRecord, calculate_sha256_digest
+from executor.sandbox_audit import AuditRecord
 from executor.sandbox_policy import SandboxLimits, SandboxPolicy
 from executor.targets import TargetRegistry
 from schemas.action import ActionProposal
@@ -300,7 +299,7 @@ class SafeExecutor:
                     started,
                     status="failed",
                     exit_code=127,
-                    stderr=f"Sandbox execution error: {exc}",
+                    stderr=f"Sandbox failed: {exc}",
                     decision_reason="Unexpected sandbox error",
                 )
         finally:
@@ -368,6 +367,7 @@ class SafeExecutor:
             "timed_out": timed_out,
             "workspace_id": workspace_id,
             "policy": policy_dict,
+            "limits": policy_dict["limits"],
         }
         evidence_ref, artifact_path = self._evidence_store.put_execution(evidence_payload)
 

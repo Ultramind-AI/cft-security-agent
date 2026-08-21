@@ -7,6 +7,7 @@ from executor.sandbox import (
     SandboxRequest,
     SandboxResult,
 )
+from executor.sandbox_session import SandboxSession, SandboxSessionInfo, SessionStatus
 from executor.targets import TargetDefinition, TargetRegistry
 
 __all__ = [
@@ -18,6 +19,9 @@ __all__ = [
     "SandboxLimits",
     "SandboxRequest",
     "SandboxResult",
+    "SandboxSession",
+    "SandboxSessionInfo",
+    "SessionStatus",
     "TargetDefinition",
     "TargetRegistry",
     "proposal_digest",

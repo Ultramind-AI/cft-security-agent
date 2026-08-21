@@ -39,6 +39,30 @@ def render_final_report(report: FinalReport) -> str:
         f"  Service: {service}",
         f"  SAST severity: {severity}",
     ]
+    if finding.description:
+        lines.append(f"  Source description: {finding.description}")
+
+    lines.extend(["", "Context"])
+    if report.code_context:
+        lines.append("  Code context:")
+        lines.extend(f"    {line}" for line in report.code_context.splitlines())
+    else:
+        lines.append("  Code context: missing")
+    if report.architecture_context is None:
+        lines.append("  Architecture context: missing")
+    else:
+        architecture = report.architecture_context
+        lines.append(
+            "  Architecture: "
+            f"public={architecture.public_exposure}, "
+            f"criticality={architecture.criticality}, "
+            f"auth={architecture.authentication}, "
+            f"blast_radius={architecture.blast_radius}"
+        )
+        lines.append(
+            "  Connections: "
+            + (", ".join(architecture.connected_services) or "none")
+        )
 
     if report.analysis_summary is not None:
         lines.extend(["", "Agent assessment", f"  Analysis: {report.analysis_summary}"])
@@ -63,6 +87,27 @@ def render_final_report(report: FinalReport) -> str:
     )
     if verification.validator_reason:
         lines.append(f"  Validator reason: {verification.validator_reason}")
+
+    lines.extend(["", f"Sandbox actions ({len(report.sandbox_actions)})"])
+    if not report.sandbox_actions:
+        lines.append("  No sandbox action proposed.")
+    else:
+        for action in report.sandbox_actions:
+            lines.append(
+                f"  {action.action_id}: {action.capability} → {action.target} "
+                f"[{action.execution_status or 'not executed'}]"
+            )
+
+    lines.extend(["", f"Policy decisions ({len(report.policy_decisions)})"])
+    if not report.policy_decisions:
+        lines.append("  Validator was not run.")
+    else:
+        for decision_item in report.policy_decisions:
+            lines.append(
+                f"  {decision_item.decision.upper()}: {decision_item.reason}"
+            )
+            if decision_item.rules:
+                lines.append(f"    Rules: {', '.join(decision_item.rules)}")
 
     lines.extend(["", f"Evidence ({len(report.evidence)})"])
     if not report.evidence:
@@ -102,6 +147,17 @@ def render_final_report(report: FinalReport) -> str:
             lines.append(f"    - {reason}")
 
     lines.extend(["", "Conclusion", f"  {report.explanation}"])
+
+    if report.ci_gate_impact is not None:
+        lines.extend(
+            [
+                "",
+                "CI Gate impact",
+                f"  Effect: {report.ci_gate_impact.effect.upper()}",
+                f"  Category: {report.ci_gate_impact.category}",
+                f"  Reason: {report.ci_gate_impact.reason}",
+            ]
+        )
 
     if report.limitations:
         lines.extend(["", "Limitations"])

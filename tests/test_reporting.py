@@ -35,11 +35,18 @@ def test_final_report_contains_stable_ui_ready_context() -> None:
     assert report.schema_version == "1.0"
     assert report.finding.id == "report-test"
     assert report.finding.file == "backend/example.py"
+    assert report.finding.description == "Only for report tests."
+    assert report.code_context
+    assert report.architecture_context is not None
     assert report.analysis_summary
     assert report.hypothesis
     assert report.verification.capability == "safe_noop"
     assert report.verification.validator_decision == "approved"
     assert report.verification.evidence_count == 1
+    assert report.sandbox_actions[0].execution_status == "completed"
+    assert report.policy_decisions[0].decision == "approved"
+    assert report.ci_gate_impact is not None
+    assert report.ci_gate_impact.category == "confirmed_risk"
     assert report.next_step
 
 
@@ -49,6 +56,10 @@ def test_policy_blocked_report_explains_basis_and_limitation() -> None:
     assert report.status == "policy_blocked"
     assert report.verification.validator_decision == "denied"
     assert report.verification.decision_basis == "validator_policy"
+    assert report.sandbox_actions[0].execution_status is None
+    assert report.policy_decisions[0].decision == "denied"
+    assert report.ci_gate_impact is not None
+    assert report.ci_gate_impact.category == "policy_block"
     assert any("No verification action was executed" in item for item in report.limitations)
 
 
@@ -60,9 +71,13 @@ def test_report_renderer_is_demo_friendly() -> None:
     assert "Status: CONFIRMED" in rendered
     assert "Finding" in rendered
     assert "Verification" in rendered
+    assert "Context" in rendered
+    assert "Sandbox actions (1)" in rendered
+    assert "Policy decisions (1)" in rendered
     assert "Evidence (1)" in rendered
     assert "Risk" in rendered
     assert "Conclusion" in rendered
+    assert "CI Gate impact" in rendered
     assert "Next step" in rendered
 
 

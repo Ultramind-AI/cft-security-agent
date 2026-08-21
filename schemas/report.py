@@ -3,6 +3,8 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from schemas.evidence import Evidence
+from schemas.architecture import ArchitectureContext
+from schemas.pipeline import FindingGateEffect, GateCategory
 from schemas.scoring import ContextPriority, CVSSResult
 
 ReportStatus = Literal["confirmed", "rejected", "inconclusive", "policy_blocked"]
@@ -20,6 +22,7 @@ class ReportFinding(BaseModel):
     source: str
     rule_id: str
     title: str
+    description: str | None = None
     severity: str | None = None
     service: str | None = None
     file: str
@@ -39,6 +42,32 @@ class VerificationSummary(BaseModel):
     decision_basis: DecisionBasis = "workflow_state"
 
 
+class SandboxActionSummary(BaseModel):
+    action_id: str
+    capability: str
+    target: str
+    environment: str
+    purpose: str
+    parameter_names: list[str] = Field(default_factory=list)
+    execution_status: str | None = None
+    exit_code: int | None = None
+    timed_out: bool = False
+    artifact_refs: list[str] = Field(default_factory=list)
+
+
+class PolicyDecisionSummary(BaseModel):
+    action_id: str
+    decision: ValidatorDecision
+    reason: str
+    rules: list[str] = Field(default_factory=list)
+
+
+class CIGateImpact(BaseModel):
+    effect: FindingGateEffect
+    category: GateCategory
+    reason: str
+
+
 class FinalReport(BaseModel):
     schema_version: Literal["1.0"] = "1.0"
     finding_id: str
@@ -47,6 +76,8 @@ class FinalReport(BaseModel):
 
     analysis_summary: str | None = None
     risk_signals: list[str] = Field(default_factory=list)
+    code_context: str | None = None
+    architecture_context: ArchitectureContext | None = None
     hypothesis: str | None = None
     hypothesis_confidence: float | None = None
 
@@ -54,6 +85,9 @@ class FinalReport(BaseModel):
     cvss: CVSSResult | None = None
     context_priority: ContextPriority | None = None
     evidence: list[Evidence] = Field(default_factory=list)
+    sandbox_actions: list[SandboxActionSummary] = Field(default_factory=list)
+    policy_decisions: list[PolicyDecisionSummary] = Field(default_factory=list)
+    ci_gate_impact: CIGateImpact | None = None
 
     explanation: str
     limitations: list[str] = Field(default_factory=list)

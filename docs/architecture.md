@@ -70,3 +70,16 @@ Use `--architecture-overrides path/to/overrides.yaml` with `app.e2e_demo` or
 `app.pipeline_run`. A future Discovery/TargetProfile producer can construct a
 `ProjectDescription` in memory and reuse `ProjectDescriptionAdapter`; the
 scoring formula does not need to change.
+
+### Explainable report and CI decision
+
+`FinalReport` is the single machine-readable and human-renderable audit artifact for
+one finding. In addition to the existing verdict and Evidence, it records the
+original source description, code and architecture context, agent hypothesis,
+proposed sandbox action, Validator decision, execution outcome, limitations, and
+the deterministic per-finding CI Gate effect.
+
+The gate keeps separate decision categories: `confirmed_risk`, `policy_block`,
+`inconclusive`, and `technical_pipeline_error`. A policy denial remains a normal
+report outcome; a mandatory stage failure remains a pipeline error and is never
+reported as a confirmed vulnerability.

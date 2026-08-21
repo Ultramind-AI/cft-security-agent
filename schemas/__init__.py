@@ -11,7 +11,14 @@ from schemas.execution import ExecutionResult
 from schemas.finding import Finding
 from schemas.hypothesis import Hypothesis
 from schemas.pipeline import GateResult, PipelineFindingResult
-from schemas.report import FinalReport, ReportFinding, VerificationSummary
+from schemas.report import (
+    CIGateImpact,
+    FinalReport,
+    PolicyDecisionSummary,
+    ReportFinding,
+    SandboxActionSummary,
+    VerificationSummary,
+)
 from schemas.scoring import ContextPriority, CVSSResult
 from schemas.security_tools import (
     DockerfileUserCheckResult,
@@ -27,6 +34,7 @@ __all__ = [
     "ArchitectureOverrides",
     "CVSSResult",
     "ContextPriority",
+    "CIGateImpact",
     "DockerfileUserCheckResult",
     "Evidence",
     "ExecutionResult",
@@ -35,11 +43,13 @@ __all__ = [
     "GateResult",
     "Hypothesis",
     "PipelineFindingResult",
+    "PolicyDecisionSummary",
     "ProjectDescription",
     "ProjectServiceDescription",
     "PythonPasswordAssignmentCheckResult",
     "ReactDangerousHtmlFlowCheckResult",
     "ReportFinding",
+    "SandboxActionSummary",
     "ValidationResult",
     "VerificationSummary",
 ]

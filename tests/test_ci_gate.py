@@ -47,6 +47,7 @@ def test_no_findings_passes() -> None:
     assert isinstance(gate, GateResult)
     assert gate.decision == "pass"
     assert gate.exit_code == 0
+    assert gate.decision_basis == "no_blocking_condition"
     assert gate.reports_total == 0
 
 
@@ -64,6 +65,8 @@ def test_confirmed_high_context_fails() -> None:
     assert gate.decision == "fail"
     assert gate.exit_code == 1
     assert gate.findings[0].gate_effect == "fail"
+    assert gate.findings[0].category == "confirmed_risk"
+    assert gate.decision_basis == "confirmed_risk"
     assert "context priority HIGH" in gate.findings[0].reason
 
 
@@ -95,6 +98,8 @@ def test_inconclusive_and_policy_blocked_warn() -> None:
     assert gate.exit_code == 0
     assert gate.inconclusive == 1
     assert gate.policy_blocked == 1
+    assert gate.findings[1].category == "policy_block"
+    assert gate.decision_basis == "policy_or_uncertainty"
 
 
 def test_stage_error_is_mandatory_failure() -> None:
@@ -105,4 +110,6 @@ def test_stage_error_is_mandatory_failure() -> None:
 
     assert gate.decision == "fail"
     assert gate.exit_code == 2
+    assert gate.decision_basis == "technical_pipeline_error"
+    assert gate.technical_errors == 1
     assert gate.stage_errors == ["SAST stage failed: timeout"]

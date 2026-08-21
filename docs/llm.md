@@ -63,6 +63,9 @@ provider.
 - The LLM can choose only from the small typed execution-tool set exposed by the
   application for the current finding.
 - Validator remains mandatory for every active action.
+- Provider-attempt error messages use the shared public-error redactor, so API
+  keys, bearer credentials and common secret assignments are not retained in
+  `LLMAttempt.error`.
 - `confirmed` / `rejected` requires matching capability-specific Evidence.
 - Raw execution success alone never becomes a vulnerability verdict.
 

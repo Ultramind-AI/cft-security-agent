@@ -1,7 +1,6 @@
 import logging
 import shutil
 from dataclasses import asdict
-from datetime import UTC, datetime
 from pathlib import Path
 from time import perf_counter
 from typing import Literal, cast
@@ -19,7 +18,7 @@ from executor.sandbox import (
     Sandbox,
     SandboxRequest,
 )
-from executor.sandbox_audit import AuditRecord, calculate_sha256_digest
+from executor.sandbox_audit import AuditRecord
 from executor.sandbox_policy import SandboxLimits, SandboxPolicy
 from executor.targets import TargetRegistry
 from schemas.action import ActionProposal
@@ -314,7 +313,7 @@ class SafeExecutor:
                         artifacts=target.worker_artifacts(),
                     )
                 )
-            except Exception as exc:
+            except Exception:
                 logger.exception(
                     "Unexpected sandbox failure for action %s",
                     action.id,

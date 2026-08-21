@@ -1,6 +1,8 @@
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
+
+from security.error_redaction import redact_error_message
 
 ErrorCode = Literal[
     "VALIDATION_ERROR",
@@ -31,3 +33,8 @@ class ErrorDetail(BaseModel):
     layer: ErrorLayer
     message: str
     retryable: bool = False
+
+    @field_validator("message")
+    @classmethod
+    def redact_public_message(cls, value: str) -> str:
+        return redact_error_message(value)

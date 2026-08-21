@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from executor.sandbox import DockerSandbox, SandboxLimits, SandboxRequest
+from executor.sandbox import DockerSandbox, SandboxRequest
 from executor.sandbox_policy import SandboxPolicy
 
 

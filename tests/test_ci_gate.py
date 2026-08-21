@@ -164,3 +164,16 @@ def test_pipeline_exception_normalizer_classifies_timeout_without_raw_text() -> 
     assert error.code == "TIMEOUT"
     assert error.retryable is True
     assert raw_secret not in error.message
+
+
+def test_structured_pipeline_error_redacts_public_secret() -> None:
+    secret = "pipeline-secret-value"
+    error = error_from_exception(
+        RuntimeError(f"token={secret}"),
+        layer="pipeline",
+        public_message=f"Pipeline failed with token={secret}",
+    )
+    gate = evaluate_gate([], errors=[error])
+
+    assert secret not in gate.errors[0].message
+    assert secret not in gate.stage_errors[0]

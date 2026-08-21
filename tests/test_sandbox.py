@@ -6,8 +6,8 @@ from pathlib import Path
 import pytest
 
 from executor import worker
+from executor.executor import CAPABILITY_NETWORK_ACCESS
 from executor.sandbox import (
-    BLOCKED_SECRET_PATTERNS,
     STRICT_ALLOWED_ENV,
     ProcessSandbox,
     RunLimiter,
@@ -18,8 +18,6 @@ from executor.sandbox import (
 from executor.sandbox_audit import calculate_sha256_digest
 from executor.sandbox_policy import SandboxPolicy
 from executor.sandbox_runtime import DockerRuntimeBuilder
-from schemas.action import ActionProposal
-from executor.executor import SafeExecutor, CAPABILITY_NETWORK_ACCESS
 from executor.worker import (
     _fixed_url,
     _read_artifact,

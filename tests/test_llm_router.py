@@ -115,3 +115,26 @@ def test_router_raises_clean_error_when_all_routes_fail(monkeypatch) -> None:
             user_payload={},
             operation="probe",
         )
+
+
+def test_llm_attempt_error_redacts_provider_credentials(monkeypatch) -> None:
+    client = _client(monkeypatch, "groq:openai/gpt-oss-120b")
+    secret = "provider-secret-value"
+    monkeypatch.setattr(
+        client,
+        "_request_route",
+        lambda *_args: (_ for _ in ()).throw(
+            RuntimeError(f"Authorization: Bearer {secret}")
+        ),
+    )
+
+    with pytest.raises(LLMUnavailableError):
+        client.complete_model(
+            output_model=LLMProbeResult,
+            system_prompt="test",
+            user_payload={},
+            operation="probe",
+        )
+
+    assert secret not in client.last_attempts[0].error
+    assert "<redacted>" in client.last_attempts[0].error

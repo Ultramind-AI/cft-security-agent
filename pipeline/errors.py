@@ -5,6 +5,7 @@ import subprocess
 from collections.abc import Iterator
 
 from sast.semgrep_runner import SemgrepError
+from security.error_redaction import redact_error_message
 from schemas.errors import ErrorCode, ErrorDetail, ErrorLayer
 
 
@@ -38,7 +39,7 @@ def error_from_exception(
     return ErrorDetail(
         code=code,
         layer=layer,
-        message=public_message,
+        message=redact_error_message(public_message),
         retryable=retryable,
     )
 

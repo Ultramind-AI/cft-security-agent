@@ -1,35 +1,35 @@
-# Security Sandbox Threat Model
+# Модель угроз Security Sandbox
 
-The sandbox isolates capability execution from the host filesystem, CI secrets,
-Docker socket, external networks, and neighbouring Compose projects.
+Sandbox изолирует выполнение capability от файловой системы хоста, секретов CI,
+Docker socket, внешних сетей и соседних Compose-проектов.
 
-## Trust boundaries
+## Границы доверия
 
-- The agent never supplies shell, host paths, arbitrary URLs, or Docker arguments.
-- Executor accepts registered capabilities and target-owned metadata only.
-- Target repositories are mounted read-only for capability containers.
-- Docker sandbox images are immutable digest references and use a non-root user,
-  `cap-drop=ALL`, `no-new-privileges`, read-only root filesystem, and bounded tmpfs.
+- Агент никогда не передаёт shell, пути хоста, произвольные URL или аргументы Docker.
+- Executor принимает только зарегистрированные capabilities и метаданные, принадлежащие цели.
+- Репозитории целей монтируются в контейнеры capability только для чтения.
+- Образы Docker sandbox — неизменяемые digest references; они используют non-root user,
+  `cap-drop=ALL`, `no-new-privileges`, read-only root filesystem и ограниченный tmpfs.
 
-## Network and resources
+## Сеть и ресурсы
 
-The default network is `none`. A capability may reach the target only through a
-configured internal network. CPU, memory, PIDs, wall time, output, and workspace
-size are bounded by `SandboxPolicy`; CI secrets are not inherited.
+Сеть по умолчанию — `none`. Capability может обращаться к цели только через
+настроенную internal network. CPU, память, PIDs, wall time, объём output и размер workspace
+ограничены `SandboxPolicy`; секреты CI не наследуются.
 
-## Compose sessions
+## Compose-сессии
 
-`SandboxSession` accepts only a trusted `TargetProfile`. It rejects external
-Compose networks and volumes and host bind mounts. Each session has its own
-Compose project name and therefore its own containers, networks, and volumes.
-Teardown uses that project name and, only after `compose down` fails, the exact
-`com.docker.compose.project` label. It never uses global Docker prune commands.
-The absence of leftovers is accepted only after successful Docker queries for
-containers, networks, and volumes.
+`SandboxSession` принимает только доверенный `TargetProfile`. Он отклоняет внешние
+Compose networks и volumes, а также host bind mounts. У каждой сессии есть собственное
+имя Compose project, а значит — собственные контейнеры, сети и volumes. Очистка использует
+это имя проекта и только после ошибки `compose down` — точную метку
+`com.docker.compose.project`. Глобальные команды Docker prune никогда не используются.
+Отсутствие оставшихся ресурсов принимается только после успешных запросов Docker для
+контейнеров, сетей и volumes.
 
-The Compose file is an operator-owned relative path in `TargetProfile.runtime`;
-readiness paths come from declared service healthchecks. The session does not
-infer a backend/frontend role or accept a repository path from the agent.
+Compose-файл — относительный путь, принадлежащий оператору и заданный в
+`TargetProfile.runtime`; readiness paths берутся из объявленных healthcheck сервисов.
+Сессия не выводит роли backend/frontend и не принимает путь к репозиторию от агента.
 
-If Docker isolation cannot be established where it is required, execution fails
-closed rather than falling back to a weaker boundary.
+Если необходимая Docker isolation не может быть установлена, выполнение завершается
+по принципу fail-closed, а не переходит к более слабой границе безопасности.

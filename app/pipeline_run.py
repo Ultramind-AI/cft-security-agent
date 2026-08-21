@@ -9,7 +9,10 @@ from pathlib import Path
 from agent.graph import build_graph
 from app.config import settings
 from app.e2e_inputs import build_real_initial_state
+from architecture.service import ArchitectureService
 from pipeline.gate import evaluate_gate
+from pr_analysis.git_diff import read_git_diff
+from pr_analysis.service import PRAnalysisService
 from reporting.presentation import render_final_report
 from sast.repository import JsonFindingRepository
 from sast.semgrep_runner import SemgrepError, run_semgrep_scan
@@ -60,6 +63,23 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         help="Print the full human-readable FinalReport for every finding",
     )
+    parser.add_argument(
+        "--base-ref",
+        help="Base Git ref for optional PR-aware diff analysis",
+    )
+    parser.add_argument(
+        "--head-ref",
+        default="HEAD",
+        help="Head Git ref for PR-aware diff analysis (default: HEAD)",
+    )
+    parser.add_argument(
+        "--base-findings",
+        help="Normalized findings JSON produced for --base-ref",
+    )
+    parser.add_argument(
+        "--base-architecture",
+        help="Optional base-revision architecture YAML for context comparison",
+    )
     return parser.parse_args()
 
 
@@ -106,6 +126,40 @@ def main() -> int:
         return gate.exit_code
 
     findings = JsonFindingRepository(findings_path).list_findings()
+    if args.base_ref:
+        if not args.base_findings:
+            stage_errors.append(
+                "PR analysis requires --base-findings to distinguish new and existing findings."
+            )
+        else:
+            try:
+                base_findings = JsonFindingRepository(args.base_findings).list_findings()
+                diff = read_git_diff(target, base_ref=args.base_ref, head_ref=args.head_ref)
+                base_architecture = (
+                    ArchitectureService(args.base_architecture)
+                    if args.base_architecture
+                    else None
+                )
+                analyser = PRAnalysisService(
+                    base_ref=args.base_ref,
+                    head_ref=args.head_ref,
+                    diff=diff,
+                    base_architecture=base_architecture,
+                    head_architecture=ArchitectureService(
+                        architecture,
+                        overrides_path=architecture_overrides,
+                    ),
+                )
+                findings, pr_summary = analyser.analyse(
+                    base_findings=base_findings,
+                    head_findings=findings,
+                )
+                (output_dir / "pr-analysis.json").write_text(
+                    pr_summary.model_dump_json(indent=2) + "\n",
+                    encoding="utf-8",
+                )
+            except (OSError, RuntimeError, ValueError, TypeError) as exc:
+                stage_errors.append(f"PR analysis failed: {type(exc).__name__}: {exc}")
     print(f"Findings to verify: {len(findings)}")
 
     reports: list[FinalReport] = []
@@ -125,6 +179,9 @@ def main() -> int:
                 finding_id=finding.id,
                 max_iterations=args.max_iterations,
             )
+            # build_real_initial_state loads the source artifact; PR metadata is an
+            # additive pipeline concern and is attached without rewriting that artifact.
+            state["finding"] = finding
             result = graph.invoke(state)
             report = result["final_report"]
             report_path = reports_dir / f"{index:03d}-{_safe_name(finding.id)}.json"

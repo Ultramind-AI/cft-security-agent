@@ -11,6 +11,7 @@ from schemas.execution import ExecutionResult
 from schemas.finding import Finding
 from schemas.hypothesis import Hypothesis
 from schemas.pipeline import GateResult, PipelineFindingResult
+from schemas.pr import PRAnalysisSummary, PRFindingContext
 from schemas.report import (
     CIGateImpact,
     FinalReport,
@@ -43,6 +44,8 @@ __all__ = [
     "GateResult",
     "Hypothesis",
     "PipelineFindingResult",
+    "PRAnalysisSummary",
+    "PRFindingContext",
     "PolicyDecisionSummary",
     "ProjectDescription",
     "ProjectServiceDescription",

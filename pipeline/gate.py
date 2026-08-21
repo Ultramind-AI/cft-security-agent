@@ -88,6 +88,11 @@ def _classify_report(report: FinalReport, *, report_path: str | None) -> Pipelin
         status=report.status,
         context_level=context_level,
         cvss_severity=cvss_severity,
+        pr_classification=(
+            report.finding.pr_context.classification
+            if report.finding.pr_context is not None
+            else None
+        ),
     )
 
     return PipelineFindingResult(

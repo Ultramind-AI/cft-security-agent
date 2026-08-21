@@ -1,5 +1,6 @@
 from pipeline.gate import evaluate_gate
 from schemas.pipeline import GateResult
+from schemas.pr import PRFindingContext
 from schemas.report import FinalReport, ReportFinding, VerificationSummary
 from schemas.scoring import ContextPriority, CVSSResult
 
@@ -10,6 +11,7 @@ def _report(
     context: str | None = "MEDIUM",
     cvss: str | None = "N/A",
     finding_id: str = "finding-1",
+    pr_classification: str | None = None,
 ) -> FinalReport:
     return FinalReport(
         finding_id=finding_id,
@@ -23,6 +25,16 @@ def _report(
             file="demo.py",
             line_start=1,
             line_end=1,
+            pr_context=(
+                PRFindingContext(
+                    fingerprint="a" * 64,
+                    classification=pr_classification,
+                    base_ref="main",
+                    head_ref="feature",
+                )
+                if pr_classification is not None
+                else None
+            ),
         ),
         status=status,
         verification=VerificationSummary(),
@@ -84,6 +96,19 @@ def test_confirmed_medium_is_non_blocking_warning() -> None:
     assert gate.decision == "warn"
     assert gate.exit_code == 0
     assert gate.findings[0].gate_effect == "warn"
+
+
+def test_new_high_pr_finding_blocks_more_strongly_than_existing_high() -> None:
+    new_gate = evaluate_gate(
+        [_report(status="confirmed", context="HIGH", pr_classification="new")]
+    )
+    existing_gate = evaluate_gate(
+        [_report(status="confirmed", context="HIGH", pr_classification="existing")]
+    )
+
+    assert new_gate.decision == "fail"
+    assert existing_gate.decision == "warn"
+    assert "pre-existing" in existing_gate.findings[0].reason
 
 
 def test_inconclusive_and_policy_blocked_warn() -> None:

@@ -41,6 +41,20 @@ def render_final_report(report: FinalReport) -> str:
     ]
     if finding.description:
         lines.append(f"  Source description: {finding.description}")
+    if finding.pr_context is not None:
+        pr_context = finding.pr_context
+        lines.extend(
+            [
+                "",
+                "Pull Request",
+                f"  Range: {pr_context.base_ref}...{pr_context.head_ref}",
+                f"  Fingerprint: {pr_context.fingerprint}",
+                f"  Classification: {pr_context.classification}",
+                f"  Changed lines: {pr_context.changed_lines or 'none'}",
+                "  Architecture changed: "
+                f"{'yes' if pr_context.architecture_context_changed else 'no'}",
+            ]
+        )
 
     lines.extend(["", "Context"])
     if report.code_context:

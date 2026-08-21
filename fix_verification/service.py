@@ -148,7 +148,6 @@ def _run_process(argv: list[str], *, cwd: Path, timeout_seconds: int) -> FixChec
         "PATH": os.environ.get("PATH", ""),
         "LANG": "C.UTF-8",
         "LC_ALL": "C.UTF-8",
-        "HOME": str(cwd.parent / "empty-home"),
     }
     try:
         completed = subprocess.run(

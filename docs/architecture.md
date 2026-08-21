@@ -106,3 +106,14 @@ operator-owned YAML plan with `shell=False` and a minimal environment, and emits
 a `FixVerificationArtifact` containing patch status, re-test actions, new
 Evidence, and `verified` / `not_verified` / `inconclusive`. The original target
 is never patched, committed, or pushed.
+
+### Reproducible evaluation
+
+`benchmarks/dataset.yaml` is a small versioned ground-truth dataset for two
+fictional targets. `app.benchmark_run` reads existing `FinalReport` and
+`GateResult` artifacts and deterministically calculates coverage, terminal
+status counts, false positives, technical errors, average agent steps,
+expectation accuracy, and precision/recall where labels allow it. Its JSON and
+compact text outputs contain a dataset digest. Passing `--baseline` adds metric
+deltas, so prompt/model/scoring/validation changes can be compared without a
+large evaluation framework.

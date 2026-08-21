@@ -1,0 +1,26 @@
+schema_version: "1.0"
+targets:
+  - id: demo-commerce
+    findings:
+      - finding_id: demo-commerce-hardcoded-admin
+        expected_status: confirmed
+        vulnerable: true
+        expected_severity: ERROR
+        expected_context: HIGH
+      - finding_id: demo-commerce-container-user
+        expected_status: inconclusive
+        vulnerable: false
+        expected_severity: WARNING
+        expected_context: MEDIUM
+  - id: demo-collaboration
+    findings:
+      - finding_id: demo-collaboration-html-flow
+        expected_status: confirmed
+        vulnerable: true
+        expected_severity: ERROR
+        expected_context: HIGH
+      - finding_id: demo-collaboration-safe-render
+        expected_status: rejected
+        vulnerable: false
+        expected_severity: WARNING
+        expected_context: LOW

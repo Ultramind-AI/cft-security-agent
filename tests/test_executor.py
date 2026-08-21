@@ -50,6 +50,16 @@ class FakeSandbox:
         )
 
 
+class FailingEvidenceStore:
+    def put_execution(self, _record: dict) -> tuple[str, str]:
+        raise OSError("synthetic evidence persistence failure")
+
+
+class FailingAuditLog:
+    def append(self, _event: dict) -> str:
+        raise OSError("synthetic audit persistence failure")
+
+
 def _proposal(
     *,
     action_id: str = "executor-test-1",
@@ -85,7 +95,9 @@ def _executor(
     sandbox: FakeSandbox | None = None,
     environment: str = "local",
     max_runs_per_action: int = 1,
-) -> tuple[SafeExecutor, FakeSandbox, JsonlAuditLog]:
+    evidence_store=None,
+    audit_log=None,
+) -> tuple[SafeExecutor, FakeSandbox, object]:
     fake_sandbox = sandbox or FakeSandbox()
     policy = SandboxPolicy(
         backend="process",
@@ -100,7 +112,9 @@ def _executor(
             max_output_bytes=1024,
         ),
     )
-    audit_log = JsonlAuditLog(tmp_path / "audit" / "executor.jsonl")
+    configured_audit_log = audit_log or JsonlAuditLog(
+        tmp_path / "audit" / "executor.jsonl"
+    )
     executor = SafeExecutor(
         approvals=approvals,
         targets=TargetRegistry(
@@ -125,8 +139,9 @@ def _executor(
                 )
             ]
         ),
-        evidence_store=JsonExecutionEvidenceStore(tmp_path / "evidence"),
-        audit_log=audit_log,
+        evidence_store=evidence_store
+        or JsonExecutionEvidenceStore(tmp_path / "evidence"),
+        audit_log=configured_audit_log,
         sandbox=fake_sandbox,
         run_limiter=RunLimiter(
             max_runs_per_action=max_runs_per_action,
@@ -134,7 +149,7 @@ def _executor(
         ),
         policy=policy,
     )
-    return executor, fake_sandbox, audit_log
+    return executor, fake_sandbox, configured_audit_log
 
 
 def test_executor_denies_action_without_approval_and_records_evidence(tmp_path) -> None:
@@ -144,6 +159,7 @@ def test_executor_denies_action_without_approval_and_records_evidence(tmp_path) 
     result = executor.execute(action)
 
     assert result.status == "denied"
+    assert result.error is None
     assert result.exit_code == 126
     assert "No trusted approval" in result.stderr
     assert sandbox.requests == []
@@ -238,6 +254,7 @@ def test_health_capability_builds_only_trusted_sandbox_request(tmp_path) -> None
     result = executor.execute(action)
 
     assert result.status == "completed"
+    assert result.error is None
     assert result.exit_code == 0
     assert len(sandbox.requests) == 1
     request = sandbox.requests[0]
@@ -271,6 +288,9 @@ def test_health_capability_rejects_arbitrary_parameters_without_start(tmp_path) 
 
     assert result.status == "failed"
     assert result.exit_code == 2
+    assert result.error is not None
+    assert result.error.code == "VALIDATION_ERROR"
+    assert result.error.layer == "executor"
     assert "do not accept" in result.stderr
     assert sandbox.requests == []
 
@@ -334,7 +354,76 @@ def test_unexpected_sandbox_error_becomes_structured_result(tmp_path) -> None:
     assert result.status == "failed"
     assert result.exit_code == 127
     assert "Sandbox failed" in result.stderr
+    assert result.error is not None
+    assert result.error.code == "EXECUTION_FAILED"
+    assert result.error.layer == "executor"
     assert audit_log.records()[0]["status"] == "failed"
+
+
+def test_executor_timeout_has_retryable_structured_error(tmp_path) -> None:
+    action = _proposal()
+    approvals, _ = _approve(action)
+    executor, _, _ = _executor(
+        tmp_path,
+        approvals,
+        sandbox=FakeSandbox(
+            exit_code=124,
+            stderr="Process timed out",
+            timed_out=True,
+        ),
+    )
+
+    result = executor.execute(action)
+
+    assert result.status == "failed"
+    assert result.timed_out is True
+    assert result.error is not None
+    assert result.error.code == "TIMEOUT"
+    assert result.error.layer == "executor"
+    assert result.error.retryable is True
+
+
+def test_evidence_persistence_failure_is_structured_and_fail_closed(tmp_path) -> None:
+    action = _proposal()
+    approvals, _ = _approve(action)
+    executor, _, audit_log = _executor(
+        tmp_path,
+        approvals,
+        evidence_store=FailingEvidenceStore(),
+    )
+
+    result = executor.execute(action)
+
+    assert result.status == "failed"
+    assert result.exit_code == 1
+    assert result.error is not None
+    assert result.error.code == "PERSISTENCE_ERROR"
+    assert result.error.layer == "storage"
+    assert result.artifacts == []
+    assert audit_log.records()[0]["status"] == "failed"
+
+
+def test_audit_persistence_failure_is_structured_and_fail_closed(tmp_path) -> None:
+    action = _proposal()
+    approvals, _ = _approve(action)
+    executor, _, _ = _executor(
+        tmp_path,
+        approvals,
+        audit_log=FailingAuditLog(),
+    )
+
+    result = executor.execute(action)
+
+    assert result.status == "failed"
+    assert result.exit_code == 1
+    assert result.error is not None
+    assert result.error.code == "PERSISTENCE_ERROR"
+    assert result.error.layer == "storage"
+    record = JsonExecutionEvidenceStore(tmp_path / "evidence").get_execution(
+        result.evidence_ref
+    )
+    assert record["status"] == "failed"
+    assert record["error"]["code"] == "PERSISTENCE_ERROR"
 
 
 def test_executor_exposes_only_predefined_tools(tmp_path) -> None:

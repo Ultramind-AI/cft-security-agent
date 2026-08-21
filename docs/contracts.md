@@ -10,7 +10,7 @@
 | ActionProposal | Agent | Validator |
 | ValidationResult | Validator | Approval store / Agent |
 | ApprovalRecord | Trusted workflow boundary | Executor |
-| ErrorDetail | Pipeline boundary | CI/CD / human |
+| ErrorDetail | Pipeline / Executor boundaries | CI/CD / human |
 | ExecutionResult | Executor | Evidence |
 | Evidence | Evidence layer | Agent / Report |
 | FinalReport | Agent | CI/CD / human |
@@ -42,7 +42,14 @@ duration_ms
 evidence_ref
 audit_ref
 artifacts
+error
 ```
+
+`ExecutionResult.error` is `null` for successful execution and controlled
+security denials. Failed execution carries an `ErrorDetail`: input validation,
+timeout, sandbox execution and evidence/audit persistence failures are therefore
+distinguishable without parsing `stderr`. Existing diagnostic and Evidence
+fields remain unchanged.
 
 `evidence_ref` is resolved by `JsonExecutionEvidenceStore`; the agent reads the
 persisted record and checks its `run_id` and `action_id` before using it.

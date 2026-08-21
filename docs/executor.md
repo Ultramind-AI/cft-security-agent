@@ -72,11 +72,17 @@ A wall timeout kills the complete worker process group and returns:
 status=failed
 exit_code=124
 timed_out=true
+error.code=TIMEOUT
+error.retryable=true
 ```
 
 A non-zero worker exit, resource-limit termination, malformed worker response
 or sandbox setup problem is also converted into `ExecutionResult(status=failed)`.
 These failures do not escape from the Executor node as exceptions.
+`ExecutionResult.error` uses `VALIDATION_ERROR` for invalid capability input and
+`EXECUTION_FAILED` for other non-zero sandbox results. Controlled approval,
+policy and run-limit denials keep `error=null`. Evidence or audit write failures
+fail closed with `PERSISTENCE_ERROR` in the `storage` layer.
 
 The agent stores the failed evidence, reevaluates the finding and may issue a
 new approved action with a new id. When `max_iterations` is exhausted, the

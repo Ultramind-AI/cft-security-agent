@@ -23,6 +23,7 @@ from executor.sandbox_audit import AuditRecord, calculate_sha256_digest
 from executor.sandbox_policy import SandboxLimits, SandboxPolicy
 from executor.targets import TargetRegistry
 from schemas.action import ActionProposal
+from schemas.errors import ErrorDetail
 from schemas.execution import ExecutionResult
 from tools.registry import ToolRegistry
 
@@ -33,6 +34,26 @@ ExecutionStatus = Literal["completed", "failed", "denied"]
 
 class CapabilityInputError(ValueError):
     pass
+
+
+def _system_error(
+    code: Literal[
+        "VALIDATION_ERROR",
+        "TIMEOUT",
+        "PERSISTENCE_ERROR",
+        "EXECUTION_FAILED",
+    ],
+    *,
+    layer: Literal["executor", "storage"] = "executor",
+    message: str,
+    retryable: bool = False,
+) -> ErrorDetail:
+    return ErrorDetail(
+        code=code,
+        layer=layer,
+        message=message,
+        retryable=retryable,
+    )
 
 CAPABILITY_REPOSITORY_ACCESS: dict[str, bool] = {
     "safe_noop": False,
@@ -246,6 +267,10 @@ class SafeExecutor:
                 exit_code=2,
                 stderr=str(exc),
                 decision_reason="Capability input validation failed",
+                error=_system_error(
+                    "VALIDATION_ERROR",
+                    message="Capability input validation failed",
+                ),
             )
         acquired, limit_reason = self._run_limiter.acquire(action.id)
         if not acquired:
@@ -300,8 +325,12 @@ class SafeExecutor:
                     started,
                     status="failed",
                     exit_code=127,
-                    stderr=f"Sandbox execution error: {exc}",
+                    stderr="Sandbox failed",
                     decision_reason="Unexpected sandbox error",
+                    error=_system_error(
+                        "EXECUTION_FAILED",
+                        message="Sandbox execution failed",
+                    ),
                 )
         finally:
             self._run_limiter.release()
@@ -351,9 +380,24 @@ class SafeExecutor:
         stderr: str = "",
         timed_out: bool = False,
         workspace_id: str = "",
+        error: ErrorDetail | None = None,
     ) -> ExecutionResult:
         duration_ms = int((perf_counter() - started) * 1000)
         policy_dict = self._json_safe(asdict(self._policy))
+
+        if status == "failed" and error is None:
+            error = (
+                _system_error(
+                    "TIMEOUT",
+                    message="Sandbox execution timed out",
+                    retryable=True,
+                )
+                if timed_out
+                else _system_error(
+                    "EXECUTION_FAILED",
+                    message="Sandbox execution failed",
+                )
+            )
 
         evidence_payload = {
             "run_id": run_id,
@@ -367,9 +411,35 @@ class SafeExecutor:
             "duration_ms": duration_ms,
             "timed_out": timed_out,
             "workspace_id": workspace_id,
+            "limits": self._json_safe(asdict(self._policy.limits)),
             "policy": policy_dict,
+            "audit_ref": f"audit:{run_id}",
+            "error": error.model_dump(mode="json") if error else None,
         }
-        evidence_ref, artifact_path = self._evidence_store.put_execution(evidence_payload)
+
+        artifacts: list[str] = []
+        try:
+            evidence_ref, artifact_path = self._evidence_store.put_execution(
+                evidence_payload
+            )
+            artifacts.append(artifact_path)
+        except Exception:  # noqa: BLE001 - fail-closed persistence boundary
+            logger.exception("Failed to persist executor evidence for action %s", action.id)
+            status = "failed"
+            exit_code = 1
+            error = _system_error(
+                "PERSISTENCE_ERROR",
+                layer="storage",
+                message="Execution evidence could not be persisted",
+            )
+            stderr = _append_diagnostic(stderr, "Executor evidence persistence failed")
+            evidence_ref = f"evidence-unavailable-{uuid4().hex}"
+            evidence_payload.update(
+                status=status,
+                exit_code=exit_code,
+                stderr=stderr,
+                error=error.model_dump(mode="json"),
+            )
 
         audit_record = AuditRecord.create(
             run_id=run_id,
@@ -390,7 +460,40 @@ class SafeExecutor:
             network_mode=self._policy.network_mode,
             evidence_ref=evidence_ref,
         )
-        audit_ref = self._audit_log.append(audit_record.to_dict())
+        try:
+            audit_ref = self._audit_log.append(audit_record.to_dict())
+        except Exception:  # noqa: BLE001 - fail-closed persistence boundary
+            logger.exception("Failed to persist executor audit for action %s", action.id)
+            status = "failed"
+            exit_code = 1
+            error = _system_error(
+                "PERSISTENCE_ERROR",
+                layer="storage",
+                message="Execution audit could not be persisted",
+            )
+            stderr = _append_diagnostic(stderr, "Executor audit persistence failed")
+            audit_ref = f"audit-unavailable:{run_id}"
+
+            final_evidence = {
+                **evidence_payload,
+                "status": status,
+                "exit_code": exit_code,
+                "stderr": stderr,
+                "audit_ref": audit_ref,
+                "error": error.model_dump(mode="json"),
+            }
+            try:
+                evidence_ref, artifact_path = self._evidence_store.put_execution(
+                    final_evidence
+                )
+                artifacts = [artifact_path]
+            except Exception:  # noqa: BLE001 - no trusted fallback remains
+                logger.exception(
+                    "Failed to persist final audit-failure evidence for action %s",
+                    action.id,
+                )
+                evidence_ref = f"evidence-unavailable-{uuid4().hex}"
+                artifacts = []
 
         return ExecutionResult(
             run_id=run_id,
@@ -402,8 +505,9 @@ class SafeExecutor:
             timed_out=timed_out,
             evidence_ref=evidence_ref,
             audit_ref=audit_ref,
-            artifacts=[artifact_path],
+            artifacts=artifacts,
             duration_ms=duration_ms,
+            error=error,
         )
 
     @staticmethod
@@ -435,3 +539,7 @@ class SafeExecutor:
         if set(parameters) != required:
             raise CapabilityInputError("React HTML flow requires the fixed parameter set")
         return {k: str(parameters[k]).strip() for k in required}
+
+
+def _append_diagnostic(stderr: str, message: str) -> str:
+    return "\n".join(part for part in (stderr.strip(), message) if part)

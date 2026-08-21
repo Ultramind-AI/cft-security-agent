@@ -113,3 +113,35 @@ def test_build_real_initial_state_uses_real_code_and_architecture(tmp_path) -> N
     assert state["architecture_context"].public_exposure is True
     assert state["architecture_context"].databases == ["database"]
     assert state["max_iterations"] == 1
+
+
+def test_build_real_initial_state_applies_architecture_overrides(tmp_path) -> None:
+    findings_path = tmp_path / "findings.json"
+    finding_id = _write_findings(findings_path)
+    target = tmp_path / "target"
+    dockerfile = target / "backend" / "Dockerfile"
+    dockerfile.parent.mkdir(parents=True)
+    dockerfile.write_text("FROM python:3.11-slim\n", encoding="utf-8")
+    architecture_path = tmp_path / "architecture.yaml"
+    _write_architecture(architecture_path)
+    overrides_path = tmp_path / "overrides.yaml"
+    overrides_path.write_text(
+        """services:
+  backend:
+    public_exposure: false
+    authentication: admin
+""",
+        encoding="utf-8",
+    )
+
+    state = build_real_initial_state(
+        findings_path=findings_path,
+        target_root=target,
+        architecture_path=architecture_path,
+        architecture_overrides_path=overrides_path,
+        finding_id=finding_id,
+    )
+
+    assert state["architecture_context"].public_exposure is False
+    assert state["architecture_context"].authentication == "admin"
+    assert state["architecture_context"].databases == ["database"]

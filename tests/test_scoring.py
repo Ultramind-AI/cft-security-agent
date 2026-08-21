@@ -1,5 +1,6 @@
+from architecture.context import ProjectDescriptionAdapter
 from architecture.service import ArchitectureService
-from schemas.architecture import ArchitectureContext
+from schemas.architecture import ArchitectureContext, ProjectDescription
 from schemas.finding import Finding
 from scoring.service import ScoringService
 
@@ -80,3 +81,93 @@ def test_context_priority_thresholds() -> None:
     assert (low.score, low.level) == (0.0, "LOW")
     assert (medium.score, medium.level) == (3.5, "MEDIUM")
     assert (high.score, high.level) == (7.0, "HIGH")
+
+
+def test_project_description_adapter_is_independent_of_service_names() -> None:
+    first = ProjectDescription.model_validate(
+        {
+            "services": {
+                "backend": {
+                    "type": "api",
+                    "public": True,
+                    "criticality": "high",
+                    "connects_to": ["database"],
+                },
+                "database": {"type": "database", "criticality": "critical"},
+            }
+        }
+    )
+    second = ProjectDescription.model_validate(
+        {
+            "services": {
+                "orders-gateway": {
+                    "type": "service",
+                    "public": True,
+                    "criticality": "high",
+                    "connects_to": ["ledger-store"],
+                },
+                "ledger-store": {"type": "database", "criticality": "critical"},
+            }
+        }
+    )
+
+    first_context = ProjectDescriptionAdapter(first).get_context("backend")
+    second_context = ProjectDescriptionAdapter(second).get_context("orders-gateway")
+    scorer = ScoringService()
+
+    assert first_context.databases == ["database"]
+    assert second_context.databases == ["ledger-store"]
+    assert scorer.score_context_priority(first_context).score == 7.0
+    assert scorer.score_context_priority(second_context).score == 7.0
+    assert (
+        scorer.score_context_priority(first_context).reasons
+        == scorer.score_context_priority(second_context).reasons
+    )
+
+
+def test_yaml_overrides_replace_only_explicit_architecture_facts(tmp_path) -> None:
+    description = tmp_path / "project.yaml"
+    description.write_text(
+        """services:
+  payments:
+    type: service
+    public: false
+    criticality: medium
+    trust_zone: application
+    connects_to:
+      - event-bus
+  event-bus:
+    type: messaging
+    criticality: medium
+""",
+        encoding="utf-8",
+    )
+    overrides = tmp_path / "overrides.yaml"
+    overrides.write_text(
+        """services:
+  payments:
+    public_exposure: true
+    criticality: high
+    databases:
+      - audit-store
+    authentication: none
+    blast_radius: shared
+""",
+        encoding="utf-8",
+    )
+
+    context = ArchitectureService(
+        description,
+        overrides_path=overrides,
+    ).get_context("payments")
+    priority = ScoringService().score_context_priority(context)
+
+    assert context.public_exposure is True
+    assert context.criticality == "high"
+    assert context.trust_zone == "application"
+    assert context.connected_services == ["event-bus"]
+    assert context.databases == ["audit-store"]
+    assert context.authentication == "none"
+    assert context.blast_radius == "shared"
+    assert priority.score == 9.0
+    assert priority.level == "HIGH"

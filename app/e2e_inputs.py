@@ -15,6 +15,7 @@ def build_real_initial_state(
     target_root: str | Path,
     architecture_path: str | Path | None = None,
     target_profile: TargetProfile | None = None,
+    architecture_overrides_path: str | Path | None = None,
     finding_id: str | None = None,
     finding_index: int = 0,
     max_iterations: int = 1,
@@ -49,7 +50,10 @@ def build_real_initial_state(
         finding.line_start,
         finding.line_end,
     )
-    architecture = ArchitectureService(effective_architecture).get_context(service)
+    architecture = ArchitectureService(
+        effective_architecture,
+        overrides_path=architecture_overrides_path,
+    ).get_context(service)
 
     state: AgentState = {
         "finding": finding,

@@ -1,5 +1,11 @@
 from schemas.action import ActionProposal
-from schemas.architecture import ArchitectureContext
+from schemas.architecture import (
+    ArchitectureContext,
+    ArchitectureContextOverride,
+    ArchitectureOverrides,
+    ProjectDescription,
+    ProjectServiceDescription,
+)
 from schemas.discovery import (
     DiscoveredComponent,
     DiscoveryCommandCandidate,
@@ -24,6 +30,8 @@ from schemas.validation import ValidationResult
 __all__ = [
     "ActionProposal",
     "ArchitectureContext",
+    "ArchitectureContextOverride",
+    "ArchitectureOverrides",
     "CVSSResult",
     "ContextPriority",
     "DiscoveredComponent",
@@ -38,6 +46,8 @@ __all__ = [
     "GateResult",
     "Hypothesis",
     "PipelineFindingResult",
+    "ProjectDescription",
+    "ProjectServiceDescription",
     "PythonPasswordAssignmentCheckResult",
     "ReactDangerousHtmlFlowCheckResult",
     "ReportFinding",

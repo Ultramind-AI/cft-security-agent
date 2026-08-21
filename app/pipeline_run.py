@@ -39,6 +39,10 @@ def _parse_args() -> argparse.Namespace:
         "--architecture",
         help="Optional architecture YAML override from TargetProfile",
     )
+    parser.add_argument(
+        "--architecture-overrides",
+        help="Optional YAML overrides for automatically derived architecture context",
+    )
     parser.add_argument("--sast-config", default="auto", help="Semgrep config/ruleset")
     parser.add_argument(
         "--output-dir",
@@ -87,6 +91,11 @@ def main() -> int:
 
     target = profile.repository_path
     architecture = Path(architecture_value).expanduser().resolve()
+    architecture_overrides = (
+        Path(args.architecture_overrides).expanduser().resolve()
+        if args.architecture_overrides
+        else None
+    )
     output_dir = Path(args.output_dir).expanduser()
     reports_dir = output_dir / "reports"
     reports_dir.mkdir(parents=True, exist_ok=True)
@@ -137,6 +146,7 @@ def main() -> int:
                 target_root=target,
                 architecture_path=architecture,
                 target_profile=profile,
+                architecture_overrides_path=architecture_overrides,
                 finding_id=finding.id,
                 max_iterations=args.max_iterations,
             )

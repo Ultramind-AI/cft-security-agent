@@ -11,12 +11,14 @@ from agent.graph import build_graph
 from app.config import settings
 from app.e2e_inputs import build_real_initial_state
 from architecture.service import ArchitectureService
+from pipeline.errors import error_from_exception
 from pipeline.gate import evaluate_gate
 from pr_analysis.git_diff import read_git_diff
 from pr_analysis.service import PRAnalysisService
 from reporting.presentation import render_final_report
 from sast.repository import JsonFindingRepository
 from sast.semgrep_runner import SemgrepError, run_semgrep_scan
+from schemas.errors import ErrorDetail
 from schemas.pipeline import GateResult
 from schemas.report import FinalReport
 from schemas.target import TargetProfile
@@ -132,7 +134,7 @@ def main() -> int:
     print(f"Target: {target}")
     print(f"Agent mode: {settings.agent_mode}")
 
-    stage_errors: list[str] = []
+    pipeline_errors: list[ErrorDetail] = []
     # Без списка финдингов дальше проверять нечего, сразу возвращаем фейл гейт
     try:
         findings_path = _resolve_findings(
@@ -143,8 +145,14 @@ def main() -> int:
             service_resolver=profile.resolve_service,
         )
     except (SemgrepError, OSError, ValueError, TypeError) as exc:
-        stage_errors.append(f"SAST stage failed: {type(exc).__name__}: {exc}")
-        gate = evaluate_gate([], stage_errors=stage_errors)
+        pipeline_errors.append(
+            error_from_exception(
+                exc,
+                layer="sast",
+                public_message="SAST stage failed",
+            )
+        )
+        gate = evaluate_gate([], errors=pipeline_errors)
         _write_gate(output_dir, gate)
         _print_gate(gate)
         return gate.exit_code
@@ -152,8 +160,15 @@ def main() -> int:
     findings = JsonFindingRepository(findings_path).list_findings()
     if args.base_ref:
         if not args.base_findings:
-            stage_errors.append(
-                "PR analysis requires --base-findings to distinguish new and existing findings."
+            pipeline_errors.append(
+                ErrorDetail(
+                    code="VALIDATION_ERROR",
+                    layer="pipeline",
+                    message=(
+                        "PR analysis requires --base-findings to distinguish new and "
+                        "existing findings."
+                    ),
+                )
             )
         else:
             try:
@@ -183,7 +198,13 @@ def main() -> int:
                     encoding="utf-8",
                 )
             except (OSError, RuntimeError, ValueError, TypeError) as exc:
-                stage_errors.append(f"PR analysis failed: {type(exc).__name__}: {exc}")
+                pipeline_errors.append(
+                    error_from_exception(
+                        exc,
+                        layer="pipeline",
+                        public_message="PR analysis failed",
+                    )
+                )
     print(f"Findings to verify: {len(findings)}")
 
     reports: list[FinalReport] = []
@@ -225,11 +246,15 @@ def main() -> int:
                 print(render_final_report(report))
         # Падение одного финдинга не прячет остальные, но гейт это обязательно увидит
         except Exception as exc:  # noqa: BLE001 - граница этапа должна стать ошибкой гейта
-            message = f"{finding.id}: {type(exc).__name__}: {exc}"
-            stage_errors.append(message)
-            print(f"  ERROR: {message}")
+            error = error_from_exception(
+                exc,
+                layer="pipeline",
+                public_message=f"Finding workflow failed: {finding.id}",
+            )
+            pipeline_errors.append(error)
+            print(f"  ERROR [{error.code}/{error.layer}]: {error.message}")
 
-    gate = evaluate_gate(reports, stage_errors=stage_errors, report_paths=report_paths)
+    gate = evaluate_gate(reports, errors=pipeline_errors, report_paths=report_paths)
     _write_index(output_dir, reports, report_paths)
     _write_gate(output_dir, gate)
     _print_gate(gate)
@@ -327,16 +352,16 @@ def _print_gate(gate: GateResult) -> None:
     )
     for reason in gate.reasons:
         print(f"- {reason}")
-    for error in gate.stage_errors:
-        print(f"- stage error: {error}")
+    for error in gate.errors:
+        print(f"- stage error [{error.code}/{error.layer}]: {error.message}")
 
     if os.getenv("GITHUB_ACTIONS", "").lower() == "true":
         annotation = "error" if gate.decision == "fail" else "warning"
         if gate.decision != "pass":
             for reason in gate.reasons:
                 print(f"::{annotation}::{reason}")
-        for error in gate.stage_errors:
-            print(f"::error::{error}")
+        for error in gate.errors:
+            print(f"::error::[{error.code}/{error.layer}] {error.message}")
 
     print(f"exit_code={gate.exit_code}")
 

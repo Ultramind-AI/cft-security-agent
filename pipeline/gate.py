@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import Counter
 
 from pipeline.policy import classify_finding_gate
+from schemas.errors import ErrorDetail
 from schemas.pipeline import GateResult, PipelineFindingResult
 from schemas.report import FinalReport
 
@@ -12,6 +13,7 @@ _DECISION_RANK = {"pass": 0, "warn": 1, "fail": 2}
 def evaluate_gate(
     reports: list[FinalReport],
     *,
+    errors: list[ErrorDetail] | None = None,
     stage_errors: list[str] | None = None,
     report_paths: dict[str, str] | None = None,
 ) -> GateResult:
@@ -30,14 +32,22 @@ def evaluate_gate(
     ошибки этапов используют код 2.
     """
 
-    errors = list(stage_errors or [])
+    structured_errors = list(errors or [])
+    structured_errors.extend(
+        ErrorDetail(
+            code="INTERNAL_ERROR",
+            layer="pipeline",
+            message=message,
+        )
+        for message in (stage_errors or [])
+    )
     paths = report_paths or {}
     finding_results = [
         _classify_report(report, report_path=paths.get(report.finding_id)) for report in reports
     ]
 
     # Ошибка пайплайна и риск финдинга - разные причины отказа, но обе блокируют CI
-    if errors:
+    if structured_errors:
         decision = "fail"
         exit_code = 2
         decision_basis = "technical_pipeline_error"
@@ -61,7 +71,7 @@ def evaluate_gate(
             item.reason for item in finding_results if item.gate_effect != "pass"
         )
     )
-    if errors:
+    if structured_errors:
         reasons.insert(0, "A mandatory pipeline stage did not complete successfully.")
 
     return GateResult(
@@ -73,9 +83,9 @@ def evaluate_gate(
         rejected=counts.get("rejected", 0),
         inconclusive=counts.get("inconclusive", 0),
         policy_blocked=counts.get("policy_blocked", 0),
-        technical_errors=len(errors),
+        technical_errors=len(structured_errors),
         reasons=reasons,
-        stage_errors=errors,
+        errors=structured_errors,
         findings=finding_results,
     )
 

@@ -10,6 +10,7 @@
 | ActionProposal | Agent | Validator |
 | ValidationResult | Validator | Approval store / Agent |
 | ApprovalRecord | Trusted workflow boundary | Executor |
+| ErrorDetail | Pipeline boundary | CI/CD / human |
 | ExecutionResult | Executor | Evidence |
 | Evidence | Evidence layer | Agent / Report |
 | FinalReport | Agent | CI/CD / human |
@@ -17,6 +18,15 @@
 `ApprovalRecord` binds `action_id` to a SHA-256 digest of the complete
 `ActionProposal`. Executor receives only the proposal and verifies that trusted
 record before resolving a capability.
+
+`ErrorDetail` is the machine-readable system-error contract. It contains
+`code`, `layer`, a public `message` and `retryable`. Security outcomes such as
+Validator denial or `policy_blocked` are not system errors.
+
+`GateResult.errors` is the canonical structured list. The legacy
+`stage_errors: list[str]` field remains available and is derived from the public
+messages in `errors`. Any mandatory structured error keeps the gate fail-closed
+with `decision="fail"` and `exit_code=2`.
 
 `ExecutionResult` always contains:
 
@@ -79,4 +89,3 @@ python -m app.tool_contracts --name request_verification
 
 A future LangChain adapter can build structured tools from these schemas without
 changing the shared project models or the Validator/Executor boundary.
-

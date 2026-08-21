@@ -7,6 +7,13 @@ environments:
   - local
   - sandbox
   - staging
+
+runtime:
+  backend: process # or docker
+  sandbox_image: "example.invalid/cft-sandbox@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  network_mode: none
+  internal_network: cft_internal_security_net
+
 limits:
   max_iterations: 5
   executor:

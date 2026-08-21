@@ -127,14 +127,6 @@ def execute_action(state: AgentState) -> dict:
         workspace_directory=settings.executor_work_dir,
         target_base_url=settings.target_base_url,
         target_repository_path=settings.target_repository_path,
-        timeout_seconds=settings.executor_timeout_seconds,
-        cpu_time_seconds=settings.executor_cpu_time_seconds,
-        memory_mb=settings.executor_memory_mb,
-        max_file_bytes=settings.executor_max_file_bytes,
-        max_processes=settings.executor_max_processes,
-        max_output_bytes=settings.executor_max_output_bytes,
-        max_runs_per_action=settings.executor_max_runs_per_action,
-        max_concurrent_runs=settings.executor_max_concurrent_runs,
     )
 
     execution = executor.execute(action)

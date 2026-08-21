@@ -129,7 +129,7 @@ def _read_artifact(
     try:
         source_file.relative_to(root)
     except ValueError as exc:
-        raise ValueError("Trusted artifact escaped target repository") from exc
+        raise ValueError("Trusted artifact or symlink escaped target repository") from exc
 
     if not source_file.is_file():
         raise ValueError(f"Trusted artifact is not a regular file: {artifact_id}")

@@ -1,15 +1,17 @@
 import pytest
 
+from pathlib import Path
+import shutil
 from evidence.audit import JsonlAuditLog
 from evidence.store import JsonExecutionEvidenceStore
 from executor.approvals import InMemoryApprovalStore
 from executor.executor import SafeExecutor
 from executor.sandbox import (
     RunLimiter,
-    SandboxLimits,
     SandboxRequest,
     SandboxResult,
 )
+from executor.sandbox_policy import SandboxPolicy, SandboxLimits
 from executor.targets import TargetArtifactDefinition, TargetDefinition, TargetRegistry
 from schemas.action import ActionProposal
 from schemas.validation import ValidationResult
@@ -85,13 +87,18 @@ def _executor(
     max_runs_per_action: int = 1,
 ) -> tuple[SafeExecutor, FakeSandbox, JsonlAuditLog]:
     fake_sandbox = sandbox or FakeSandbox()
-    limits = SandboxLimits(
-        wall_time_seconds=2,
-        cpu_time_seconds=1,
-        memory_bytes=128 * 1024 * 1024,
-        max_file_bytes=1024 * 1024,
-        max_processes=4,
-        max_output_bytes=1024,
+    policy = SandboxPolicy(
+        backend="process",
+        network_mode="none",
+        allowed_environments={"local", "sandbox", "staging"},
+        limits=SandboxLimits(
+            wall_time_seconds=2,
+            cpu_time_seconds=1,
+            memory_bytes=128 * 1024 * 1024,
+            max_file_bytes=1024 * 1024,
+            max_processes=4,
+            max_output_bytes=1024,
+        ),
     )
     audit_log = JsonlAuditLog(tmp_path / "audit" / "executor.jsonl")
     executor = SafeExecutor(
@@ -125,8 +132,7 @@ def _executor(
             max_runs_per_action=max_runs_per_action,
             max_concurrent_runs=1,
         ),
-        limits=limits,
-        allowed_environments={"local", "sandbox", "staging"},
+        policy=policy,
     )
     return executor, fake_sandbox, audit_log
 
@@ -402,3 +408,44 @@ def test_source_capability_rejects_extra_agent_parameters_before_sandbox(tmp_pat
     assert result.exit_code == 2
     assert "exactly one artifact_id" in result.stderr
     assert sandbox.requests == []
+
+def test_docker_backend_fails_closed_when_docker_is_unavailable(monkeypatch, tmp_path: Path,) -> None:
+    monkeypatch.setattr(shutil, "which", lambda _: None)
+
+    policy_file = tmp_path / "policy.yaml"
+    policy_file.write_text(
+        """
+runtime:
+  backend: docker
+  network_mode: none
+
+environments:
+  allowed:
+    - local
+    - sandbox
+    - staging
+
+limits:
+  executor:
+    wall_time_seconds: 5
+    cpu_time_seconds: 2
+    memory_mb: 256
+    max_file_bytes: 1048576
+    max_processes: 8
+    max_output_bytes: 16384
+""",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="Refusing to fall back to ProcessSandbox",
+    ):
+        SafeExecutor.from_config(
+            approvals=InMemoryApprovalStore(),
+            policy_file=policy_file,
+            target_file=tmp_path / "targets.yaml",
+            evidence_directory=tmp_path / "evidence",
+            audit_log_path=tmp_path / "audit.jsonl",
+            workspace_directory=tmp_path / "workspace",
+        )

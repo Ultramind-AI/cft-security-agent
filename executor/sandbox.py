@@ -1,37 +1,31 @@
+from __future__ import annotations
+
 import json
-import math
+import logging
 import os
+import shutil
 import signal
 import subprocess
 import sys
-import tempfile
 import threading
+import time
+import uuid
+from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
-from time import perf_counter
-from typing import ClassVar, Protocol
+from typing import Dict, Optional, Protocol, Tuple, Literal
 
+from executor.sandbox_policy import SandboxLimits, SandboxPolicy
+from executor.sandbox_runtime import DockerRuntimeBuilder
 
-@dataclass(frozen=True)
-class SandboxLimits:
-    wall_time_seconds: float = 5.0
-    cpu_time_seconds: int = 2
-    memory_bytes: int = 256 * 1024 * 1024
-    max_file_bytes: int = 1024 * 1024
-    max_processes: int = 8
-    max_output_bytes: int = 16_384
+logger = logging.getLogger(__name__)
 
-    def __post_init__(self) -> None:
-        values = {
-            "wall_time_seconds": self.wall_time_seconds,
-            "cpu_time_seconds": self.cpu_time_seconds,
-            "memory_bytes": self.memory_bytes,
-            "max_file_bytes": self.max_file_bytes,
-            "max_processes": self.max_processes,
-            "max_output_bytes": self.max_output_bytes,
-        }
-        if any(value <= 0 for value in values.values()):
-            raise ValueError("All sandbox limits must be positive")
+NetworkAccess = Literal["none", "target"]
+
+try:
+    import resource
+except ImportError:
+    resource = None
 
 
 @dataclass(frozen=True)
@@ -41,271 +35,372 @@ class SandboxRequest:
     base_url: str
     parameters: dict
     request_timeout_seconds: float
+    network_access: Literal["none", "target"] = "none"
     repository_path: str = ""
-    artifacts: dict[str, dict[str, str]] = field(default_factory=dict)
+    artifacts: dict[str, dict] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
 class SandboxResult:
+    """Структурированный результат, полученный в результате выполнения в «песочнице»"""
     run_id: str
     exit_code: int
     stdout: str
     stderr: str
-    duration_ms: int
     timed_out: bool
     workspace_id: str
+    duration_ms: int = 0
+    runtime_backend: str = "process"
 
 
 class Sandbox(Protocol):
     def run(self, request: SandboxRequest) -> SandboxResult: ...
 
+# Потоковый ридер с защитой от DoS-атак, использующих память
+
+def _communicate_bounded(
+    proc: subprocess.Popen,
+    input_data: bytes,
+    timeout_s: float,
+    max_bytes: int,
+) -> Tuple[bytes, bool, bytes, bool, bool]:
+    """
+    Считывает вывод процесса с жестким ограничением объема данных (в байтах) для предотвращения DoS-атак, исчерпывающих память.
+    Возвращает (raw_stdout, stdout_truncated, raw_stderr, stderr_truncated, timed_out)
+    """
+    stdout_chunks: list[bytes] = []
+    stderr_chunks: list[bytes] = []
+    stdout_state = [0, False]  # [bytes_collected, was_truncated]
+    stderr_state = [0, False]
+    timed_out = False
+
+    def feed_stdin():
+        try:
+            if proc.stdin:
+                proc.stdin.write(input_data)
+                proc.stdin.close()
+        except (BrokenPipeError, OSError):
+            pass
+
+    def read_stream(stream, chunks_list, state):
+        try:
+            while True:
+                chunk = stream.read(4096)
+                if not chunk:
+                    break
+                if state[0] < max_bytes:
+                    allowed = max_bytes - state[0]
+                    chunks_list.append(chunk[:allowed])
+                    state[0] += len(chunk[:allowed])
+                    if len(chunk) > allowed:
+                        state[1] = True
+                else:
+                    state[1] = True
+        except (ValueError, OSError):
+            pass
+        finally:
+            try:
+                stream.close()
+            except OSError:
+                pass
+
+    t_stdin = threading.Thread(target=feed_stdin, daemon=True)
+    t_stdout = threading.Thread(target=read_stream, args=(proc.stdout, stdout_chunks, stdout_state), daemon=True)
+    t_stderr = threading.Thread(target=read_stream, args=(proc.stderr, stderr_chunks, stderr_state), daemon=True)
+
+    t_stdin.start()
+    t_stdout.start()
+    t_stderr.start()
+
+    start = time.monotonic()
+    while True:
+        if proc.poll() is not None:
+            break
+        if time.monotonic() - start > timeout_s:
+            timed_out = True
+            break
+        time.sleep(0.02)
+
+    if timed_out:
+        if os.name == "posix" and hasattr(os, "killpg"):
+            try:
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            except OSError:
+                pass
+        else:
+            proc.kill()
+
+    t_stdout.join(timeout=1.0)
+    t_stderr.join(timeout=1.0)
+
+    raw_stdout = b"".join(stdout_chunks)
+    raw_stderr = b"".join(stderr_chunks)
+
+    return raw_stdout, stdout_state[1], raw_stderr, stderr_state[1], timed_out
+
+
+def _format_bounded_output(data: bytes, was_truncated: bool) -> str:
+    text = data.decode("utf-8", errors="replace")
+    if was_truncated:
+        return f"{text}\n...[truncated]"
+    return text
+
+# Минимальное чистое окружение
+
+STRICT_ALLOWED_ENV = frozenset({
+    "PATH", "LANG", "LC_ALL", "PYTHONIOENCODING",
+    "PYTHONDONTWRITEBYTECODE", "PYTHONHASHSEED",
+    "SYSTEMROOT", "SystemRoot", "WINDIR"
+})
+
+BLOCKED_SECRET_PATTERNS = (
+    "TOKEN", "SECRET", "KEY", "PASS", "CREDENTIAL", "AUTH",
+    "SSH", "AWS", "GITHUB", "GITLAB", "PRIVATE", "SESSION"
+)
+
+
+def get_minimal_environment(source_env: Optional[Dict[str, str]] = None) -> Dict[str, str]:
+    src = source_env if source_env is not None else os.environ
+    clean_env: Dict[str, str] = {
+        "PYTHONIOENCODING": "utf-8",
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "LANG": "C.UTF-8",
+        "LC_ALL": "C.UTF-8",
+        "PYTHONHASHSEED": "random",
+    }
+    for key in STRICT_ALLOWED_ENV:
+        if key in src:
+            if not any(pat in key.upper() for pat in BLOCKED_SECRET_PATTERNS):
+                clean_env[key] = src[key]
+    return clean_env
+
+
+def _apply_posix_resource_limits(limits: SandboxLimits) -> None:
+    os.umask(limits.umask)
+    if hasattr(os, "setsid"):
+        try:
+            os.setsid()
+        except OSError:
+            pass
+    if resource is None:
+        return
+    try:
+        resource.setrlimit(resource.RLIMIT_CPU, (limits.cpu_time_seconds, limits.cpu_time_seconds + 1))
+    except (ValueError, OSError):
+        pass
+    if hasattr(resource, "RLIMIT_AS") and sys.platform.startswith("linux"):
+        try:
+            resource.setrlimit(resource.RLIMIT_AS, (limits.memory_bytes, limits.memory_bytes))
+        except (ValueError, OSError):
+            pass
+    if hasattr(resource, "RLIMIT_FSIZE"):
+        try:
+            resource.setrlimit(resource.RLIMIT_FSIZE, (limits.max_file_bytes, limits.max_file_bytes))
+        except (ValueError, OSError):
+            pass
+    if hasattr(resource, "RLIMIT_NPROC") and sys.platform.startswith("linux"):
+        try:
+            resource.setrlimit(resource.RLIMIT_NPROC, (limits.max_processes, limits.max_processes))
+        except (ValueError, OSError):
+            pass
+
+# RunLimiter
 
 class RunLimiter:
-    """Ограничивает запуски и параллельное выполнение в одном доверенном процессе."""
+    _instances: dict[str, RunLimiter] = {}
+    _global_lock = threading.Lock()
 
-    _shared: ClassVar[dict[tuple[str, int, int], "RunLimiter"]] = {}
-    _shared_lock: ClassVar[threading.Lock] = threading.Lock()
-
-    def __init__(
-        self,
-        *,
-        max_runs_per_action: int = 1,
-        max_concurrent_runs: int = 1,
-    ) -> None:
-        if max_runs_per_action <= 0 or max_concurrent_runs <= 0:
-            raise ValueError("Run limits must be positive")
+    def __init__(self, scope: str | Path | None = None, max_runs_per_action: int = 1, max_concurrent_runs: int = 1) -> None:
+        self.scope = str(scope or "default")
         self.max_runs_per_action = max_runs_per_action
         self.max_concurrent_runs = max_concurrent_runs
-        self._counts: dict[str, int] = {}
+        self._action_counts: dict[str, int] = defaultdict(int)
         self._semaphore = threading.BoundedSemaphore(max_concurrent_runs)
         self._lock = threading.Lock()
 
     @classmethod
-    def shared(
-        cls,
-        *,
-        scope: str | Path,
-        max_runs_per_action: int,
-        max_concurrent_runs: int,
-    ) -> "RunLimiter":
-        key = (
-            str(Path(scope).resolve()),
-            max_runs_per_action,
-            max_concurrent_runs,
-        )
-        with cls._shared_lock:
-            if key not in cls._shared:
-                cls._shared[key] = cls(
-                    max_runs_per_action=max_runs_per_action,
-                    max_concurrent_runs=max_concurrent_runs,
-                )
-            return cls._shared[key]
+    def shared(cls, scope: str | Path, max_runs_per_action: int = 1, max_concurrent_runs: int = 1) -> RunLimiter:
+        key = str(Path(scope).resolve())
+        with cls._global_lock:
+            if key not in cls._instances:
+                cls._instances[key] = cls(scope=key, max_runs_per_action=max_runs_per_action, max_concurrent_runs=max_concurrent_runs)
+            return cls._instances[key]
 
     def acquire(self, action_id: str) -> tuple[bool, str]:
         with self._lock:
-            count = self._counts.get(action_id, 0)
-            if count >= self.max_runs_per_action:
-                return (
-                    False,
-                    f"Action run limit reached ({self.max_runs_per_action})",
-                )
-            if not self._semaphore.acquire(blocking=False):
-                return (
-                    False,
-                    f"Concurrent run limit reached ({self.max_concurrent_runs})",
-                )
-            self._counts[action_id] = count + 1
-        return True, "Run slot acquired"
+            if self._action_counts[action_id] >= self.max_runs_per_action:
+                return False, f"Action '{action_id}' reached max execution limit ({self.max_runs_per_action})"
+            self._action_counts[action_id] += 1
+        if not self._semaphore.acquire(blocking=False):
+            with self._lock:
+                self._action_counts[action_id] -= 1
+            return False, "Concurrent run limit reached. Action blocked."
+        return True, ""
 
     def release(self) -> None:
-        self._semaphore.release()
+        try:
+            self._semaphore.release()
+        except ValueError:
+            pass
 
 
 class ProcessSandbox:
-    """Запускает фиксированный worker Executor с ограниченными ресурсами ОС и без shell."""
 
     def __init__(
         self,
-        *,
         workspace_root: str | Path,
-        limits: SandboxLimits,
+        limits: SandboxLimits | None = None,
         worker_path: str | Path | None = None,
-        python_executable: str | Path | None = None,
+        python_executable: str | None = None,
     ) -> None:
         self.workspace_root = Path(workspace_root).resolve()
-        self.limits = limits
-        self.worker_path = Path(
-            worker_path or Path(__file__).with_name("worker.py")
-        ).resolve()
-        self.python_executable = str(python_executable or sys.executable)
+        self.limits = limits or SandboxLimits()
+        self.workspace_root.mkdir(parents=True, exist_ok=True)
+        self.python_executable = python_executable or sys.executable
+        self.worker_path = Path(worker_path).resolve() if worker_path else (Path(__file__).parent / "worker.py").resolve()
 
     def run(self, request: SandboxRequest) -> SandboxResult:
-        started = perf_counter()
-        workspace_id = f"run-{request.run_id}"
-        self.workspace_root.mkdir(parents=True, exist_ok=True)
+        unique_suffix = uuid.uuid4().hex[:8]
+        workspace_id = f"run-{request.run_id}-{unique_suffix}"
+        workspace_dir = self.workspace_root / workspace_id
+        workspace_dir.mkdir(parents=True, exist_ok=True)
+
+        payload = {
+            "tool": request.tool,
+            "base_url": request.base_url,
+            "parameters": request.parameters,
+            "request_timeout_seconds": request.request_timeout_seconds,
+            "repository_path": request.repository_path,
+            "artifacts": request.artifacts,
+            "max_output_bytes": self.limits.max_output_bytes,
+        }
+        input_data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        env = get_minimal_environment()
+        start_time = time.perf_counter()
+
+        preexec = (lambda: _apply_posix_resource_limits(self.limits)) if os.name == "posix" else None
 
         try:
-            with tempfile.TemporaryDirectory(
-                prefix=f"{workspace_id}-",
-                dir=self.workspace_root,
-            ) as temporary_directory:
-                workspace = Path(temporary_directory)
-                stdout_path = workspace / "stdout.txt"
-                stderr_path = workspace / "stderr.txt"
-                payload = json.dumps(
-                    {
-                        "run_id": request.run_id,
-                        "tool": request.tool,
-                        "base_url": request.base_url,
-                        "repository_path": request.repository_path,
-                        "artifacts": request.artifacts,
-                        "parameters": request.parameters,
-                        "request_timeout_seconds": request.request_timeout_seconds,
-                        "max_output_bytes": self.limits.max_output_bytes,
-                    },
-                    ensure_ascii=False,
-                    separators=(",", ":"),
-                ).encode("utf-8")
-
-                timed_out = False
-                with stdout_path.open("wb") as stdout_file, stderr_path.open(
-                    "wb"
-                ) as stderr_file:
-                    # Worker запускается фиксированным argv; shell и произвольная команда запрещены
-                    process = subprocess.Popen(
-                        [self.python_executable, str(self.worker_path)],
-                        cwd=workspace,
-                        env=_minimal_environment(),
-                        stdin=subprocess.PIPE,
-                        stdout=stdout_file,
-                        stderr=stderr_file,
-                        shell=False,
-                        start_new_session=os.name == "posix",
-                        preexec_fn=(  # noqa: PLW1509 - ограничения песочницы POSIX
-                            _resource_limiter(self.limits)
-                            if os.name == "posix"
-                            else None
-                        ),
-                    )
-                    try:
-                        process.communicate(
-                            input=payload,
-                            timeout=self.limits.wall_time_seconds,
-                        )
-                    except subprocess.TimeoutExpired:
-                        timed_out = True
-                        _kill_process_tree(process)
-                        process.communicate()
-
-                stdout = _read_bounded(
-                    stdout_path,
-                    self.limits.max_output_bytes,
-                )
-                stderr = _read_bounded(
-                    stderr_path,
-                    self.limits.max_output_bytes,
-                )
-                exit_code = process.returncode
-                if timed_out:
-                    exit_code = 124
-                    timeout_message = (
-                        "Execution timed out after "
-                        f"{self.limits.wall_time_seconds:g} seconds"
-                    )
-                    stderr = _append_bounded(
-                        stderr,
-                        timeout_message,
-                        self.limits.max_output_bytes,
-                    )
-
-                return SandboxResult(
-                    run_id=request.run_id,
-                    exit_code=int(exit_code),
-                    stdout=stdout,
-                    stderr=stderr,
-                    duration_ms=int((perf_counter() - started) * 1000),
-                    timed_out=timed_out,
-                    workspace_id=workspace_id,
-                )
-        except (OSError, ValueError, subprocess.SubprocessError) as exc:
-            return SandboxResult(
-                run_id=request.run_id,
-                exit_code=127,
-                stdout="",
-                stderr=f"Sandbox setup failed: {type(exc).__name__}",
-                duration_ms=int((perf_counter() - started) * 1000),
-                timed_out=False,
-                workspace_id=workspace_id,
+            proc = subprocess.Popen(
+                [self.python_executable, str(self.worker_path)],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                cwd=str(workspace_dir),
+                env=env,
+                shell=False,
+                preexec_fn=preexec,
             )
 
-
-def _minimal_environment() -> dict[str, str]:
-    environment = {
-        "PYTHONIOENCODING": "utf-8",
-        "PYTHONDONTWRITEBYTECODE": "1",
-        "LANG": "C.UTF-8",
-    }
-    for name in ("PATH", "SYSTEMROOT", "SystemRoot", "WINDIR"):
-        value = os.environ.get(name)
-        if value:
-            environment[name] = value
-    return environment
-
-
-def _resource_limiter(limits: SandboxLimits):
-    def apply_limits() -> None:
-        import resource
-
-        # POSIX-лимиты сужают последствия сбоя worker, но не заменяют полноценную изоляцию
-        os.umask(0o077)
-        cpu_limit = max(1, math.ceil(limits.cpu_time_seconds))
-        resource.setrlimit(resource.RLIMIT_CPU, (cpu_limit, cpu_limit))
-        # macOS предоставляет RLIMIT_AS, но снижение лимита для нового Python-процесса
-        # может упасть с ValueError до запуска; на Linux и поддерживаемых POSIX-платформах лимит
-        # сохраняется, а в Darwin используются остальные ограничения песочницы
-        if sys.platform != "darwin" and hasattr(resource, "RLIMIT_AS"):
-            resource.setrlimit(
-                resource.RLIMIT_AS,
-                (limits.memory_bytes, limits.memory_bytes),
+            raw_stdout, stdout_trunc, raw_stderr, stderr_trunc, timed_out = _communicate_bounded(
+                proc, input_data, self.limits.wall_time_seconds, self.limits.max_output_bytes
             )
-        resource.setrlimit(
-            resource.RLIMIT_FSIZE,
-            (limits.max_file_bytes, limits.max_file_bytes),
+            exit_code = 124 if timed_out else (proc.returncode if proc.returncode is not None else 1)
+
+            if timed_out:
+                raw_stderr = f"Process timed out after {self.limits.wall_time_seconds}s\n".encode("utf-8") + raw_stderr
+
+            stdout_str = _format_bounded_output(raw_stdout, stdout_trunc)
+            stderr_str = _format_bounded_output(raw_stderr, stderr_trunc)
+
+        except Exception as exc:
+            stdout_str = ""
+            stderr_str = f"Process sandbox execution failed: {type(exc).__name__}: {exc}"
+            exit_code = 127
+            timed_out = False
+        finally:
+            duration_ms = int((time.perf_counter() - start_time) * 1000)
+            if workspace_dir.exists():
+                shutil.rmtree(workspace_dir, ignore_errors=True)
+
+        return SandboxResult(
+            run_id=request.run_id,
+            exit_code=exit_code,
+            stdout=stdout_str,
+            stderr=stderr_str,
+            timed_out=timed_out,
+            workspace_id=workspace_id,
+            duration_ms=duration_ms,
+            runtime_backend="process",
         )
-        if hasattr(resource, "RLIMIT_NPROC"):
-            resource.setrlimit(
-                resource.RLIMIT_NPROC,
-                (limits.max_processes, limits.max_processes),
+
+# Граница безопасности контейнеров в продакшене и CI
+
+class DockerSandbox:
+    """Песочница для обеспечения безопасности контейнеров, принудительно устанавливающая режим «только для чтения» для корневой файловой системы, сетевую изоляцию и квоты для tmpfs"""
+
+    def __init__(self, policy: SandboxPolicy, worker_path: str | Path | None = None) -> None:
+        self.policy = policy
+        self.worker_path = Path(worker_path).resolve() if worker_path else (Path(__file__).parent / "worker.py").resolve()
+        self.builder = DockerRuntimeBuilder(policy)
+
+    def run(self, request: SandboxRequest) -> SandboxResult:
+        workspace_id = f"run-{request.run_id}-{uuid.uuid4().hex}"
+
+        repo_path: Path | None = None
+        if request.repository_path:
+            repo_path = Path(request.repository_path).resolve()
+
+            if not repo_path.is_dir():
+                raise ValueError(
+                    f"Trusted repository path is not a directory: {repo_path}"
+                )
+
+        spec = self.builder.build_spec(
+            run_id=workspace_id,
+            target_repo_host_path=repo_path,
+            worker_script_host_path=self.worker_path,
+            target_network_enabled=request.network_access == "target",
+        )
+
+        payload = {
+            "tool": request.tool,
+            "base_url": request.base_url,
+            "parameters": request.parameters,
+            "request_timeout_seconds": request.request_timeout_seconds,
+            "repository_path": "/target" if repo_path is not None else "",
+            "artifacts": request.artifacts,
+            "max_output_bytes": self.policy.limits.max_output_bytes,
+        }
+        input_data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        start_time = time.perf_counter()
+
+        try:
+            proc = subprocess.Popen(
+                spec.argv,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                shell=False,
             )
 
-    return apply_limits
+            raw_stdout, stdout_trunc, raw_stderr, stderr_trunc, timed_out = _communicate_bounded(
+                proc, input_data, self.policy.limits.wall_time_seconds, self.policy.limits.max_output_bytes
+            )
+            exit_code = 124 if timed_out else (proc.returncode if proc.returncode is not None else 1)
 
+            if timed_out:
+                subprocess.run(["docker", "rm", "-f", spec.container_name], capture_output=True, check=False)
+                raw_stderr = f"Container timed out after {self.policy.limits.wall_time_seconds}s\n".encode("utf-8") + raw_stderr
 
-def _kill_process_tree(process: subprocess.Popen) -> None:
-    if process.poll() is not None:
-        return
-    if os.name == "posix":
-        try:
-            os.killpg(process.pid, signal.SIGKILL)
-            return
-        except ProcessLookupError:
-            return
-    process.kill()
+            stdout_str = _format_bounded_output(raw_stdout, stdout_trunc)
+            stderr_str = _format_bounded_output(raw_stderr, stderr_trunc)
 
+        except Exception as exc:
+            stdout_str = ""
+            stderr_str = f"Docker container launch failed: {type(exc).__name__}: {exc}"
+            exit_code = 127
+            timed_out = False
+        finally:
+            duration_ms = int((time.perf_counter() - start_time) * 1000)
 
-def _read_bounded(path: Path, limit: int) -> str:
-    with path.open("rb") as stream:
-        data = stream.read(limit + 1)
-    truncated = len(data) > limit
-    decoded = data[:limit].decode("utf-8", errors="replace")
-    if truncated:
-        return f"{decoded}\n...[truncated]"
-    return decoded
-
-
-def _append_bounded(current: str, addition: str, limit: int) -> str:
-    combined = f"{current}\n{addition}".strip()
-    encoded = combined.encode("utf-8")
-    if len(encoded) <= limit:
-        return combined
-    return f"{encoded[:limit].decode('utf-8', errors='replace')}\n...[truncated]"
+        return SandboxResult(
+            run_id=request.run_id,
+            exit_code=exit_code,
+            stdout=stdout_str,
+            stderr=stderr_str,
+            timed_out=timed_out,
+            workspace_id=spec.workspace_id,
+            duration_ms=duration_ms,
+            runtime_backend="docker",
+        )

@@ -22,6 +22,9 @@ record before resolving a capability.
 `ErrorDetail` is the machine-readable system-error contract. It contains
 `code`, `layer`, a public `message` and `retryable`. Security outcomes such as
 Validator denial or `policy_blocked` are not system errors.
+Public messages are whitespace-normalized, length-bounded and redact common
+credential, bearer-token, basic-auth URL and local home-path patterns. Detailed
+unexpected exceptions remain available only through internal logging.
 
 `GateResult.errors` is the canonical structured list. The legacy
 `stage_errors: list[str]` field remains available and is derived from the public

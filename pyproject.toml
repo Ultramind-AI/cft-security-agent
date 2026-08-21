@@ -53,6 +53,7 @@ include = [
     "schemas*",
     "scoring*",
     "reporting*",
+    "security*",
     "tools*",
     "validator*",
 ]

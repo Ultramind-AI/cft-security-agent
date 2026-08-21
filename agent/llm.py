@@ -12,6 +12,8 @@ from typing import Any, TypeVar
 
 from pydantic import BaseModel, ValidationError
 
+from security.error_redaction import redact_error_message
+
 TModel = TypeVar("TModel", bound=BaseModel)
 
 
@@ -187,7 +189,7 @@ class ProviderFailoverClient:
             except (RuntimeError, TypeError, ValueError) as exc:
                 elapsed = int((time.monotonic() - started) * 1000)
                 status, block_provider = _classify_error(exc)
-                message = _sanitize_error(str(exc))
+                message = redact_error_message(exc)
                 self.last_attempts.append(
                     LLMAttempt(
                         route=route.label,
@@ -407,8 +409,3 @@ def _classify_error(exc: Exception) -> tuple[str, bool]:
     if "json" in message:
         return "invalid_structured_output", False
     return "request_failed", False
-
-
-def _sanitize_error(message: str) -> str:
-    compact = " ".join(message.split())
-    return compact[:400]

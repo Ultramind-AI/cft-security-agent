@@ -336,7 +336,7 @@ class SafeExecutor:
                         artifacts=target.worker_artifacts(),
                     )
                 )
-            except Exception as exc:
+            except Exception:
                 logger.exception(
                     "Unexpected sandbox failure for action %s",
                     action.id,

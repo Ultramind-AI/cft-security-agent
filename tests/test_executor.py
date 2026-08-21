@@ -28,18 +28,20 @@ class FakeSandbox:
         stderr: str = "",
         timed_out: bool = False,
         raises: bool = False,
+        exception_message: str = "synthetic sandbox failure",
     ) -> None:
         self.exit_code = exit_code
         self.stdout = stdout
         self.stderr = stderr
         self.timed_out = timed_out
         self.raises = raises
+        self.exception_message = exception_message
         self.requests: list[SandboxRequest] = []
 
     def run(self, request: SandboxRequest) -> SandboxResult:
         self.requests.append(request)
         if self.raises:
-            raise RuntimeError("synthetic sandbox failure")
+            raise RuntimeError(self.exception_message)
         return SandboxResult(
             run_id=request.run_id,
             exit_code=self.exit_code,
@@ -359,6 +361,26 @@ def test_unexpected_sandbox_error_becomes_structured_result(tmp_path) -> None:
     assert result.error.code == "EXECUTION_FAILED"
     assert result.error.layer == "executor"
     assert audit_log.records()[0]["status"] == "failed"
+
+
+def test_unexpected_sandbox_error_does_not_expose_raw_secret(tmp_path) -> None:
+    action = _proposal()
+    approvals, _ = _approve(action)
+    secret = "sandbox-secret-value"
+    executor, _, _ = _executor(
+        tmp_path,
+        approvals,
+        sandbox=FakeSandbox(
+            raises=True,
+            exception_message=f"password={secret}",
+        ),
+    )
+
+    result = executor.execute(action)
+
+    assert secret not in result.stderr
+    assert result.error is not None
+    assert secret not in result.error.message
 
 
 def test_executor_timeout_has_retryable_structured_error(tmp_path) -> None:

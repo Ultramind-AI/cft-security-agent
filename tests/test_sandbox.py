@@ -24,7 +24,10 @@ from executor.worker import (
     _validated_artifacts,
 )
 
-TEST_SANDBOX_IMAGE = ("example.invalid/cft-sandbox@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+TEST_SANDBOX_IMAGE = os.environ.get(
+    "CFT_SANDBOX_IMAGE",
+    "python@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+)
 
 def _limits(*, wall_time_seconds: float = 1.0) -> SandboxLimits:
     return SandboxLimits(
@@ -245,7 +248,26 @@ def test_ir03_docker_runtime_builder_enforces_socket_and_root_isolation(
     assert "--network" in argv
     assert argv[argv.index("--network") + 1] == "none"
 
+    tmpfs = argv[argv.index("--tmpfs") + 1]
+    assert tmpfs == "/workspace:rw,noexec,nosuid,nodev,size=67108864,uid=65534,gid=65534,mode=0700"
+
     assert "/var/run/docker.sock" not in cmd_str
+
+
+def test_docker_runtime_tmpfs_uses_configured_non_root_user(tmp_path: Path) -> None:
+    policy = SandboxPolicy(
+        backend="docker",
+        network_mode="none",
+        sandbox_image=TEST_SANDBOX_IMAGE,
+        container_user="10001:10002",
+    )
+    spec = DockerRuntimeBuilder(policy).build_spec(
+        run_id="workspace-owner",
+        target_repo_host_path=None,
+        worker_script_host_path=Path(worker.__file__).resolve(),
+    )
+    tmpfs = spec.argv[spec.argv.index("--tmpfs") + 1]
+    assert tmpfs == "/workspace:rw,noexec,nosuid,nodev,size=67108864,uid=10001,gid=10002,mode=0700"
 
 
 def test_ir04_fixed_url_validation_blocks_invalid_targets() -> None:
@@ -293,7 +315,7 @@ def test_ir10_run_limits_action_replay_and_concurrency(tmp_path: Path) -> None:
     limiter.release()
     second_ok, reason = limiter.acquire("action-once")
     assert second_ok is False
-    assert "reached max execution limit" in reason
+    assert "run limit reached" in reason
 
 
 def test_ir11_sha256_audit_digest_calculation() -> None:

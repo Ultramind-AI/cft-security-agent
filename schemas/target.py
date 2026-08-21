@@ -118,6 +118,7 @@ class TargetSASTConfig(BaseModel):
 class TargetRuntimeConfig(BaseModel):
     type: str = "unknown"
     base_url: str | None = None
+    compose_file: str | None = None
     allowed_local_addresses: list[str] = Field(default_factory=list)
 
     @field_validator("base_url")
@@ -134,6 +135,13 @@ class TargetRuntimeConfig(BaseModel):
                 "Target runtime.base_url cannot contain credentials, query, or fragment"
             )
         return value.rstrip("/")
+
+    @field_validator("compose_file")
+    @classmethod
+    def validate_compose_file(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return _normalize_relative_path(value, allow_dot=False)
 
 
 class TargetConstraints(BaseModel):
@@ -305,6 +313,27 @@ class TargetProfile(BaseModel):
         ):
             raise ValueError("Capability path must be a fixed absolute URL path")
         return urljoin(f"{self.base_url.rstrip('/')}/", path.lstrip("/"))
+
+    def compose_file_path(self) -> Path:
+        if self.repository_path is None or self.runtime.compose_file is None:
+            raise ValueError(
+                f"Target '{self.id}' requires repository_path and runtime.compose_file"
+            )
+        repository = self.repository_path.resolve()
+        compose_file = (repository / self.runtime.compose_file).resolve()
+        try:
+            compose_file.relative_to(repository)
+        except ValueError as exc:
+            raise ValueError("Target runtime.compose_file must stay inside the repository") from exc
+        return compose_file
+
+    def healthcheck_paths(self) -> tuple[str, ...]:
+        paths = {
+            service.healthcheck.path
+            for service in self.services.values()
+            if service.healthcheck is not None
+        }
+        return tuple(sorted(paths))
 
     def worker_artifacts(self) -> dict[str, dict[str, str]]:
         return {

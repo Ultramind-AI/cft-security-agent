@@ -392,6 +392,7 @@ class SafeExecutor:
             # Старый контракт evidence использует limits сверху, policy остается source of truth
             "limits": policy_dict["limits"],
             "policy": policy_dict,
+            "limits": policy_dict["limits"],
         }
         evidence_ref, artifact_path = self._evidence_store.put_execution(evidence_payload)
 

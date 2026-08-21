@@ -43,6 +43,7 @@ include = [
     "architecture*",
     "evidence*",
     "executor*",
+    "fix_verification*",
     "sast*",
     "schemas*",
     "scoring*",

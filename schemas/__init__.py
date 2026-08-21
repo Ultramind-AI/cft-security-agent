@@ -8,6 +8,14 @@ from schemas.architecture import (
 )
 from schemas.evidence import Evidence
 from schemas.execution import ExecutionResult
+from schemas.fix import (
+    FixCheck,
+    FixCheckResult,
+    FixVerificationArtifact,
+    FixVerificationPlan,
+    PatchApplicationResult,
+    ProposedPatch,
+)
 from schemas.finding import Finding
 from schemas.hypothesis import Hypothesis
 from schemas.pipeline import GateResult, PipelineFindingResult
@@ -39,16 +47,22 @@ __all__ = [
     "DockerfileUserCheckResult",
     "Evidence",
     "ExecutionResult",
+    "FixCheck",
+    "FixCheckResult",
+    "FixVerificationArtifact",
+    "FixVerificationPlan",
     "FinalReport",
     "Finding",
     "GateResult",
     "Hypothesis",
     "PipelineFindingResult",
+    "PatchApplicationResult",
     "PRAnalysisSummary",
     "PRFindingContext",
     "PolicyDecisionSummary",
     "ProjectDescription",
     "ProjectServiceDescription",
+    "ProposedPatch",
     "PythonPasswordAssignmentCheckResult",
     "ReactDangerousHtmlFlowCheckResult",
     "ReportFinding",

@@ -13,6 +13,7 @@ from schemas.discovery import (
     ProjectDiscoveryResult,
 )
 from schemas.evidence import Evidence
+from schemas.errors import ErrorDetail
 from schemas.execution import ExecutionResult
 from schemas.evaluation import (
     BenchmarkMetrics,
@@ -69,6 +70,7 @@ __all__ = [
     "EvaluationDataset",
     "EvaluationTarget",
     "ExpectedFinding",
+    "ErrorDetail",
     "ExecutionResult",
     "FixCheck",
     "FixCheckResult",

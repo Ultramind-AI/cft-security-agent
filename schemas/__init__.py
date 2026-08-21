@@ -1,6 +1,7 @@
 from schemas.action import ActionProposal
 from schemas.architecture import ArchitectureContext
 from schemas.evidence import Evidence
+from schemas.errors import ErrorDetail
 from schemas.execution import ExecutionResult
 from schemas.finding import Finding
 from schemas.hypothesis import Hypothesis
@@ -21,6 +22,7 @@ __all__ = [
     "ContextPriority",
     "DockerfileUserCheckResult",
     "Evidence",
+    "ErrorDetail",
     "ExecutionResult",
     "FinalReport",
     "Finding",

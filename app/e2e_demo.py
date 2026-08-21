@@ -31,6 +31,10 @@ def _parse_args() -> argparse.Namespace:
         default="targets/sberlab_architecture.yaml",
         help="Architecture context YAML",
     )
+    parser.add_argument(
+        "--architecture-overrides",
+        help="Optional YAML overrides for automatically derived architecture context",
+    )
     selection = parser.add_mutually_exclusive_group()
     selection.add_argument("--finding-id", help="Exact normalized finding id")
     selection.add_argument(
@@ -62,6 +66,11 @@ def main() -> int:
         findings_path=Path(args.findings),
         target_root=Path(args.target),
         architecture_path=Path(args.architecture),
+        architecture_overrides_path=(
+            Path(args.architecture_overrides)
+            if args.architecture_overrides
+            else None
+        ),
         finding_id=args.finding_id,
         finding_index=args.index,
         max_iterations=args.max_iterations,
@@ -71,7 +80,7 @@ def main() -> int:
     print(f"Selected finding: {finding.id}")
     print(f"Location: {finding.file}:{finding.line_start or '?'}")
     print(f"Service: {finding.service or 'unknown'}")
-    print("Context source: real target repository + architecture YAML")
+    print("Context source: project description + optional architecture overrides")
     print(f"Agent mode: {settings.agent_mode}")
 
     result = build_graph().invoke(state)

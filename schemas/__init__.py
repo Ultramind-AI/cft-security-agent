@@ -1,5 +1,11 @@
 from schemas.action import ActionProposal
-from schemas.architecture import ArchitectureContext
+from schemas.architecture import (
+    ArchitectureContext,
+    ArchitectureContextOverride,
+    ArchitectureOverrides,
+    ProjectDescription,
+    ProjectServiceDescription,
+)
 from schemas.evidence import Evidence
 from schemas.execution import ExecutionResult
 from schemas.finding import Finding
@@ -17,6 +23,8 @@ from schemas.validation import ValidationResult
 __all__ = [
     "ActionProposal",
     "ArchitectureContext",
+    "ArchitectureContextOverride",
+    "ArchitectureOverrides",
     "CVSSResult",
     "ContextPriority",
     "DockerfileUserCheckResult",
@@ -27,6 +35,8 @@ __all__ = [
     "GateResult",
     "Hypothesis",
     "PipelineFindingResult",
+    "ProjectDescription",
+    "ProjectServiceDescription",
     "PythonPasswordAssignmentCheckResult",
     "ReactDangerousHtmlFlowCheckResult",
     "ReportFinding",

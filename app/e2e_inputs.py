@@ -13,6 +13,7 @@ def build_real_initial_state(
     findings_path: str | Path,
     target_root: str | Path,
     architecture_path: str | Path,
+    architecture_overrides_path: str | Path | None = None,
     finding_id: str | None = None,
     finding_index: int = 0,
     max_iterations: int = 1,
@@ -38,7 +39,10 @@ def build_real_initial_state(
         finding.line_start,
         finding.line_end,
     )
-    architecture = ArchitectureService(architecture_path).get_context(finding.service)
+    architecture = ArchitectureService(
+        architecture_path,
+        overrides_path=architecture_overrides_path,
+    ).get_context(finding.service)
 
     return {
         "finding": finding,

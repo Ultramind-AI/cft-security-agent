@@ -94,3 +94,15 @@ numbers. Each head finding is classified as `new`, `existing`, or
 its universal architecture context. The result is written to `pr-analysis.json`
 and embedded in the finding report. Under PR policy a new or affected confirmed
 HIGH risk blocks, while the same explicitly pre-existing risk produces a warning.
+
+### Safe fix verification
+
+Fixing is a separate post-verdict workflow and is accepted only for a
+`confirmed` `FinalReport`. `PatchProposalService` gives an LLM a structured
+output contract for a minimal unified diff only; it gives the model no command,
+Git, or filesystem capability. `app.fix_verify` copies the target into an
+ephemeral workspace, validates and applies the diff there, runs an
+operator-owned YAML plan with `shell=False` and a minimal environment, and emits
+a `FixVerificationArtifact` containing patch status, re-test actions, new
+Evidence, and `verified` / `not_verified` / `inconclusive`. The original target
+is never patched, committed, or pushed.

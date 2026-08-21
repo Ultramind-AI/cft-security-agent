@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 from schemas.evidence import Evidence
 from schemas.architecture import ArchitectureContext
 from schemas.pipeline import FindingGateEffect, GateCategory
+from schemas.pr import PRFindingContext
 from schemas.scoring import ContextPriority, CVSSResult
 
 ReportStatus = Literal["confirmed", "rejected", "inconclusive", "policy_blocked"]
@@ -28,6 +29,7 @@ class ReportFinding(BaseModel):
     file: str
     line_start: int | None = None
     line_end: int | None = None
+    pr_context: PRFindingContext | None = None
 
 
 class VerificationSummary(BaseModel):

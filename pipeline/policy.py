@@ -20,6 +20,7 @@ def classify_finding_gate(
     status: str,
     context_level: str | None,
     cvss_severity: str | None,
+    pr_classification: str | None = None,
 ) -> FindingGateClassification:
     """Return the deterministic per-finding CI effect used by reports and gate."""
     context = context_level.upper() if context_level else None
@@ -47,10 +48,21 @@ def classify_finding_gate(
         context in _FAIL_CONTEXT_LEVELS or cvss in _FAIL_CVSS_SEVERITIES
     ):
         risk_basis = _risk_basis(context_level=context, cvss_severity=cvss)
+        if pr_classification == "existing":
+            return FindingGateClassification(
+                "warn",
+                "confirmed_risk",
+                f"{finding_id}: pre-existing confirmed {risk_basis}; PR policy warns.",
+            )
         return FindingGateClassification(
             "fail",
             "confirmed_risk",
-            f"{finding_id}: confirmed with {risk_basis}.",
+            f"{finding_id}: confirmed with {risk_basis}"
+            + (
+                f" and classified as {pr_classification}."
+                if pr_classification is not None
+                else "."
+            ),
         )
     if status == "confirmed":
         return FindingGateClassification(

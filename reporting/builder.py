@@ -105,6 +105,11 @@ def build_final_report(state: AgentState) -> FinalReport:
         cvss_severity=(
             state["cvss"].severity if state.get("cvss") is not None else None
         ),
+        pr_classification=(
+            finding.pr_context.classification
+            if finding.pr_context is not None
+            else None
+        ),
     )
 
     return FinalReport(
@@ -120,6 +125,7 @@ def build_final_report(state: AgentState) -> FinalReport:
             file=finding.file,
             line_start=finding.line_start,
             line_end=finding.line_end,
+            pr_context=finding.pr_context,
         ),
         status=status,
         analysis_summary=analysis.summary if analysis is not None else None,

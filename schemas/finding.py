@@ -1,5 +1,7 @@
 from pydantic import BaseModel
 
+from schemas.pr import PRFindingContext
+
 
 class Finding(BaseModel):
     id: str
@@ -12,3 +14,4 @@ class Finding(BaseModel):
     line_end: int | None = None
     severity: str | None = None
     service: str | None = None
+    pr_context: PRFindingContext | None = None

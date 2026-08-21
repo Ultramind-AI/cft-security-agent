@@ -83,3 +83,14 @@ The gate keeps separate decision categories: `confirmed_risk`, `policy_block`,
 `inconclusive`, and `technical_pipeline_error`. A policy denial remains a normal
 report outcome; a mandatory stage failure remains a pipeline error and is never
 reported as a confirmed vulnerability.
+
+### Pull Request awareness
+
+`app.pipeline_run` accepts `--base-ref`, `--head-ref`, and `--base-findings`.
+The PR layer reads a zero-context Git diff, maps head-side changed lines, and
+matches base/head findings by a SHA-256 fingerprint that excludes unstable line
+numbers. Each head finding is classified as `new`, `existing`, or
+`affected-by-change`; an optional `--base-architecture` also detects changes in
+its universal architecture context. The result is written to `pr-analysis.json`
+and embedded in the finding report. Under PR policy a new or affected confirmed
+HIGH risk blocks, while the same explicitly pre-existing risk produces a warning.

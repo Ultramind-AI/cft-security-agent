@@ -98,7 +98,9 @@ class PRAnalysisService:
 
 
 def _normalize_path(value: str) -> str:
-    normalized = value.replace("\\", "/").lstrip("./")
+    normalized = value.replace("\\", "/")
+    while normalized.startswith("./"):
+        normalized = normalized[2:]
     return PurePosixPath(normalized).as_posix()
 
 

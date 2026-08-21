@@ -2,6 +2,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from schemas.errors import ErrorDetail
+
 
 class ExecutionResult(BaseModel):
     run_id: str
@@ -17,3 +19,4 @@ class ExecutionResult(BaseModel):
     audit_ref: str
     artifacts: list[str] = Field(default_factory=list)
     duration_ms: int = 0
+    error: ErrorDetail | None = None

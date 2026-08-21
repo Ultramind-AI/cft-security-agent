@@ -199,7 +199,7 @@ def _apply_posix_resource_limits(limits: SandboxLimits) -> None:
             resource.setrlimit(resource.RLIMIT_FSIZE, (limits.max_file_bytes, limits.max_file_bytes))
         except (ValueError, OSError):
             pass
-    if hasattr(resource, "RLIMIT_NPROC") and sys.platform.startswith("linux"):
+    if hasattr(resource, "RLIMIT_NPROC"):
         try:
             resource.setrlimit(resource.RLIMIT_NPROC, (limits.max_processes, limits.max_processes))
         except (ValueError, OSError):

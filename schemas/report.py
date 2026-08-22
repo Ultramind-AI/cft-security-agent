@@ -2,8 +2,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from schemas.evidence import Evidence
 from schemas.architecture import ArchitectureContext
+from schemas.evidence import Evidence
 from schemas.pipeline import FindingGateEffect, GateCategory
 from schemas.pr import PRFindingContext
 from schemas.scoring import ContextPriority, CVSSResult

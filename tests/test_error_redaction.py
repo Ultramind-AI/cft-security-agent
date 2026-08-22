@@ -1,7 +1,7 @@
 import pytest
 
-from security.error_redaction import REDACTION_MARKER, redact_error_message
 from schemas.errors import ErrorDetail
+from security.error_redaction import REDACTION_MARKER, redact_error_message
 
 
 @pytest.mark.parametrize(

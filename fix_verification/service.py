@@ -8,7 +8,6 @@ import tempfile
 from pathlib import Path
 
 from executor.sandbox import _communicate_bounded
-from security.error_redaction import redact_error_message
 from schemas.evidence import Evidence
 from schemas.fix import (
     FixCheck,
@@ -18,6 +17,7 @@ from schemas.fix import (
     ProposedPatch,
 )
 from schemas.report import FinalReport
+from security.error_redaction import redact_error_message
 
 _MAX_OUTPUT = 16_384
 _MAX_ARG_COUNT = 64

@@ -51,8 +51,7 @@ def render_final_report(report: FinalReport) -> str:
                 f"  Fingerprint: {pr_context.fingerprint}",
                 f"  Classification: {pr_context.classification}",
                 f"  Changed lines: {pr_context.changed_lines or 'none'}",
-                "  Architecture changed: "
-                f"{'yes' if pr_context.architecture_context_changed else 'no'}",
+                f"  Architecture changed: {'yes' if pr_context.architecture_context_changed else 'no'}",
             ]
         )
 

@@ -446,7 +446,7 @@ class SafeExecutor:
                 evidence_payload
             )
             artifacts.append(artifact_path)
-        except Exception:  # noqa: BLE001 - fail-closed persistence boundary
+        except Exception:
             logger.exception("Failed to persist executor evidence for action %s", action.id)
             status = "failed"
             exit_code = 1
@@ -485,7 +485,7 @@ class SafeExecutor:
         )
         try:
             audit_ref = self._audit_log.append(audit_record.to_dict())
-        except Exception:  # noqa: BLE001 - fail-closed persistence boundary
+        except Exception:
             logger.exception("Failed to persist executor audit for action %s", action.id)
             status = "failed"
             exit_code = 1
@@ -510,7 +510,7 @@ class SafeExecutor:
                     final_evidence
                 )
                 artifacts = [artifact_path]
-            except Exception:  # noqa: BLE001 - no trusted fallback remains
+            except Exception:
                 logger.exception(
                     "Failed to persist final audit-failure evidence for action %s",
                     action.id,

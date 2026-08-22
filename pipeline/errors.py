@@ -5,8 +5,8 @@ import subprocess
 from collections.abc import Iterator
 
 from sast.semgrep_runner import SemgrepError
-from security.error_redaction import redact_error_message
 from schemas.errors import ErrorCode, ErrorDetail, ErrorLayer
+from security.error_redaction import redact_error_message
 
 
 def error_from_exception(

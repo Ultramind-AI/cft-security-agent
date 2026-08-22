@@ -74,7 +74,16 @@ def _target(tmp_path: Path) -> TargetProfile:
 
 
 def test_session_ids_and_compose_projects_are_unique(tmp_path: Path) -> None:
-    one, two = SandboxSession(_target(tmp_path)), SandboxSession(_target(tmp_path))
+    one = SandboxSession(
+        _target(tmp_path),
+        runner=FakeCompose(),
+        health_probe=lambda url, timeout: True,
+    )
+    two = SandboxSession(
+        _target(tmp_path),
+        runner=FakeCompose(),
+        health_probe=lambda url, timeout: True,
+    )
     assert one.session_id != two.session_id
     assert one.compose_project != two.compose_project
     one.teardown()

@@ -133,3 +133,64 @@ def test_llm_patch_proposer_returns_artifact_and_has_no_execution_access() -> No
 
     assert proposal.finding_id == "finding-1"
     assert proposal.unified_diff.startswith("diff --git")
+
+
+def test_fix_checks_use_isolated_environment_and_redact_output(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("FIX_VERIFICATION_SECRET", "must-not-cross-boundary")
+    target = tmp_path / "target"
+    target.mkdir()
+    (target / "app.py").write_text("safe = False\n", encoding="utf-8")
+
+    check = FixCheck(
+        id="isolated",
+        kind="static",
+        argv=[
+            sys.executable,
+            "-c",
+            (
+                "import os; assert 'FIX_VERIFICATION_SECRET' not in os.environ; "
+                "assert os.environ['HOME'].endswith('empty-home'); "
+                "key = 'DOCKER' + '_HOST'; "
+                "assert os.environ[key].startswith('unix:///nonexistent/'); "
+                "print('token=must-not-be-retained')"
+            ),
+        ],
+    )
+
+    artifact = FixVerificationService().verify(
+        report=_report(),
+        proposal=_proposal(),
+        target=target,
+        checks=[check, _check("runtime", "runtime")],
+    )
+
+    assert artifact.verdict == "verified", [
+        (item.id, item.kind, item.status, item.exit_code, repr(item.stdout), repr(item.stderr))
+        for item in artifact.re_test_results
+    ]
+    isolated_result = artifact.re_test_results[0]
+    assert isolated_result.status == "passed"
+    assert "must-not-be-retained" not in isolated_result.stdout
+    assert artifact.re_test_actions[0].argv == [
+        sys.executable,
+        "-c",
+        artifact.re_test_actions[0].argv[2],
+    ]
+
+
+def test_fix_checks_cannot_request_network_or_docker_access(tmp_path) -> None:
+    target = tmp_path / "target"
+    target.mkdir()
+    (target / "app.py").write_text("safe = False\n", encoding="utf-8")
+
+    check = FixCheck(id="unsafe", kind="static", argv=["docker", "info"])
+    artifact = FixVerificationService().verify(
+        report=_report(),
+        proposal=_proposal(),
+        target=target,
+        checks=[check, _check("runtime", "runtime")],
+    )
+
+    assert artifact.verdict == "inconclusive"
+    assert artifact.re_test_results[0].status == "error"
+    assert "blocked" in artifact.re_test_results[0].stderr

@@ -102,7 +102,9 @@ Fixing is a separate post-verdict workflow and is accepted only for a
 output contract for a minimal unified diff only; it gives the model no command,
 Git, or filesystem capability. `app.fix_verify` copies the target into an
 ephemeral workspace, validates and applies the diff there, runs an
-operator-owned YAML plan with `shell=False` and a minimal environment, and emits
+operator-owned YAML plan inside a disposable, bounded process sandbox with
+`shell=False`, isolated HOME/XDG/TMP directories, no inherited CI environment,
+and network/Docker command deny rules, and emits
 a `FixVerificationArtifact` containing patch status, re-test actions, new
 Evidence, and `verified` / `not_verified` / `inconclusive`. The original target
 is never patched, committed, or pushed.

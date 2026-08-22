@@ -94,6 +94,32 @@ def test_dockerfile_lifecycle_uses_fixed_argv_logs_and_teardown(tmp_path: Path) 
     assert all(isinstance(command, list) for command in runner.commands)
 
 
+@pytest.mark.parametrize(
+    ("runtime", "service_type", "service"),
+    [
+        ("dockerfile", "unknown", {}),
+        ("unknown", "django", {"build": ["echo", "build"], "run": ["echo", "run"]}),
+    ],
+)
+def test_adapters_publish_internal_service_port(
+    tmp_path: Path, runtime: str, service_type: str, service: dict[str, object]
+) -> None:
+    profile = _profile(
+        tmp_path,
+        runtime,
+        service_type,
+        allowed_local_addresses=["127.0.0.1:8000"],
+        internal_port=8080,
+        **service,
+    )
+    runner = FakeRunner()
+    with SandboxManager(runner=runner).open(profile):
+        pass
+    run_command = next(command for command in runner.commands if command[:3] == ["docker", "run", "--detach"])
+    publish_index = run_command.index("--publish")
+    assert run_command[publish_index + 1] == "127.0.0.1:8000:8080"
+
+
 def test_dockerfile_path_containment_is_enforced(tmp_path: Path) -> None:
     profile = _profile(tmp_path, "dockerfile", "unknown")
     service = profile.services["app"].model_copy(update={"dockerfile": "../Dockerfile"})

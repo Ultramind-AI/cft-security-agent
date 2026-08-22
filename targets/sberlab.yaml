@@ -1,5 +1,5 @@
 id: sberlab-local
-name: SberLab Target v1
+name: SberLab Target v2
 
 repository_path: ../sberlab-target
 environment: local
@@ -13,12 +13,38 @@ sast:
 runtime:
   type: docker_compose
   base_url: http://127.0.0.1:8000
+  allowed_local_addresses:
+    - 127.0.0.1:8000
 
-health:
-  backend: /health/
+services:
+  backend:
+    type: django
+    root: backend
+    dependency_files:
+      - backend/requirements.txt
+    dockerfile: backend/Dockerfile
+    healthcheck:
+      path: /health/
+    allowed_local_addresses:
+      - 127.0.0.1:8000
 
-# Operator-owned source artifacts. Agent proposals reference stable artifact ids,
-# never arbitrary repository paths.
+  frontend:
+    type: react
+    root: frontend/frontend
+    dependency_files:
+      - frontend/frontend/package.json
+    dockerfile: frontend/frontend/Dockerfile
+
+constraints:
+  external_network: false
+  host_filesystem: false
+  docker_socket: false
+  ci_secrets: false
+
+metadata:
+  react_html_flow.field: about
+
+# Работаем только с зарегистрированными артефактами таргета
 artifacts:
   backend_dockerfile:
     kind: dockerfile
@@ -32,12 +58,20 @@ artifacts:
   user_model:
     kind: python
     path: backend/core/models.py
+    roles:
+      - react_html_flow.model
   user_serializer:
     kind: python
     path: backend/core/serializers.py
+    roles:
+      - react_html_flow.serializer
   user_views:
     kind: python
     path: backend/core/views.py
+    roles:
+      - react_html_flow.view
   frontend_app:
     kind: javascript
     path: frontend/frontend/src/App.jsx
+    roles:
+      - react_html_flow.frontend

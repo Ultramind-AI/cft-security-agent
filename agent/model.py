@@ -6,6 +6,7 @@ from schemas.action import ActionProposal
 from schemas.agent_outputs import AnalysisResult, ReevaluationResult
 from schemas.hypothesis import Hypothesis
 from schemas.state import AgentState
+from schemas.target import TargetProfile
 
 
 class AgentReasoningModel(Protocol):
@@ -99,6 +100,7 @@ class DeterministicAgentModel:
         hypothesis: Hypothesis,
     ) -> ActionProposal:
         finding = state["finding"]
+        target_profile = _target_profile(state)
         next_iteration = int(state.get("iteration_count", 0)) + 1
 
         if finding.service == "force-deny":
@@ -108,7 +110,7 @@ class DeterministicAgentModel:
             expected_evidence = hypothesis.expected_evidence
         elif _is_missing_user_finding(finding.rule_id):
             tool = "inspect_dockerfile_user"
-            parameters = _dockerfile_user_parameters(finding.file)
+            parameters = _dockerfile_user_parameters(finding.file, target_profile)
             purpose = (
                 "Inspect the trusted Dockerfile artifact for the effective final-stage "
                 "USER directive using a reusable read-only source capability."
@@ -119,7 +121,12 @@ class DeterministicAgentModel:
             )
         elif _is_unvalidated_password_finding(finding.rule_id):
             tool = "inspect_python_password_assignment"
-            parameters = {"artifact_id": "demo_seed"}
+            parameters = {
+                "artifact_id": target_profile.artifact_id_for_path(
+                    finding.file,
+                    kind="python",
+                )
+            }
             purpose = (
                 "Inspect the trusted Python seed artifact for password assignment and "
                 "Django password-validation calls without exposing password values."
@@ -130,7 +137,7 @@ class DeterministicAgentModel:
             )
         elif _is_react_dangerous_html_finding(finding.rule_id):
             tool = "inspect_react_dangerous_html_flow"
-            parameters = _react_html_flow_parameters()
+            parameters = _react_html_flow_parameters(finding.file, target_profile)
             purpose = (
                 "Perform a bounded static source-flow check from the writable user field "
                 "to the React dangerous HTML sink without executing browser content."
@@ -151,8 +158,8 @@ class DeterministicAgentModel:
         return ActionProposal(
             id=_build_action_id(finding.id, next_iteration),
             tool=tool,
-            target="sberlab-local",
-            environment="local",
+            target=target_profile.id,
+            environment=target_profile.environment,
             iteration=next_iteration,
             parameters=parameters,
             purpose=purpose,
@@ -296,30 +303,42 @@ def _is_react_dangerous_html_finding(rule_id: str) -> bool:
     return "react-dangerouslysetinnerhtml" in rule_id.lower()
 
 
-def _normalize_finding_path(path: str) -> str:
-    return path.replace("\\", "/")
+def _target_profile(state: AgentState) -> TargetProfile:
+    profile = state.get("target_profile")
+    if profile is not None:
+        return profile
+    return TargetProfile.from_yaml(
+        settings.target_file,
+        repository_path_override=settings.target_repository_path,
+        base_url_override=settings.target_base_url,
+    )
 
 
-def _dockerfile_user_parameters(file_path: str) -> dict[str, str]:
-    normalized = _normalize_finding_path(file_path)
-    mapping = {
-        "backend/Dockerfile": "backend_dockerfile",
-        "frontend/frontend/Dockerfile": "frontend_dockerfile",
-    }
-    try:
-        artifact_id = mapping[normalized]
-    except KeyError as exc:
-        raise ValueError(
-            f"No trusted Dockerfile artifact mapping for finding path: {normalized}"
-        ) from exc
-    return {"artifact_id": artifact_id}
-
-
-def _react_html_flow_parameters() -> dict[str, str]:
+def _dockerfile_user_parameters(
+    file_path: str,
+    target_profile: TargetProfile,
+) -> dict[str, str]:
     return {
-        "frontend_artifact_id": "frontend_app",
-        "model_artifact_id": "user_model",
-        "serializer_artifact_id": "user_serializer",
-        "view_artifact_id": "user_views",
-        "field": "about",
+        "artifact_id": target_profile.artifact_id_for_path(
+            file_path,
+            kind="dockerfile",
+        )
+    }
+
+
+def _react_html_flow_parameters(
+    file_path: str,
+    target_profile: TargetProfile,
+) -> dict[str, str]:
+    field = target_profile.metadata.get("react_html_flow.field")
+    if not field:
+        raise ValueError("TargetProfile metadata react_html_flow.field is required")
+    return {
+        "frontend_artifact_id": target_profile.artifact_id_for_path(file_path),
+        "model_artifact_id": target_profile.artifact_id_for_role("react_html_flow.model"),
+        "serializer_artifact_id": target_profile.artifact_id_for_role(
+            "react_html_flow.serializer"
+        ),
+        "view_artifact_id": target_profile.artifact_id_for_role("react_html_flow.view"),
+        "field": field,
     }

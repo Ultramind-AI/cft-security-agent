@@ -6,6 +6,7 @@ from collections import Counter
 from pathlib import Path
 
 from sast.semgrep_runner import SemgrepError, run_semgrep_scan
+from schemas.target import TargetProfile
 
 
 def _parse_args() -> argparse.Namespace:
@@ -16,6 +17,10 @@ def _parse_args() -> argparse.Namespace:
         "--target",
         required=True,
         help="Path to the local repository to scan, for example ../sberlab_hack",
+    )
+    parser.add_argument(
+        "--profile",
+        help="TargetProfile YAML used for service mapping",
     )
     parser.add_argument(
         "--config",
@@ -52,11 +57,18 @@ def main() -> int:
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    profile = (
+        TargetProfile.from_yaml(args.profile, repository_path_override=args.target)
+        if args.profile
+        else None
+    )
+
     try:
         result = run_semgrep_scan(
             args.target,
             config=args.config,
             timeout_seconds=args.timeout_seconds,
+            service_resolver=profile.resolve_service if profile is not None else None,
         )
     except SemgrepError as exc:
         print(f"SAST scan failed: {exc}")

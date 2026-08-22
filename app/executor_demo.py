@@ -5,17 +5,24 @@ from app.config import settings
 from executor.approvals import InMemoryApprovalStore
 from executor.executor import SafeExecutor
 from schemas.action import ActionProposal
+from schemas.target import TargetProfile
 from validator.validator import PolicyValidator
 
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s %(message)s")
 
+    profile = TargetProfile.from_yaml(
+        settings.target_file,
+        repository_path_override=settings.target_repository_path,
+        base_url_override=settings.target_base_url,
+    )
+
     action = ActionProposal(
         id=f"executor-demo-health-{uuid4().hex[:8]}",
         tool="check_sberlab_health",
-        target="sberlab-local",
-        environment="local",
+        target=profile.id,
+        environment=profile.environment,
         iteration=1,
         parameters={},
         purpose="Check that the approved local SberLab target is ready.",
@@ -24,7 +31,7 @@ def main() -> None:
 
     validator = PolicyValidator.from_yaml(
         settings.policy_file,
-        target_file=settings.target_file,
+        target_profile=profile,
     )
     validation = validator.validate(action)
     approvals = InMemoryApprovalStore()
@@ -34,7 +41,7 @@ def main() -> None:
     executor = SafeExecutor.from_config(
         approvals=approvals,
         policy_file=settings.policy_file,
-        target_file=settings.target_file,
+        target_profile=profile,
         evidence_directory=settings.evidence_dir,
         audit_log_path=settings.executor_audit_log,
         workspace_directory=settings.executor_work_dir,

@@ -9,10 +9,12 @@ from schemas.finding import Finding
 from schemas.hypothesis import Hypothesis
 from schemas.report import FinalReport
 from schemas.scoring import ContextPriority, CVSSResult
+from schemas.target import TargetProfile
 from schemas.validation import ValidationResult
 
 
 class AgentState(TypedDict, total=False):
+    target_profile: TargetProfile
     finding: Finding
     code_context: str | None
     architecture_context: ArchitectureContext | None

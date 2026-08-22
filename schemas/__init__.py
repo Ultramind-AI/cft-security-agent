@@ -12,6 +12,7 @@ from schemas.security_tools import (
     PythonPasswordAssignmentCheckResult,
     ReactDangerousHtmlFlowCheckResult,
 )
+from schemas.target import TargetProfile, TargetService
 from schemas.validation import ValidationResult
 
 __all__ = [
@@ -30,6 +31,8 @@ __all__ = [
     "PythonPasswordAssignmentCheckResult",
     "ReactDangerousHtmlFlowCheckResult",
     "ReportFinding",
+    "TargetProfile",
+    "TargetService",
     "ValidationResult",
     "VerificationSummary",
 ]

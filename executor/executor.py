@@ -1,7 +1,6 @@
 import logging
 import shutil
 from dataclasses import asdict
-from datetime import UTC, datetime
 from pathlib import Path
 from time import perf_counter
 from typing import Literal, cast
@@ -19,11 +18,12 @@ from executor.sandbox import (
     Sandbox,
     SandboxRequest,
 )
-from executor.sandbox_audit import AuditRecord, calculate_sha256_digest
+from executor.sandbox_audit import AuditRecord
 from executor.sandbox_policy import SandboxLimits, SandboxPolicy
 from executor.targets import TargetRegistry
 from schemas.action import ActionProposal
 from schemas.execution import ExecutionResult
+from schemas.target import TargetProfile, TargetRuntimeConfig
 from tools.registry import ToolRegistry
 
 logger = logging.getLogger(__name__)
@@ -91,7 +91,8 @@ class SafeExecutor:
         *,
         approvals: InMemoryApprovalStore,
         policy_file: str | Path,
-        target_file: str | Path,
+        target_file: str | Path | None = None,
+        target_profile: TargetProfile | None = None,
         evidence_directory: str | Path,
         audit_log_path: str | Path,
         workspace_directory: str | Path,
@@ -196,13 +197,34 @@ class SafeExecutor:
                 f"{policy.backend!r}"
             )
 
-        return cls(
-            approvals=approvals,
-            targets=TargetRegistry.from_yaml(
+        if target_profile is not None:
+            effective_profile = target_profile
+            updates = {}
+            if target_repository_path is not None:
+                updates["repository_path"] = Path(target_repository_path).expanduser().resolve()
+            if target_base_url is not None:
+                updates["runtime"] = effective_profile.runtime.model_copy(
+                    update={
+                        "base_url": TargetRuntimeConfig(
+                            base_url=target_base_url
+                        ).base_url
+                    }
+                )
+            if updates:
+                effective_profile = effective_profile.model_copy(update=updates)
+            targets = TargetRegistry([effective_profile])
+        elif target_file is not None:
+            targets = TargetRegistry.from_yaml(
                 target_file,
                 base_url_override=target_base_url,
                 repository_path_override=target_repository_path,
-            ),
+            )
+        else:
+            raise ValueError("target_profile or target_file is required")
+
+        return cls(
+            approvals=approvals,
+            targets=targets,
             evidence_store=JsonExecutionEvidenceStore(evidence_directory),
             audit_log=JsonlAuditLog(audit_log_path),
             sandbox=sandbox,
@@ -300,7 +322,7 @@ class SafeExecutor:
                     started,
                     status="failed",
                     exit_code=127,
-                    stderr=f"Sandbox execution error: {exc}",
+                    stderr=f"Sandbox failed: {exc}",
                     decision_reason="Unexpected sandbox error",
                 )
         finally:
@@ -367,6 +389,8 @@ class SafeExecutor:
             "duration_ms": duration_ms,
             "timed_out": timed_out,
             "workspace_id": workspace_id,
+            # Старый контракт evidence использует limits сверху, policy остается source of truth
+            "limits": policy_dict["limits"],
             "policy": policy_dict,
         }
         evidence_ref, artifact_path = self._evidence_store.put_execution(evidence_payload)

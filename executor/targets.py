@@ -1,12 +1,15 @@
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
-from urllib.parse import urljoin, urlsplit
 
-import yaml
+from schemas.target import TargetArtifact, TargetProfile, TargetRuntimeConfig
 
 
 @dataclass(frozen=True)
 class TargetArtifactDefinition:
+    """Legacy constructor kept during TargetProfile migration."""
+
     id: str
     kind: str
     relative_path: str
@@ -17,7 +20,6 @@ class TargetArtifactDefinition:
         relative_path = self.relative_path.replace("\\", "/").strip()
         path = PurePosixPath(relative_path)
 
-        # Путь артефакта принадлежит профилю цели, а не агенту
         if not artifact_id or any(char.isspace() for char in artifact_id):
             raise ValueError("Target artifact id must be a non-empty token")
         if not kind:
@@ -29,62 +31,45 @@ class TargetArtifactDefinition:
         object.__setattr__(self, "kind", kind)
         object.__setattr__(self, "relative_path", path.as_posix())
 
-    def worker_payload(self) -> dict[str, str]:
-        return {
-            "kind": self.kind,
-            "path": self.relative_path,
-        }
+    def to_profile_artifact(self) -> TargetArtifact:
+        return TargetArtifact(
+            id=self.id,
+            kind=self.kind,
+            relative_path=self.relative_path,
+        )
 
 
 @dataclass(frozen=True)
 class TargetDefinition:
+    """Legacy MVP target shape converted at the registry boundary."""
+
     id: str
     environment: str
     base_url: str
     repository_path: Path | None = None
     artifacts: dict[str, TargetArtifactDefinition] = field(default_factory=dict)
 
-    def __post_init__(self) -> None:
-        parsed = urlsplit(self.base_url)
-        if parsed.scheme not in {"http", "https"} or not parsed.hostname:
-            raise ValueError("Target base_url must be an absolute HTTP(S) URL")
-        if parsed.username or parsed.password or parsed.query or parsed.fragment:
-            raise ValueError("Target base_url cannot contain credentials, query, or fragment")
-        if self.repository_path is not None:
-            object.__setattr__(
-                self,
-                "repository_path",
-                Path(self.repository_path).expanduser().resolve(),
-            )
-        if any(key != artifact.id for key, artifact in self.artifacts.items()):
-            raise ValueError("Target artifact mapping key must match artifact id")
-
-    def build_url(self, path: str) -> str:
-        # Capability получает только фиксированный endpoint без URL-компонентов
-        parsed_path = urlsplit(path)
-        if (
-            not path.startswith("/")
-            or parsed_path.scheme
-            or parsed_path.netloc
-            or parsed_path.query
-            or parsed_path.fragment
-            or ".." in parsed_path.path.split("/")
-        ):
-            raise ValueError("Capability path must be a fixed absolute URL path")
-
-        return urljoin(f"{self.base_url.rstrip('/')}/", path.lstrip("/"))
-
-    def worker_artifacts(self) -> dict[str, dict[str, str]]:
-        return {
-            artifact_id: artifact.worker_payload()
-            for artifact_id, artifact in self.artifacts.items()
-        }
+    def to_profile(self) -> TargetProfile:
+        return TargetProfile(
+            id=self.id,
+            environment=self.environment,
+            repository_path=self.repository_path,
+            runtime=TargetRuntimeConfig(base_url=self.base_url),
+            artifacts={
+                artifact_id: artifact.to_profile_artifact()
+                for artifact_id, artifact in self.artifacts.items()
+            },
+        )
 
 
 class TargetRegistry:
-    def __init__(self, targets: list[TargetDefinition]) -> None:
-        self._targets = {target.id: target for target in targets}
-        if len(self._targets) != len(targets):
+    def __init__(self, targets: list[TargetProfile | TargetDefinition]) -> None:
+        profiles = [
+            target.to_profile() if isinstance(target, TargetDefinition) else target
+            for target in targets
+        ]
+        self._targets = {target.id: target for target in profiles}
+        if len(self._targets) != len(profiles):
             raise ValueError("Duplicate target id")
 
     @classmethod
@@ -94,47 +79,18 @@ class TargetRegistry:
         *,
         base_url_override: str | None = None,
         repository_path_override: str | Path | None = None,
-    ) -> "TargetRegistry":
-        data = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
-        runtime = data.get("runtime", {})
-        base_url = base_url_override or runtime.get("base_url")
-
-        if not base_url:
-            raise ValueError("Target runtime.base_url is required")
-
-        configured_repository = repository_path_override or data.get("repository_path")
-        repository_path = (
-            Path(configured_repository).expanduser().resolve()
-            if configured_repository
-            else None
-        )
-
-        raw_artifacts = data.get("artifacts", {}) or {}
-        if not isinstance(raw_artifacts, dict):
-            raise TypeError("Target artifacts must be a mapping")
-        artifacts: dict[str, TargetArtifactDefinition] = {}
-        for artifact_id, raw_definition in raw_artifacts.items():
-            if not isinstance(raw_definition, dict):
-                raise TypeError(f"Target artifact '{artifact_id}' must be an object")
-            artifacts[str(artifact_id)] = TargetArtifactDefinition(
-                id=str(artifact_id),
-                kind=str(raw_definition.get("kind", "")),
-                relative_path=str(raw_definition.get("path", "")),
-            )
-
+    ) -> TargetRegistry:
         return cls(
             [
-                TargetDefinition(
-                    id=str(data["id"]),
-                    environment=str(data.get("environment", "unknown")),
-                    base_url=str(base_url),
-                    repository_path=repository_path,
-                    artifacts=artifacts,
+                TargetProfile.from_yaml(
+                    path,
+                    base_url_override=base_url_override,
+                    repository_path_override=repository_path_override,
                 )
             ]
         )
 
-    def get(self, target_id: str) -> TargetDefinition:
+    def get(self, target_id: str) -> TargetProfile:
         try:
             return self._targets[target_id]
         except KeyError as exc:

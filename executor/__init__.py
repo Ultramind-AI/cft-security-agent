@@ -8,6 +8,7 @@ from executor.sandbox import (
     SandboxResult,
 )
 from executor.targets import TargetDefinition, TargetRegistry
+from schemas.target import TargetProfile
 
 __all__ = [
     "ApprovalRecord",
@@ -19,6 +20,7 @@ __all__ = [
     "SandboxRequest",
     "SandboxResult",
     "TargetDefinition",
+    "TargetProfile",
     "TargetRegistry",
     "proposal_digest",
 ]

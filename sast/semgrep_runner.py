@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -29,6 +30,7 @@ def run_semgrep_scan(
     *,
     config: str = "auto",
     timeout_seconds: int = 600,
+    service_resolver: Callable[[str], str | None] | None = None,
 ) -> SemgrepScanResult:
     """Запустить скан SAST Semgrep только для чтения по локальному дереву исходников.
 
@@ -99,6 +101,6 @@ def run_semgrep_scan(
         target=target_path,
         config=config,
         raw=raw,
-        findings=normalize_semgrep_payload(raw),
+        findings=normalize_semgrep_payload(raw, service_resolver=service_resolver),
         stderr=completed.stderr,
     )

@@ -8,6 +8,7 @@ import pytest
 
 from sast.normalizer import normalize_semgrep_payload, normalize_semgrep_result
 from sast.semgrep_runner import SemgrepError, run_semgrep_scan
+from schemas.target import TargetProfile
 
 
 def _raw_finding(path: str = "backend/core/views.py") -> dict:
@@ -23,20 +24,31 @@ def _raw_finding(path: str = "backend/core/views.py") -> dict:
     }
 
 
-def test_normalizer_creates_stable_finding_and_service() -> None:
+def test_normalizer_creates_stable_finding_without_architecture_guess() -> None:
     finding = normalize_semgrep_result(_raw_finding())
 
     assert finding.source == "semgrep"
     assert finding.rule_id == "python.django.demo-rule"
     assert finding.id == "python.django.demo-rule:backend/core/views.py:12"
-    assert finding.service == "backend"
+    assert finding.service is None
     assert finding.line_start == 12
     assert finding.severity == "WARNING"
 
 
-def test_normalizer_detects_frontend_component() -> None:
-    finding = normalize_semgrep_result(_raw_finding("frontend/src/App.jsx"))
-    assert finding.service == "frontend"
+def test_normalizer_uses_target_profile_service_mapping() -> None:
+    profile = TargetProfile.from_yaml("targets/sberlab.yaml")
+
+    backend = normalize_semgrep_result(
+        _raw_finding(),
+        service_resolver=profile.resolve_service,
+    )
+    frontend = normalize_semgrep_result(
+        _raw_finding("frontend\\frontend\\src\\App.jsx"),
+        service_resolver=profile.resolve_service,
+    )
+
+    assert backend.service == "backend"
+    assert frontend.service == "frontend"
 
 
 def test_normalize_payload_requires_results_list() -> None:

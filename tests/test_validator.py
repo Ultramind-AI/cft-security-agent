@@ -146,3 +146,52 @@ def test_validator_denies_unsupported_policy_version() -> None:
 
     assert result.approved is False
     assert result.policy_rules[-1] == "policy_version_denied"
+
+
+def test_validator_allows_registered_target_profile() -> None:
+    from schemas.target import TargetProfile
+
+    profile = TargetProfile.model_validate(
+        {
+            "id": "second-local",
+            "environment": "sandbox",
+            "runtime": {"base_url": "http://127.0.0.1:9100"},
+        }
+    )
+    proposal = _proposal(target=profile.id, environment=profile.environment)
+
+    result = PolicyValidator.from_yaml(
+        "policies/default.yaml",
+        target_profile=profile,
+    ).validate(proposal)
+
+    assert result.approved is True
+
+
+def test_validator_rejects_unregistered_artifact() -> None:
+    from schemas.target import TargetProfile
+
+    profile = TargetProfile.model_validate(
+        {
+            "id": "second-local",
+            "environment": "sandbox",
+            "runtime": {"base_url": "http://127.0.0.1:9100"},
+            "artifacts": {
+                "known": {"kind": "dockerfile", "path": "Dockerfile"},
+            },
+        }
+    )
+    proposal = _proposal(
+        target=profile.id,
+        environment=profile.environment,
+        tool="inspect_dockerfile_user",
+        parameters={"artifact_id": "unknown"},
+    )
+
+    result = PolicyValidator.from_yaml(
+        "policies/default.yaml",
+        target_profile=profile,
+    ).validate(proposal)
+
+    assert result.approved is False
+    assert result.policy_rules[-1] == "target_artifact_denied"

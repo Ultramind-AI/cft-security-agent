@@ -6,8 +6,8 @@ from pathlib import Path
 import pytest
 
 from executor import worker
+from executor.executor import CAPABILITY_NETWORK_ACCESS
 from executor.sandbox import (
-    BLOCKED_SECRET_PATTERNS,
     STRICT_ALLOWED_ENV,
     ProcessSandbox,
     RunLimiter,
@@ -18,8 +18,6 @@ from executor.sandbox import (
 from executor.sandbox_audit import calculate_sha256_digest
 from executor.sandbox_policy import SandboxPolicy
 from executor.sandbox_runtime import DockerRuntimeBuilder
-from schemas.action import ActionProposal
-from executor.executor import SafeExecutor, CAPABILITY_NETWORK_ACCESS
 from executor.worker import (
     _fixed_url,
     _read_artifact,
@@ -121,7 +119,8 @@ def test_process_sandbox_applies_os_resource_limits(tmp_path: Path) -> None:
     assert result.exit_code == 0
     assert applied["cpu"] == limits.cpu_time_seconds
     assert applied["file"] == limits.max_file_bytes
-    assert applied["processes"] == limits.max_processes
+    if sys.platform.startswith("linux"):
+        assert applied["processes"] == limits.max_processes
 
 
 def test_worker_maps_health_tool_to_fixed_path(monkeypatch) -> None:

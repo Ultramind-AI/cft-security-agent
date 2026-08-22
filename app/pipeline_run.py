@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 from collections import Counter
+from collections.abc import Callable
 from pathlib import Path
 
 from agent.graph import build_graph
@@ -15,6 +16,7 @@ from sast.repository import JsonFindingRepository
 from sast.semgrep_runner import SemgrepError, run_semgrep_scan
 from schemas.pipeline import GateResult
 from schemas.report import FinalReport
+from schemas.target import TargetProfile
 
 
 def _parse_args() -> argparse.Namespace:
@@ -24,11 +26,18 @@ def _parse_args() -> argparse.Namespace:
             "write FinalReport JSON artifacts, and return a deterministic CI/CD gate."
         )
     )
-    parser.add_argument("--target", default="../sberlab_hack", help="Controlled target repo")
+    parser.add_argument(
+        "--profile",
+        default=str(settings.target_file),
+        help="TargetProfile YAML",
+    )
+    parser.add_argument(
+        "--target",
+        help="Optional repository root override from TargetProfile",
+    )
     parser.add_argument(
         "--architecture",
-        default="targets/sberlab_architecture.yaml",
-        help="Architecture context YAML",
+        help="Optional architecture YAML override from TargetProfile",
     )
     parser.add_argument("--sast-config", default="auto", help="Semgrep config/ruleset")
     parser.add_argument(
@@ -64,19 +73,33 @@ def main() -> int:
     if args.max_iterations < 1:
         raise SystemExit("--max-iterations must be at least 1")
 
-    target = Path(args.target).expanduser().resolve()
-    architecture = Path(args.architecture).expanduser().resolve()
+    profile_path = Path(args.profile).expanduser()
+    profile = TargetProfile.from_yaml(
+        profile_path,
+        repository_path_override=args.target,
+        base_url_override=settings.target_base_url,
+    )
+    if profile.repository_path is None:
+        raise SystemExit("TargetProfile.repository_path or --target is required")
+    architecture_value = args.architecture or profile.architecture.file
+    if architecture_value is None:
+        raise SystemExit("TargetProfile.architecture.file or --architecture is required")
+
+    target = profile.repository_path
+    architecture = Path(architecture_value).expanduser().resolve()
     output_dir = Path(args.output_dir).expanduser()
     reports_dir = output_dir / "reports"
     reports_dir.mkdir(parents=True, exist_ok=True)
 
     if args.agent_mode:
         settings.agent_mode = args.agent_mode
+    settings.target_file = profile_path
     settings.target_repository_path = target
 
     print("=" * 72)
     print("CFT SECURITY PIPELINE")
     print("=" * 72)
+    print(f"Target profile: {profile.id}")
     print(f"Target: {target}")
     print(f"Agent mode: {settings.agent_mode}")
 
@@ -88,6 +111,7 @@ def main() -> int:
             target=target,
             sast_config=args.sast_config,
             output_dir=output_dir / "sast",
+            service_resolver=profile.resolve_service,
         )
     except (SemgrepError, OSError, ValueError, TypeError) as exc:
         stage_errors.append(f"SAST stage failed: {type(exc).__name__}: {exc}")
@@ -112,6 +136,7 @@ def main() -> int:
                 findings_path=findings_path,
                 target_root=target,
                 architecture_path=architecture,
+                target_profile=profile,
                 finding_id=finding.id,
                 max_iterations=args.max_iterations,
             )
@@ -150,6 +175,7 @@ def _resolve_findings(
     target: Path,
     sast_config: str,
     output_dir: Path,
+    service_resolver: Callable[[str], str | None],
 ) -> Path:
     if existing_findings:
         path = Path(existing_findings).expanduser()
@@ -159,7 +185,12 @@ def _resolve_findings(
 
     output_dir.mkdir(parents=True, exist_ok=True)
     print(f"SAST: scanning with Semgrep config={sast_config}")
-    scan = run_semgrep_scan(target, config=sast_config, timeout_seconds=600)
+    scan = run_semgrep_scan(
+        target,
+        config=sast_config,
+        timeout_seconds=600,
+        service_resolver=service_resolver,
+    )
 
     raw_path = output_dir / "semgrep.json"
     findings_path = output_dir / "findings.json"

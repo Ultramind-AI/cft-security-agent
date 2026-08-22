@@ -104,8 +104,8 @@ class FallbackLLMAgentModel:
         return ActionProposal(
             id=_build_action_id(finding.id, next_iteration),
             tool=choice.tool,
-            target="sberlab-local",
-            environment="local",
+            target=_target_profile(state).id,
+            environment=_target_profile(state).environment,
             iteration=next_iteration,
             parameters=_sanitize_action_parameters(choice, state),
             purpose=choice.purpose,
@@ -189,7 +189,12 @@ def _allowed_execution_tools(state: AgentState) -> list[dict[str, Any]]:
         return [
             {
                 "name": "inspect_python_password_assignment",
-                "parameters": {"artifact_id": "demo_seed"},
+                "parameters": {
+                    "artifact_id": _target_profile(state).artifact_id_for_path(
+                        state["finding"].file,
+                        kind="python",
+                    )
+                },
                 "purpose": (
                     "Read-only Python AST verification of password assignment and "
                     "password-validation calls. Password literal values are never returned."
@@ -201,7 +206,7 @@ def _allowed_execution_tools(state: AgentState) -> list[dict[str, Any]]:
         return [
             {
                 "name": "inspect_react_dangerous_html_flow",
-                "parameters": _react_html_flow_parameters(),
+                "parameters": _react_html_flow_parameters(state),
                 "purpose": (
                     "Bounded static source-flow verification from a writable user field "
                     "to dangerouslySetInnerHTML. No browser content is executed."
@@ -238,13 +243,13 @@ def _is_react_dangerous_html_finding(state: AgentState) -> bool:
 def _dockerfile_user_parameters(state: AgentState) -> dict[str, str]:
     from agent.model import _dockerfile_user_parameters as parameters_for_path
 
-    return parameters_for_path(state["finding"].file)
+    return parameters_for_path(state["finding"].file, _target_profile(state))
 
 
-def _react_html_flow_parameters() -> dict[str, str]:
+def _react_html_flow_parameters(state: AgentState) -> dict[str, str]:
     from agent.model import _react_html_flow_parameters as parameters
 
-    return parameters()
+    return parameters(state["finding"].file, _target_profile(state))
 
 
 def _sanitize_action_parameters(choice, state: AgentState) -> dict[str, object]:
@@ -253,13 +258,24 @@ def _sanitize_action_parameters(choice, state: AgentState) -> dict[str, object]:
     if choice.tool == "inspect_dockerfile_user":
         return _dockerfile_user_parameters(state)
     if choice.tool == "inspect_python_password_assignment":
-        return {"artifact_id": "demo_seed"}
+        return {
+            "artifact_id": _target_profile(state).artifact_id_for_path(
+                state["finding"].file,
+                kind="python",
+            )
+        }
     if choice.tool == "inspect_react_dangerous_html_flow":
-        return _react_html_flow_parameters()
+        return _react_html_flow_parameters(state)
     if choice.tool in {"check_sberlab_health", "get_sberlab_public_projects"}:
         return {}
     raise ValueError(f"No deterministic parameter contract for tool: {choice.tool}")
 
+
+
+def _target_profile(state: AgentState):
+    from agent.model import _target_profile as profile_for_state
+
+    return profile_for_state(state)
 
 def _evidence_guard(state: AgentState) -> ReevaluationResult | None:
     action = state.get("proposed_action")

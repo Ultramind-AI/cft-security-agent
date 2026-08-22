@@ -5,6 +5,7 @@ from typing import Any
 import yaml
 
 from schemas.action import ActionProposal
+from schemas.target import TargetProfile
 from schemas.validation import ValidationResult
 
 _ACTION_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
@@ -19,9 +20,14 @@ class PolicyValidator:
         policy: dict[str, Any],
         *,
         target_environments: dict[str, str] | None = None,
+        target_artifacts: dict[str, set[str]] | None = None,
     ) -> None:
         self.policy = policy
         self.target_environments = dict(target_environments or {})
+        self.target_artifacts = {
+            target_id: set(artifact_ids)
+            for target_id, artifact_ids in (target_artifacts or {}).items()
+        }
 
     @classmethod
     def from_yaml(
@@ -29,20 +35,24 @@ class PolicyValidator:
         path: str | Path,
         *,
         target_file: str | Path | None = None,
+        target_profile: TargetProfile | None = None,
     ) -> "PolicyValidator":
         data = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
         target_environments: dict[str, str] = {}
+        target_artifacts: dict[str, set[str]] = {}
 
-        if target_file is not None:
-            target_data = (
-                yaml.safe_load(Path(target_file).read_text(encoding="utf-8")) or {}
-            )
-            target_id = target_data.get("id")
-            environment = target_data.get("environment")
-            if target_id and environment:
-                target_environments[str(target_id)] = str(environment)
+        profile = target_profile
+        if profile is None and target_file is not None:
+            profile = TargetProfile.from_yaml(target_file)
+        if profile is not None:
+            target_environments[profile.id] = profile.environment
+            target_artifacts[profile.id] = set(profile.artifacts)
 
-        return cls(data, target_environments=target_environments)
+        return cls(
+            data,
+            target_environments=target_environments,
+            target_artifacts=target_artifacts,
+        )
 
     def validate(self, action: ActionProposal) -> ValidationResult:
         rules: list[str] = []
@@ -67,7 +77,10 @@ class PolicyValidator:
         rules.append("action_id_valid")
 
         allowed_targets = set(self.policy.get("targets", {}).get("allowed", []))
-        if action.target not in allowed_targets:
+        registered_target_allowed = (
+            "registered" in allowed_targets and action.target in self.target_environments
+        )
+        if action.target not in allowed_targets and not registered_target_allowed:
             return self._deny(
                 action,
                 f"Target '{action.target}' is not allowed",
@@ -151,10 +164,15 @@ class PolicyValidator:
         if parameter_error is not None:
             reason, rule = parameter_error
             return self._deny(action, reason, rules, rule)
+        artifact_error = self._validate_registered_artifacts(action)
+        if artifact_error is not None:
+            reason, rule = artifact_error
+            return self._deny(action, reason, rules, rule)
         rules.extend(
             [
                 "parameters_allowed",
                 "parameter_values_valid",
+                "registered_artifacts_valid",
             ]
         )
 
@@ -229,6 +247,24 @@ class PolicyValidator:
                     "parameter_values_denied",
                 )
 
+        return None
+
+    def _validate_registered_artifacts(
+        self,
+        action: ActionProposal,
+    ) -> tuple[str, str] | None:
+        registered = self.target_artifacts.get(action.target)
+        if registered is None:
+            return None
+
+        for name, value in action.parameters.items():
+            if name != "artifact_id" and not name.endswith("_artifact_id"):
+                continue
+            if not isinstance(value, str) or value not in registered:
+                return (
+                    f"Unknown trusted artifact for parameter '{name}'",
+                    "target_artifact_denied",
+                )
         return None
 
     @staticmethod

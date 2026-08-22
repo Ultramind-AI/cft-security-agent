@@ -1,7 +1,7 @@
 version: 1
 targets:
   allowed:
-  - sberlab-local
+  - registered
 environments:
   allowed:
   - local
@@ -57,10 +57,6 @@ tools:
       - artifact_id
       required_keys:
       - artifact_id
-      enum_values:
-        artifact_id:
-        - backend_dockerfile
-        - frontend_dockerfile
       max_string_lengths:
         artifact_id: 64
     inspect_python_password_assignment:
@@ -68,9 +64,6 @@ tools:
       - artifact_id
       required_keys:
       - artifact_id
-      enum_values:
-        artifact_id:
-        - demo_seed
       max_string_lengths:
         artifact_id: 64
     inspect_react_dangerous_html_flow:
@@ -86,17 +79,6 @@ tools:
       - serializer_artifact_id
       - view_artifact_id
       - field
-      enum_values:
-        frontend_artifact_id:
-        - frontend_app
-        model_artifact_id:
-        - user_model
-        serializer_artifact_id:
-        - user_serializer
-        view_artifact_id:
-        - user_views
-        field:
-        - about
       max_string_lengths:
         frontend_artifact_id: 64
         model_artifact_id: 64

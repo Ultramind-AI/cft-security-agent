@@ -17,6 +17,7 @@ def calculate_sha256_digest(data: Any) -> str:
 class AuditRecord:
     timestamp: str
     run_id: str
+    session_id: str | None
     action_id: str
     tool: str
     target: str
@@ -35,6 +36,7 @@ class AuditRecord:
         cls,
         *,
         run_id: str,
+        session_id: str | None,
         action_id: str,
         tool: str,
         target: str,
@@ -51,6 +53,7 @@ class AuditRecord:
         return cls(
             timestamp=datetime.now(UTC).isoformat(),
             run_id=run_id,
+            session_id=session_id,
             action_id=action_id,
             tool=tool,
             target=target,

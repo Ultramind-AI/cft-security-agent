@@ -8,7 +8,7 @@ import warnings
 from pathlib import Path, PurePosixPath
 from urllib.error import HTTPError, URLError
 from urllib.parse import urljoin, urlsplit
-from urllib.request import Request, urlopen
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 _DOCKERFILE_USER_TOOL = "inspect_dockerfile_user"
 _PYTHON_PASSWORD_TOOL = "inspect_python_password_assignment"
@@ -36,19 +36,27 @@ def _fixed_url(base_url: str, path: str) -> str:
         or parsed.password
         or parsed.query
         or parsed.fragment
-    ):
+    ) or not path.startswith("/") or ".." in path.split("/"):
         raise ValueError("Invalid trusted target URL")
     return urljoin(f"{base_url.rstrip('/')}/", path.lstrip("/"))
 
 
-def _http_get(url: str, timeout: float, output_limit: int) -> tuple[int, str, str]:
+class _NoRedirect(HTTPRedirectHandler):
+    def redirect_request(self, request, fp, code, msg, headers, newurl):  # type: ignore[no-untyped-def]
+        return None
+
+
+def _http_get(url: str, timeout: float, output_limit: int, request_host: str | None = None) -> tuple[int, str, str]:
+    headers = {"User-Agent": "cft-security-agent-executor/0.4"}
+    if request_host is not None:
+        headers["Host"] = request_host
     request = Request(
         url,
-        headers={"User-Agent": "cft-security-agent-executor/0.4"},
+        headers=headers,
         method="GET",
     )
     try:
-        with urlopen(request, timeout=timeout) as response:
+        with build_opener(_NoRedirect).open(request, timeout=timeout) as response:
             body = response.read(output_limit + 1)
             text = body[:output_limit].decode("utf-8", errors="replace")
             if len(body) > output_limit:
@@ -632,10 +640,14 @@ def _inspect_react_dangerous_html_flow(
 def _execute(payload: dict) -> tuple[int, str, str]:
     tool = str(payload.get("tool", ""))
     base_url = str(payload.get("base_url", ""))
+    endpoint = payload.get("endpoint")
+    request_host = payload.get("request_host")
     repository_path = str(payload.get("repository_path", ""))
     parameters = payload.get("parameters", {})
     if not isinstance(parameters, dict):
         return 2, "", "Capability parameters must be an object"
+    if request_host is not None and not isinstance(request_host, str):
+        return 2, "", "Trusted request host must be a string"
 
     timeout = float(payload.get("request_timeout_seconds", 1.0))
     output_limit = int(payload.get("max_output_bytes", 16_384))
@@ -658,10 +670,13 @@ def _execute(payload: dict) -> tuple[int, str, str]:
         return 2, "", f"{tool} does not accept ActionProposal parameters"
 
     if tool == "check_sberlab_health":
+        if not isinstance(endpoint, str):
+            return 2, "", "Missing trusted capability endpoint"
         exit_code, stdout, stderr = _http_get(
-            _fixed_url(base_url, "/health/"),
+            _fixed_url(base_url, endpoint),
             timeout,
             output_limit,
+            request_host,
         )
         if exit_code != 0:
             return exit_code, stdout, stderr
@@ -674,10 +689,13 @@ def _execute(payload: dict) -> tuple[int, str, str]:
         return 0, stdout, ""
 
     if tool == "get_sberlab_public_projects":
+        if not isinstance(endpoint, str):
+            return 2, "", "Missing trusted capability endpoint"
         return _http_get(
-            _fixed_url(base_url, "/api/projects/"),
+            _fixed_url(base_url, endpoint),
             timeout,
             output_limit,
+            request_host,
         )
 
     return 126, "", f"Unknown worker capability: {tool}"

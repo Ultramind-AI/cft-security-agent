@@ -46,12 +46,16 @@ class DockerRuntimeBuilder:
             target_repo_host_path: Path | None,
             worker_script_host_path: Path,
             target_network_enabled: bool = False,
+            network_name: str | None = None,
+            detached: bool = False,
     ) -> ContainerRuntimeSpec:
         workspace_id = f"run-{run_id}"
         container_name = f"cft-sandbox-{run_id}"
         limits = self.policy.limits
 
-        if (
+        if network_name is not None:
+            network_arg = network_name
+        elif (
                 target_network_enabled
                 and self.policy.network_mode == "internal_bridge"
         ):
@@ -70,7 +74,7 @@ class DockerRuntimeBuilder:
         cmd: list[str] = [
             "docker",
             "run",
-            "--rm",
+            "--rm" if not detached else "--detach",
             "-i",
             "--name",
             container_name,
@@ -109,13 +113,11 @@ class DockerRuntimeBuilder:
                 f"{target_repo_host_path}:/target:ro",
             ])
 
-        cmd.extend([
-            "-v",
-            f"{worker_script_host_path}:/app/worker.py:ro",
-            self.policy.sandbox_image,
-            "python",
-            "/app/worker.py",
-        ])
+        cmd.extend(["-v", f"{worker_script_host_path}:/app/worker.py:ro", self.policy.sandbox_image])
+        if detached:
+            cmd.extend(["python", "-c", "import time; time.sleep(3600)"])
+        else:
+            cmd.extend(["python", "/app/worker.py"])
 
         return ContainerRuntimeSpec(
             argv=cmd,

@@ -28,6 +28,11 @@ services:
       path: /health/
     allowed_local_addresses:
       - 127.0.0.1:8000
+    internal_port: 8000
+    runtime_endpoints:
+      - /health/
+      - /api/projects/
+    request_host: 127.0.0.1:8000
 
   frontend:
     type: react
@@ -35,6 +40,9 @@ services:
     dependency_files:
       - frontend/frontend/package.json
     dockerfile: frontend/frontend/Dockerfile
+    internal_port: 80
+    runtime_endpoints:
+      - /
 
 constraints:
   external_network: false

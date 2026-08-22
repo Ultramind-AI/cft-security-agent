@@ -66,6 +66,53 @@ def _bounded(text: str, limit: int = 16_384) -> str:
     return text[:limit] + ("\n...[truncated]" if len(text) > limit else "")
 
 
+def normalize_compose_ps(stdout: str) -> list[dict[str, object]]:
+    """Normalize Compose JSON arrays, single objects, and JSON Lines."""
+    text = stdout.strip()
+    if not text:
+        return []
+    try:
+        decoded = json.loads(text)
+    except json.JSONDecodeError:
+        records: list[dict[str, object]] = []
+        # Compose v5 can emit one JSON object per line; a bad line must not hide its neighbours.
+        for line in text.splitlines():
+            if not line.strip():
+                continue
+            try:
+                decoded = json.loads(line)
+            except json.JSONDecodeError:
+                records.append({"raw": _bounded(line, 1_024)})
+                continue
+            records.extend(_normalize_compose_records(decoded))
+        return records
+    return _normalize_compose_records(decoded)
+
+
+def _normalize_compose_records(decoded: object) -> list[dict[str, object]]:
+    values = decoded if isinstance(decoded, list) else [decoded]
+    records: list[dict[str, object]] = []
+    for value in values:
+        if not isinstance(value, dict):
+            records.append({"raw": _bounded(str(value), 1_024)})
+            continue
+        normalized: dict[str, object] = {}
+        for key in ("Service", "Name", "State", "Health", "Status", "ID"):
+            found = _compose_field(value, key)
+            if found is not None:
+                normalized[key] = found
+        records.append(normalized)
+    return records
+
+
+def _compose_field(record: dict[object, object], name: str) -> object | None:
+    expected = name.lower()
+    for key, value in record.items():
+        if isinstance(key, str) and key.lower() == expected:
+            return value
+    return None
+
+
 def _run_command(argv: list[str], cwd: Path, timeout: float) -> subprocess.CompletedProcess[str]:
     # Команда собирается только из доверенного TargetProfile и фиксированных аргументов.
     return subprocess.run(
@@ -240,11 +287,7 @@ class SandboxSession:
             services: list[dict[str, object]] = []
         else:
             result = self._command(self._compose("ps", "--format", "json"), allow_failure=True)
-            try:
-                raw = json.loads(result.stdout or "[]")
-                services = raw if isinstance(raw, list) else [raw]
-            except json.JSONDecodeError:
-                services = [{"raw": _bounded(result.stdout or "")}]
+            services = normalize_compose_ps(result.stdout or "")
             self.info.services = services
         duration = 0.0 if self.info.started_at is None else round(self._clock() - self.info.started_at, 3)
         return {

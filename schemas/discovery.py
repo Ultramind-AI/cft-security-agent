@@ -113,6 +113,7 @@ class DiscoveryComposeCandidate(BaseModel):
 
     compose_file: str
     service: str
+    internal_port: int | None = Field(default=None, ge=1, le=65535)
     confidence: float = Field(ge=0.0, le=1.0)
 
     @field_validator("compose_file")

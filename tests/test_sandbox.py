@@ -128,22 +128,40 @@ def test_process_sandbox_applies_os_resource_limits(tmp_path: Path) -> None:
 
 def test_worker_maps_health_tool_to_fixed_path(monkeypatch) -> None:
     requested = []
-    def fake_get(url: str, timeout: float, output_limit: int):
-        requested.append((url, timeout, output_limit))
+    def fake_get(url: str, timeout: float, output_limit: int, request_host: str | None = None):
+        requested.append((url, timeout, output_limit, request_host))
         return 0, '{"status":"ok","database":"ok"}', ""
 
     monkeypatch.setattr(worker, "_http_get", fake_get)
     result = worker._execute({
         "tool": "check_sberlab_health", "base_url": "http://127.0.0.1:8000",
+        "endpoint": "/health/",
         "parameters": {}, "request_timeout_seconds": 1.5, "max_output_bytes": 2048,
     })
     assert result[0] == 0
-    assert requested == [("http://127.0.0.1:8000/health/", 1.5, 2048)]
+    assert requested == [("http://127.0.0.1:8000/health/", 1.5, 2048, None)]
+
+
+def test_worker_passes_trusted_host_without_changing_destination(monkeypatch) -> None:
+    requested = []
+
+    def fake_get(url: str, timeout: float, output_limit: int, request_host: str | None = None):
+        requested.append((url, request_host))
+        return 0, '{"status":"ok","database":"ok"}', ""
+
+    monkeypatch.setattr(worker, "_http_get", fake_get)
+    result = worker._execute({
+        "tool": "check_sberlab_health", "base_url": "http://backend:8000",
+        "endpoint": "/health/", "request_host": "127.0.0.1:8000",
+        "parameters": {}, "request_timeout_seconds": 1, "max_output_bytes": 1024,
+    })
+    assert result[0] == 0
+    assert requested == [("http://backend:8000/health/", "127.0.0.1:8000")]
 
 
 def test_worker_never_uses_parameter_as_url(monkeypatch) -> None:
     called = False
-    def fake_get(url: str, timeout: float, output_limit: int):
+    def fake_get(url: str, timeout: float, output_limit: int, request_host: str | None = None):
         nonlocal called
         called = True
         return 0, "{}", ""
@@ -151,6 +169,7 @@ def test_worker_never_uses_parameter_as_url(monkeypatch) -> None:
     monkeypatch.setattr(worker, "_http_get", fake_get)
     result = worker._execute({
         "tool": "get_sberlab_public_projects", "base_url": "http://127.0.0.1:8000",
+        "endpoint": "/api/projects/",
         "parameters": {"url": "http://example.com"}, "request_timeout_seconds": 1, "max_output_bytes": 1024,
     })
     assert result[0] == 2

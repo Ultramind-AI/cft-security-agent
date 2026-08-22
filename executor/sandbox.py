@@ -13,7 +13,7 @@ import uuid
 from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import ClassVar, Literal, Protocol
+from typing import ClassVar, Literal, Protocol, Self
 
 from executor.sandbox_policy import SandboxLimits, SandboxPolicy
 from executor.sandbox_runtime import DockerRuntimeBuilder
@@ -35,6 +35,8 @@ class SandboxRequest:
     base_url: str
     parameters: dict
     request_timeout_seconds: float
+    endpoint: str | None = None
+    request_host: str | None = None
     network_access: Literal["none", "target"] = "none"
     repository_path: str = ""
     artifacts: dict[str, dict] = field(default_factory=dict)
@@ -272,6 +274,8 @@ class ProcessSandbox:
         payload = {
             "tool": request.tool,
             "base_url": request.base_url,
+            "endpoint": request.endpoint,
+            "request_host": request.request_host,
             "parameters": request.parameters,
             "request_timeout_seconds": request.request_timeout_seconds,
             "repository_path": request.repository_path,
@@ -337,6 +341,14 @@ class DockerSandbox:
         self.policy = policy
         self.worker_path = Path(worker_path).resolve() if worker_path else (Path(__file__).parent / "worker.py").resolve()
         self.builder = DockerRuntimeBuilder(policy)
+
+    def open_sequence(self, *, network_name: str, repository_path: str = "") -> DockerSequenceRuntime:
+        if not network_name or network_name in {"bridge", "host", "none"}:
+            raise ValueError("A trusted target network is required for Docker sequence execution")
+        repo = Path(repository_path).resolve() if repository_path else None
+        if repo is not None and not repo.is_dir():
+            raise ValueError("Trusted repository path is not a directory")
+        return DockerSequenceRuntime(self.policy, self.worker_path, network_name, repo)
 
     def run(self, request: SandboxRequest) -> SandboxResult:
         workspace_id = f"run-{request.run_id}-{uuid.uuid4().hex}"
@@ -408,3 +420,56 @@ class DockerSandbox:
             duration_ms=duration_ms,
             runtime_backend="docker",
         )
+
+
+class DockerSequenceRuntime:
+    """One disposable Docker container reused by a trusted action sequence."""
+
+    def __init__(self, policy: SandboxPolicy, worker_path: Path, network_name: str, repository_path: Path | None) -> None:
+        self.policy = policy
+        self.worker_path = worker_path
+        self.network_name = network_name
+        self.repository_path = repository_path
+        self.runtime_instance_id = ""
+        self._closed = False
+
+    def start(self) -> DockerSequenceRuntime:
+        runtime_id = f"sequence-{uuid.uuid4().hex}"
+        spec = DockerRuntimeBuilder(self.policy).build_spec(
+            run_id=runtime_id,
+            target_repo_host_path=self.repository_path,
+            worker_script_host_path=self.worker_path,
+            target_network_enabled=True,
+            network_name=self.network_name,
+            detached=True,
+        )
+        result = subprocess.run(spec.argv, capture_output=True, text=True, timeout=20, shell=False, check=False)
+        if result.returncode:
+            raise RuntimeError("Persistent Docker runner could not be started")
+        self.runtime_instance_id = result.stdout.strip() or spec.container_name
+        self._container_name = spec.container_name
+        return self
+
+    def run(self, request: SandboxRequest) -> SandboxResult:
+        payload = {"tool": request.tool, "base_url": request.base_url, "endpoint": request.endpoint, "request_host": request.request_host, "parameters": request.parameters, "request_timeout_seconds": request.request_timeout_seconds, "repository_path": "/target" if self.repository_path else "", "artifacts": request.artifacts, "max_output_bytes": self.policy.limits.max_output_bytes}
+        started = time.perf_counter()
+        argv = ["docker", "exec", "-i", self._container_name, "python", "/app/worker.py"]
+        try:
+            proc = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=False)
+            stdout, stdout_cut, stderr, stderr_cut, timed_out = _communicate_bounded(proc, json.dumps(payload).encode("utf-8"), self.policy.limits.wall_time_seconds, self.policy.limits.max_output_bytes)
+            return SandboxResult(request.run_id, 124 if timed_out else proc.returncode or 0, _format_bounded_output(stdout, stdout_cut), _format_bounded_output(stderr, stderr_cut), timed_out, self.runtime_instance_id, int((time.perf_counter() - started) * 1000), "docker")
+        except OSError as exc:
+            return SandboxResult(request.run_id, 127, "", f"Docker exec failed: {exc}", False, self.runtime_instance_id, int((time.perf_counter() - started) * 1000), "docker")
+
+    def close(self) -> None:
+        if self._closed or not self.runtime_instance_id:
+            return
+        self._closed = True
+        subprocess.run(["docker", "rm", "--force", self._container_name], capture_output=True, text=True, timeout=20, shell=False, check=False)
+
+    def __enter__(self) -> Self:
+        return self.start()
+
+    def __exit__(self, exc_type: object, exc: object, traceback: object) -> bool:
+        self.close()
+        return False

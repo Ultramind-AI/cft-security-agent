@@ -11,3 +11,5 @@ class ActionProposal(BaseModel):
     parameters: dict = Field(default_factory=dict)
     purpose: str
     expected_evidence: str
+    service: str | None = None
+    endpoint: str | None = None

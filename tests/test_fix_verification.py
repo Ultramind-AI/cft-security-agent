@@ -6,6 +6,7 @@ from fix_verification.proposal import PatchProposalService
 from fix_verification.service import FixVerificationService
 from schemas.fix import FixCheck, ProposedPatch
 from schemas.report import FinalReport, ReportFinding, VerificationSummary
+from security.error_redaction import redact_error_message
 
 
 def _report(*, status: str = "confirmed") -> FinalReport:
@@ -172,7 +173,7 @@ def test_fix_checks_use_isolated_environment_and_redact_output(tmp_path, monkeyp
     assert isolated_result.status == "passed"
     assert "must-not-be-retained" not in isolated_result.stdout
     assert artifact.re_test_actions[0].argv == [
-        sys.executable,
+        redact_error_message(sys.executable, max_length=4096),
         "-c",
         artifact.re_test_actions[0].argv[2],
     ]

@@ -1,5 +1,11 @@
 from schemas.action import ActionProposal
 from schemas.architecture import ArchitectureContext
+from schemas.discovery import (
+    DiscoveredComponent,
+    DiscoveryCommandCandidate,
+    DiscoverySignal,
+    ProjectDiscoveryResult,
+)
 from schemas.evidence import Evidence
 from schemas.execution import ExecutionResult
 from schemas.finding import Finding
@@ -20,6 +26,10 @@ __all__ = [
     "ArchitectureContext",
     "CVSSResult",
     "ContextPriority",
+    "DiscoveredComponent",
+    "DiscoveryCommandCandidate",
+    "DiscoverySignal",
+    "ProjectDiscoveryResult",
     "DockerfileUserCheckResult",
     "Evidence",
     "ExecutionResult",

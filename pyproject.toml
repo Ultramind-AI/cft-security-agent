@@ -41,6 +41,7 @@ include = [
     "pipeline*",
     "agent*",
     "architecture*",
+    "discovery*",
     "evidence*",
     "executor*",
     "sast*",

@@ -101,7 +101,10 @@ def _normalize_path(value: str) -> str:
     normalized = value.replace("\\", "/")
     while normalized.startswith("./"):
         normalized = normalized[2:]
-    return PurePosixPath(normalized).as_posix()
+    path = PurePosixPath(normalized)
+    if not normalized or path.is_absolute() or ".." in path.parts:
+        raise ValueError("PR finding path must stay inside the repository")
+    return path.as_posix()
 
 
 def _finding_lines(finding: Finding) -> set[int]:

@@ -4,7 +4,7 @@ import re
 import shlex
 import subprocess
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 _HUNK_HEADER = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@")
 
@@ -23,6 +23,9 @@ def read_git_diff(repository: str | Path, *, base_ref: str, head_ref: str) -> Gi
     root = Path(repository).expanduser().resolve()
     if not (root / ".git").exists():
         raise GitDiffError(f"Target is not a Git repository: {root}")
+    for name, ref in (("base_ref", base_ref), ("head_ref", head_ref)):
+        if not ref or ref.startswith("-") or any(char.isspace() for char in ref):
+            raise GitDiffError(f"Invalid {name}")
 
     command = [
         "git",
@@ -87,4 +90,9 @@ def parse_git_diff(text: str) -> GitDiff:
 
 def _normalize_path(value: str) -> str:
     normalized = value.replace("\\", "/")
-    return normalized[2:] if normalized.startswith("b/") else normalized
+    if normalized.startswith(("a/", "b/")):
+        normalized = normalized[2:]
+    path = PurePosixPath(normalized)
+    if not normalized or path.is_absolute() or ".." in path.parts:
+        raise GitDiffError("Git diff contained a path outside the repository")
+    return normalized

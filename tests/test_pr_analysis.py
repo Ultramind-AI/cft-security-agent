@@ -1,3 +1,5 @@
+import pytest
+
 from architecture.context import ProjectDescriptionAdapter
 from pr_analysis.git_diff import GitDiff, parse_git_diff
 from pr_analysis.service import PRAnalysisService, finding_fingerprint
@@ -47,6 +49,19 @@ def test_fingerprint_survives_line_movement_and_path_separators() -> None:
     head = _finding("head", rule="rule.x", file="src/app.py", line=47)
 
     assert finding_fingerprint(base) == finding_fingerprint(head)
+
+
+def test_dot_prefixed_paths_are_preserved_but_traversal_is_rejected() -> None:
+    finding = _finding("dotfile", rule="rule.dot", file=".github/workflows/ci.yml", line=4)
+    assert finding_fingerprint(finding) == finding_fingerprint(
+        finding.model_copy(update={"file": "./.github/workflows/ci.yml"})
+    )
+
+    with pytest.raises(ValueError, match="inside the repository"):
+        finding_fingerprint(finding.model_copy(update={"file": "../secrets.txt"}))
+
+    with pytest.raises(ValueError, match="inside the repository"):
+        finding_fingerprint(finding.model_copy(update={"file": "/etc/passwd"}))
 
 
 def test_zero_context_diff_maps_head_lines_and_deleted_files() -> None:

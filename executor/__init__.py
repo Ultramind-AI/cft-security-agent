@@ -1,6 +1,7 @@
 from executor.approvals import ApprovalRecord, InMemoryApprovalStore, proposal_digest
 from executor.executor import SafeExecutor
 from executor.runtime_service_map import ProbeResult, RuntimeServiceMapBuilder
+from executor.runtime_telemetry import RuntimeTelemetryCollector
 from executor.sandbox import (
     ProcessSandbox,
     RunLimiter,
@@ -33,6 +34,7 @@ __all__ = [
     "ProcessSandbox",
     "RunLimiter",
     "RuntimeServiceMapBuilder",
+    "RuntimeTelemetryCollector",
     "SafeExecutor",
     "SandboxConfigurationError",
     "SandboxLimits",

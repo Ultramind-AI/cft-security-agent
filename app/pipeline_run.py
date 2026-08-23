@@ -13,6 +13,7 @@ from app.e2e_inputs import build_real_initial_state
 from architecture.service import ArchitectureService
 from pipeline.errors import error_from_exception
 from pipeline.gate import evaluate_gate
+from pipeline.policy import classify_finding_gate
 from pr_analysis.git_diff import read_git_diff
 from pr_analysis.service import PRAnalysisService
 from reporting.presentation import render_final_report
@@ -20,8 +21,10 @@ from sast.repository import JsonFindingRepository
 from sast.semgrep_runner import SemgrepError, run_semgrep_scan
 from schemas.errors import ErrorDetail
 from schemas.pipeline import GateResult
-from schemas.report import FinalReport
+from schemas.report import CIGateImpact, FinalReport, ReportFinding, VerificationSummary
+from schemas.runtime import RuntimeServiceMap
 from schemas.target import TargetProfile
+from tools.runtime import LocalCodeReader
 
 
 def _parse_args() -> argparse.Namespace:
@@ -94,13 +97,23 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def main() -> int:
-    args = _parse_args()
+def run_pipeline(
+    args: argparse.Namespace,
+    *,
+    profile_override: TargetProfile | None = None,
+    runtime_services: RuntimeServiceMap | None = None,
+) -> int:
+    """Run the SAST -> agent -> FinalReport -> Gate part of the pipeline.
+
+    The CI orchestrator passes a discovered profile and the service map of an
+    already running sandbox.  The ordinary CLI can still call this function
+    without either value and keeps its previous behaviour.
+    """
     if args.max_iterations < 1:
         raise SystemExit("--max-iterations must be at least 1")
 
     profile_path = Path(args.profile).expanduser()
-    profile = TargetProfile.from_yaml(
+    profile = profile_override or TargetProfile.from_yaml(
         profile_path,
         repository_path_override=args.target,
         base_url_override=settings.target_base_url,
@@ -216,6 +229,21 @@ def main() -> int:
         location = f"{finding.file}:{finding.line_start or '?'}"
         print(f"[{index + 1}/{len(findings)}] {finding.rule_id} | {location}")
         try:
+            service = profile.resolve_service(finding.file) or finding.service
+            if not service:
+                # Репозиторные файлы (.github, корневые конфиги) не принадлежат
+                # runtime-сервису, поэтому для них нельзя выдумывать dynamic-проверку.
+                report = _build_repository_finding_report(finding, target)
+                report_path = reports_dir / f"{index:03d}-{_safe_name(finding.id)}.json"
+                report_path.write_text(
+                    report.model_dump_json(indent=2) + "\n",
+                    encoding="utf-8",
+                )
+                reports.append(report)
+                report_paths[report.finding_id] = str(report_path)
+                print("  status=inconclusive capability=none context=repository")
+                continue
+
             state = build_real_initial_state(
                 findings_path=findings_path,
                 target_root=target,
@@ -225,6 +253,9 @@ def main() -> int:
                 finding_id=finding.id,
                 max_iterations=args.max_iterations,
             )
+            if runtime_services is not None:
+                # Все действия одного CI-запуска используют уже поднятую sandbox-сессию.
+                state["runtime_services"] = runtime_services
             # build_real_initial_state loads the source artifact; PR metadata is an
             # additive pipeline concern and is attached without rewriting that artifact.
             state["finding"] = finding
@@ -259,6 +290,74 @@ def main() -> int:
     _write_gate(output_dir, gate)
     _print_gate(gate)
     return gate.exit_code
+
+
+def _build_repository_finding_report(finding, target: Path) -> FinalReport:
+    """Create an auditable report for a static finding without a runtime service."""
+
+    code = LocalCodeReader(target).read_code(
+        finding.file,
+        finding.line_start,
+        finding.line_end,
+    )
+    gate = classify_finding_gate(
+        finding_id=finding.id,
+        status="inconclusive",
+        context_level=None,
+        cvss_severity=None,
+        pr_classification=(
+            finding.pr_context.classification
+            if finding.pr_context is not None
+            else None
+        ),
+    )
+    return FinalReport(
+        finding_id=finding.id,
+        finding=ReportFinding(
+            id=finding.id,
+            source=finding.source,
+            rule_id=finding.rule_id,
+            title=finding.title,
+            description=finding.description,
+            severity=finding.severity,
+            service=None,
+            file=finding.file,
+            line_start=finding.line_start,
+            line_end=finding.line_end,
+            pr_context=finding.pr_context,
+        ),
+        status="inconclusive",
+        analysis_summary=(
+            "SAST recorded a repository-level finding. It is preserved as a static "
+            "observation and was not converted into a runtime claim."
+        ),
+        code_context=code.content,
+        verification=VerificationSummary(
+            validator_decision="not_run",
+            evidence_count=0,
+            decision_basis="workflow_state",
+        ),
+        ci_gate_impact=CIGateImpact(
+            effect=gate.effect,
+            category=gate.category,
+            reason=gate.reason,
+        ),
+        explanation=(
+            "The finding belongs to the repository rather than a discovered runtime "
+            "service, so no sandbox action was selected."
+        ),
+        limitations=[
+            "The static SAST observation was not confirmed by a runtime capability."
+        ],
+        next_step=(
+            "Review the repository-level configuration and rerun SAST after remediation."
+        ),
+        iterations=0,
+    )
+
+
+def main() -> int:
+    return run_pipeline(_parse_args())
 
 
 def _resolve_findings(

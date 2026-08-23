@@ -51,6 +51,7 @@ constraints:
   ci_secrets: false
 
 metadata:
+  ci.repository: Ultramind-AI/sberlab_hack
   react_html_flow.field: about
 
 # Работаем только с зарегистрированными артефактами таргета

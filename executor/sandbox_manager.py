@@ -10,13 +10,17 @@ import time
 import uuid
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Protocol, Self
+from typing import TYPE_CHECKING, Protocol, Self
 
 from executor.sandbox_policy import SandboxPolicy
 from executor.sandbox_session import SandboxSession
 from schemas.target import TargetProfile, TargetService
 from security.error_redaction import redact_error_message
+
+if TYPE_CHECKING:
+    from schemas.runtime_telemetry import RuntimeTelemetryTimeline
 
 _OUTPUT_LIMIT = 16_384
 Runner = Callable[[list[str], Path, float], subprocess.CompletedProcess[str]]
@@ -40,6 +44,7 @@ class SandboxLog:
     exit_code: int | None
     timed_out: bool
     duration_ms: int
+    captured_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
 
 def _bounded(value: str) -> str:
@@ -101,6 +106,12 @@ class ManagedSandboxSession:
     def collect_state(self) -> dict[str, object]:
         state = self._state()
         return {**state, "session_id": self.session_id, "adapter": self.adapter, "status": self.status, "ready": self.ready}
+
+    def collect_telemetry(self, *, run_id: str | None = None) -> RuntimeTelemetryTimeline:
+        """Собрать события только из ресурсов, принадлежащих этой сессии."""
+        from executor.runtime_telemetry import RuntimeTelemetryCollector
+
+        return RuntimeTelemetryCollector(self).collect(run_id=run_id)
 
     def teardown(self) -> None:
         if self._closed:
@@ -232,7 +243,11 @@ class DockerfileAdapter(_CommandAdapter):
 
         def start() -> None:
             self._command("build", service.id, ["docker", "build", "--label", f"cft.session_id={self.session_id}", "--tag", image, "--file", str(dockerfile), str(context)])
-            argv = ["docker", "run", "--detach", "--name", container, "--label", f"cft.session_id={self.session_id}"]
+            argv = [
+                "docker", "run", "--detach", "--name", container,
+                "--label", f"cft.session_id={self.session_id}",
+                "--label", f"cft.service={service.id}",
+            ]
             for address in service.allowed_local_addresses:
                 host, port = _local_port(address)
                 argv.extend(["--publish", f"{host}:{port}:{service.internal_port or int(port)}"])
@@ -269,7 +284,11 @@ class FrameworkAdapter(_CommandAdapter):
 
         def start() -> None:
             self._command("build", service.id, ["docker", "build", "--label", f"cft.session_id={self.session_id}", "--tag", image, "--file", str(dockerfile), str(context)])
-            argv = ["docker", "run", "--detach", "--name", container, "--label", f"cft.session_id={self.session_id}"]
+            argv = [
+                "docker", "run", "--detach", "--name", container,
+                "--label", f"cft.session_id={self.session_id}",
+                "--label", f"cft.service={service.id}",
+            ]
             for address in service.allowed_local_addresses:
                 host, port = _local_port(address)
                 argv.extend(["--publish", f"{host}:{port}:{service.internal_port or int(port)}"])

@@ -8,6 +8,7 @@ from schemas.execution import ExecutionResult
 from schemas.finding import Finding
 from schemas.hypothesis import Hypothesis
 from schemas.report import FinalReport
+from schemas.runtime import RuntimeServiceMap
 from schemas.scoring import ContextPriority, CVSSResult
 from schemas.target import TargetProfile
 from schemas.validation import ValidationResult
@@ -15,6 +16,7 @@ from schemas.validation import ValidationResult
 
 class AgentState(TypedDict, total=False):
     target_profile: TargetProfile
+    runtime_services: RuntimeServiceMap
     finding: Finding
     code_context: str | None
     architecture_context: ArchitectureContext | None

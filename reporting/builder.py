@@ -212,7 +212,7 @@ def _limitations(state: AgentState, status: str) -> list[str]:
 
     for item in state.get("evidence", []):
         for key, message in _VERIFICATION_LIMITATIONS.items():
-            if item.details.get(key) is False:
+            if item.observation.facts.get(key) is False:
                 limitations.append(message)
 
     if status == "policy_blocked":

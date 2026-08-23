@@ -152,6 +152,26 @@ def test_unready_running_service_is_not_in_ready_map() -> None:
     assert result.diagnostics[0].diagnostic == "timeout"
 
 
+def test_starting_compose_health_uses_bounded_network_probe() -> None:
+    calls: list[str] = []
+
+    def probe(url: str, timeout: float, limit: int) -> ProbeResult:
+        calls.append(url)
+        return ProbeResult(True, "route responded")
+
+    session = FakeSession(
+        state={
+            "services": [
+                {"Service": "api", "State": "running", "Health": "starting"}
+            ]
+        }
+    )
+    result = RuntimeServiceMapBuilder(probe=probe).build(_profile(), session)
+
+    assert result.services["api"].readiness_source == "http_probe"
+    assert calls == ["http://api:8000/ready/"]
+
+
 def test_unhealthy_or_stopped_compose_service_is_not_ready() -> None:
     session = FakeSession(state={"services": [{"Service": "api", "State": "exited", "Health": "healthy"}]})
     result = RuntimeServiceMapBuilder(probe=lambda *_: ProbeResult(False, "not reachable")).build(_profile(), session)

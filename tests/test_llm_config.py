@@ -1,7 +1,9 @@
 from app.config import Settings
 
 
-def test_settings_load_provider_keys_from_plain_dotenv_names(tmp_path) -> None:
+def test_settings_load_provider_keys_from_plain_dotenv_names(tmp_path, monkeypatch) -> None:
+    # Для теста используем только его .env.
+    monkeypatch.delenv("CFT_AGENT_MODE", raising=False)
     env_file = tmp_path / ".env"
     env_file.write_text(
         """GROQ_API_KEY=test-groq

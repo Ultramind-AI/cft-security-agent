@@ -2,7 +2,12 @@ from agent.llm_model import FallbackLLMAgentModel
 from schemas.action import ActionProposal
 from schemas.agent_outputs import AnalysisResult, ReevaluationResult
 from schemas.architecture import ArchitectureContext
-from schemas.evidence import Evidence
+from schemas.evidence import (
+    Evidence,
+    EvidenceAction,
+    EvidenceObservation,
+    EvidenceScope,
+)
 from schemas.execution import ExecutionResult
 from schemas.finding import Finding
 from schemas.hypothesis import Hypothesis
@@ -146,6 +151,22 @@ def test_capability_evidence_deterministically_controls_llm_verdict() -> None:
             summary="Final stage has no USER directive.",
             reliability="high",
             verdict="confirmed",
+            source="static",
+            hypothesis_id="hypothesis-1",
+            action=EvidenceAction(
+                id="action-1",
+                tool="inspect_dockerfile_user",
+                run_id="run-1",
+            ),
+            observation=EvidenceObservation(
+                kind="dockerfile_user_check",
+                facts={"user_directive_present": False},
+            ),
+            scope=EvidenceScope(
+                target="sberlab-local",
+                environment="local",
+                description="source-only",
+            ),
         )
     ]
 
@@ -183,6 +204,22 @@ def test_evidence_guard_trace_makes_short_circuit_visible(capsys) -> None:
             summary="Final stage has no USER directive.",
             reliability="high",
             verdict="confirmed",
+            source="static",
+            hypothesis_id="hypothesis-trace",
+            action=EvidenceAction(
+                id="action-trace",
+                tool="inspect_dockerfile_user",
+                run_id="run-trace",
+            ),
+            observation=EvidenceObservation(
+                kind="dockerfile_user_check",
+                facts={"user_directive_present": False},
+            ),
+            scope=EvidenceScope(
+                target="sberlab-local",
+                environment="local",
+                description="source-only",
+            ),
         )
     ]
 

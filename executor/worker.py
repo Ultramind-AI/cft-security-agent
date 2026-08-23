@@ -13,6 +13,7 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 _DOCKERFILE_USER_TOOL = "inspect_dockerfile_user"
 _PYTHON_PASSWORD_TOOL = "inspect_python_password_assignment"
 _REACT_HTML_FLOW_TOOL = "inspect_react_dangerous_html_flow"
+_HTTP_SURFACE_TOOL = "observe_http_surface"
 _MAX_SOURCE_BYTES = 512 * 1024
 _MAX_ARTIFACTS = 64
 
@@ -70,6 +71,62 @@ def _http_get(url: str, timeout: float, output_limit: int, request_host: str | N
         return 1, text, f"HTTP request failed with status {exc.code}"
     except URLError as exc:
         return 1, "", f"HTTP request failed: {exc.reason}"
+
+
+def _observe_http_surface(url: str, timeout: float, request_host: str | None = None) -> tuple[int, str, str]:
+    headers = {"User-Agent": "cft-security-agent-runtime-observer/1", "Accept": "*/*"}
+    if request_host is not None:
+        headers["Host"] = request_host
+    request = Request(url, headers=headers, method="GET")
+    try:
+        response = build_opener(_NoRedirect).open(request, timeout=timeout)
+    except HTTPError as exc:
+        response = exc
+    except URLError as exc:
+        return 1, "", f"HTTP request failed: {exc.reason}"
+
+    with response:
+        status = int(response.status)
+        raw_headers = response.headers
+        selected_headers = {
+            key.lower(): value[:512]
+            for key, value in raw_headers.items()
+            if key.lower() in {
+                "content-security-policy", "strict-transport-security", "x-content-type-options",
+                "x-frame-options", "referrer-policy", "permissions-policy", "content-type",
+            }
+        }
+        cors = {
+            key.lower(): value[:512]
+            for key, value in raw_headers.items()
+            if key.lower().startswith("access-control-")
+        }
+        cookies = []
+        for value in raw_headers.get_all("Set-Cookie", []) or []:
+            segments = [part.strip() for part in value.split(";") if part.strip()]
+            name = segments[0].split("=", 1)[0][:128] if segments else ""
+            if not name:
+                continue
+            attributes = {part.lower().split("=", 1)[0]: part for part in segments[1:]}
+            same_site = next((part.split("=", 1)[1][:32] for part in segments[1:] if part.lower().startswith("samesite=")), None)
+            cookies.append({"name": name, "secure": "secure" in attributes, "http_only": "httponly" in attributes, "same_site": same_site})
+        location = raw_headers.get("Location")
+        category = "success" if status < 300 else "redirect" if status < 400 else "client_error" if status < 500 else "server_error"
+        endpoint = urlsplit(url).path or "/"
+        payload = {
+            "schema": "cft.http_surface_observation.v1",
+            "endpoint": endpoint,
+            "status_code": status,
+            "response_category": category,
+            "route_accessible": status < 500,
+            "health_or_error_response": "health" if "health" in endpoint else "error" if status >= 400 else "other",
+            "security_headers": selected_headers,
+            "cookies": cookies[:16],
+            "cors": cors,
+            "redirect_location": location[:512] if location else None,
+            "redirect_target_is_local_path": location.startswith("/") if location else None,
+        }
+    return 0, json.dumps(payload, ensure_ascii=False, separators=(",", ":")), ""
 
 
 def _safe_noop(parameters: dict) -> tuple[int, str, str]:
@@ -697,6 +754,16 @@ def _execute(payload: dict) -> tuple[int, str, str]:
             output_limit,
             request_host,
         )
+
+    if tool == _HTTP_SURFACE_TOOL:
+        if not isinstance(endpoint, str):
+            return 2, "", "Missing trusted runtime endpoint"
+        try:
+            return _observe_http_surface(
+                _fixed_url(base_url, endpoint), timeout, request_host
+            )
+        except (OSError, ValueError) as exc:
+            return 1, "", f"HTTP observation failed: {type(exc).__name__}: {exc}"
 
     return 126, "", f"Unknown worker capability: {tool}"
 

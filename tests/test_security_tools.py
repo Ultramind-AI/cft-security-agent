@@ -6,7 +6,12 @@ from evidence.interpreter import build_evidence
 from executor import worker
 from schemas.action import ActionProposal
 from schemas.architecture import ArchitectureContext
-from schemas.evidence import Evidence
+from schemas.evidence import (
+    Evidence,
+    EvidenceAction,
+    EvidenceObservation,
+    EvidenceScope,
+)
 from schemas.execution import ExecutionResult
 from schemas.finding import Finding
 from validator.validator import PolicyValidator
@@ -384,12 +389,13 @@ def test_interpreter_turns_structured_source_result_into_verdict_evidence() -> N
         record=record,
         evidence_loaded=True,
         artifact_refs=["artifact.json"],
+        hypothesis_id="hypothesis-password-check",
     )
 
     assert evidence.type == "python_password_assignment_check"
     assert evidence.verdict == "confirmed"
     assert evidence.reliability == "high"
-    assert evidence.details["password_values_redacted"] is True
+    assert evidence.observation.facts["password_values_redacted"] is True
 
 
 def test_model_uses_capability_evidence_verdict_not_execution_success() -> None:
@@ -425,7 +431,23 @@ def test_model_uses_capability_evidence_verdict_not_execution_success() -> None:
             summary="Source condition is present.",
             reliability="high",
             verdict="confirmed",
-            details={"runtime_user_verified": False},
+            source="static",
+            hypothesis_id="hypothesis-docker-user-check",
+            action=EvidenceAction(
+                id="action-docker-user-check",
+                tool="inspect_dockerfile_user",
+                run_id="run-docker-user-check",
+            ),
+            observation=EvidenceObservation(
+                kind="dockerfile_user_check",
+                facts={"runtime_user_verified": False},
+            ),
+            scope=EvidenceScope(
+                target="sberlab-local",
+                environment="local",
+                service="backend",
+                description="source-only",
+            ),
         )
     ]
 

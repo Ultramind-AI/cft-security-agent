@@ -352,6 +352,22 @@ def test_runtime_map_overrides_host_base_url_for_sandbox_request(tmp_path) -> No
     assert sandbox.requests[0].request_host == "127.0.0.1:8000"
 
 
+def test_http_observation_refuses_process_sandbox_without_starting_target(tmp_path) -> None:
+    action = _proposal(
+        tool="observe_http_surface",
+        service="backend",
+        endpoint="/health/",
+    )
+    approvals, _ = _approve(action)
+    executor, sandbox, _ = _executor(tmp_path, approvals)
+
+    result = executor.execute(action)
+
+    assert result.status == "denied"
+    assert "Docker sandbox backend" in result.stderr
+    assert sandbox.requests == []
+
+
 def test_runtime_map_passes_only_trusted_request_host(tmp_path) -> None:
     action = _proposal(tool="check_sberlab_health", service="backend", endpoint="/health/", parameters={"host": "attacker.invalid"})
     approvals = InMemoryApprovalStore()
@@ -494,9 +510,10 @@ def test_executor_exposes_only_predefined_tools(tmp_path) -> None:
         "check_sberlab_health",
         "get_sberlab_public_projects",
         "inspect_dockerfile_user",
-        "inspect_python_password_assignment",
-        "inspect_react_dangerous_html_flow",
-        "safe_noop",
+            "inspect_python_password_assignment",
+            "inspect_react_dangerous_html_flow",
+            "observe_http_surface",
+            "safe_noop",
     )
 
 

@@ -8,7 +8,12 @@ import tempfile
 from pathlib import Path
 
 from executor.sandbox import _communicate_bounded
-from schemas.evidence import Evidence
+from schemas.evidence import (
+    Evidence,
+    EvidenceAction,
+    EvidenceObservation,
+    EvidenceScope,
+)
 from schemas.fix import (
     FixCheck,
     FixCheckResult,
@@ -326,15 +331,28 @@ def _build_evidence(finding_id: str, results: list[FixCheckResult]) -> list[Evid
                 action_id=result.id,
                 type=f"fix_{result.kind}_result",
                 summary=f"Fix re-test {result.id} finished with status {result.status}.",
-                reliability="deterministic_subprocess",
+                reliability="high",
                 verdict=None,
-                details={
+                source="static",
+                hypothesis_id=f"fix-verification:{finding_id}",
+                action=EvidenceAction(id=result.id, tool="fix_retest"),
+                observation=EvidenceObservation(
+                    kind=f"fix_{result.kind}_result",
+                    facts={
                     "status": result.status,
                     "exit_code": result.exit_code,
                     "argv": result.argv,
                     "stdout": result.stdout,
                     "stderr": result.stderr,
-                },
+                    },
+                ),
+                scope=EvidenceScope(
+                    target=finding_id,
+                    environment="sandbox",
+                    description="bounded proposed-fix re-test",
+                ),
+                artifact_refs=[],
+                artifacts=[],
             )
         )
     return evidence

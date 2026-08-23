@@ -1,4 +1,4 @@
-"""Readiness discovery for an already running managed sandbox session."""
+"""Определение готовности для уже запущенного сеанса управляемой «песочницы"""
 
 from __future__ import annotations
 
@@ -151,6 +151,34 @@ class RuntimeServiceMapBuilder:
                 services[service.id] = RuntimeService(name=service.id, type=service.type, address=address, request_host=service.request_host, ready=True, readiness_source="compose_health", allowed_endpoints=endpoints, diagnostic=readiness.diagnostic)
                 continue
             if readiness is not None and readiness.ready is False:
+                # Проверяем маршрут только во внутренней сети.
+                if readiness.diagnostic == "Compose health is starting":
+                    result = self._fallback_probe(
+                        network_name, address, service.request_host, endpoints
+                    )
+                    if result.ready:
+                        services[service.id] = RuntimeService(
+                            name=service.id,
+                            type=service.type,
+                            address=address,
+                            request_host=service.request_host,
+                            ready=True,
+                            readiness_source="http_probe",
+                            allowed_endpoints=endpoints,
+                            diagnostic=(
+                                f"{readiness.diagnostic}; {result.diagnostic}"
+                            ),
+                        )
+                    else:
+                        diagnostics.append(
+                            RuntimeServiceDiagnostic(
+                                name=service.id,
+                                diagnostic=(
+                                    f"{readiness.diagnostic}; {result.diagnostic}"
+                                ),
+                            )
+                        )
+                    continue
                 diagnostics.append(RuntimeServiceDiagnostic(name=service.id, diagnostic=readiness.diagnostic))
                 continue
             result = self._fallback_probe(network_name, address, service.request_host, endpoints)

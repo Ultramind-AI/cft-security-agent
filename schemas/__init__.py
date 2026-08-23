@@ -20,7 +20,13 @@ from schemas.evaluation import (
     EvaluationTarget,
     ExpectedFinding,
 )
-from schemas.evidence import Evidence
+from schemas.evidence import (
+    Evidence,
+    EvidenceAction,
+    EvidenceArtifact,
+    EvidenceObservation,
+    EvidenceScope,
+)
 from schemas.execution import ExecutionResult
 from schemas.finding import Finding
 from schemas.fix import (
@@ -43,6 +49,7 @@ from schemas.report import (
     VerificationSummary,
 )
 from schemas.runtime import RuntimeService, RuntimeServiceDiagnostic, RuntimeServiceMap
+from schemas.runtime_observations import HttpCookieObservation, HttpSurfaceObservationResult
 from schemas.sandbox_runner import SandboxActionResult, SandboxRunResult
 from schemas.scoring import ContextPriority, CVSSResult
 from schemas.security_tools import (
@@ -71,6 +78,10 @@ __all__ = [
     "EvaluationDataset",
     "EvaluationTarget",
     "Evidence",
+    "EvidenceAction",
+    "EvidenceArtifact",
+    "EvidenceObservation",
+    "EvidenceScope",
     "ExecutionResult",
     "ExpectedFinding",
     "FinalReport",
@@ -80,6 +91,8 @@ __all__ = [
     "FixVerificationArtifact",
     "FixVerificationPlan",
     "GateResult",
+    "HttpCookieObservation",
+    "HttpSurfaceObservationResult",
     "Hypothesis",
     "PRAnalysisSummary",
     "PRFindingContext",

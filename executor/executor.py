@@ -11,6 +11,7 @@ import yaml
 from evidence.audit import JsonlAuditLog
 from evidence.store import JsonExecutionEvidenceStore
 from executor.approvals import InMemoryApprovalStore
+from executor.runtime_service_map import RuntimeServiceMapBuilder
 from executor.sandbox import (
     DockerSandbox,
     ProcessSandbox,
@@ -19,6 +20,7 @@ from executor.sandbox import (
     SandboxRequest,
 )
 from executor.sandbox_audit import AuditRecord
+from executor.sandbox_manager import SandboxManager
 from executor.sandbox_policy import SandboxLimits, SandboxPolicy
 from executor.sandbox_runner import SandboxRunner
 from executor.targets import TargetRegistry
@@ -61,6 +63,7 @@ CAPABILITY_REPOSITORY_ACCESS: dict[str, bool] = {
     "safe_noop": False,
     "check_sberlab_health": False,
     "get_sberlab_public_projects": False,
+    "observe_http_surface": False,
     "inspect_dockerfile_user": True,
     "inspect_python_password_assignment": True,
     "inspect_react_dangerous_html_flow": True,
@@ -71,6 +74,7 @@ CAPABILITY_NETWORK_ACCESS: dict[str, str] = {
     "safe_noop": "none",
     "check_sberlab_health": "target",  # Только к доверенному target
     "get_sberlab_public_projects": "target",
+    "observe_http_surface": "target",
     "inspect_dockerfile_user": "none",  # Только чтение файлов, без сети
     "inspect_python_password_assignment": "none",
     "inspect_react_dangerous_html_flow": "none",
@@ -101,6 +105,7 @@ class SafeExecutor:
         self._registry.register("safe_noop", self._safe_noop)
         self._registry.register("check_sberlab_health", self._no_parameters, endpoint="/health/")
         self._registry.register("get_sberlab_public_projects", self._no_parameters, endpoint="/api/projects/")
+        self._registry.register("observe_http_surface", self._no_parameters)
         self._active_runtime_services: RuntimeServiceMap | None = None
         self._registry.register("inspect_dockerfile_user", self._artifact_id_parameter)
         self._registry.register("inspect_python_password_assignment", self._artifact_id_parameter)
@@ -263,7 +268,63 @@ class SafeExecutor:
         )
 
     def execute(self, action: ActionProposal) -> ExecutionResult:
+        if action.tool == "observe_http_surface":
+            return self.execute_runtime_observation(action)
         result = self.execute_sequence([action])
+        return result.results[0].execution
+
+    def execute_runtime_observation(self, action: ActionProposal) -> ExecutionResult:
+        """HTTP-проверка выполняется только в управляемой sandbox-сессии."""
+        run_id = uuid4().hex
+        if not isinstance(self._sandbox, DockerSandbox):
+            return self._runner_denied(
+                action,
+                run_id,
+                "HTTP runtime observation requires the Docker sandbox backend",
+                False,
+            )
+        if action.service is None or action.endpoint is None:
+            return self._runner_denied(
+                action,
+                run_id,
+                "HTTP runtime observation requires an approved service and endpoint",
+                False,
+            )
+        approved, reason = self._approvals.check(action)
+        if not approved:
+            return self._runner_denied(action, run_id, reason, False)
+        try:
+            target = self._targets.get(action.target)
+        except KeyError:
+            return self._runner_denied(action, run_id, "Unknown registered target", False)
+
+        try:
+            with SandboxManager(policy=self._policy).open(target) as session:
+                runtime_services = RuntimeServiceMapBuilder().build(target, session)
+                result = self.execute_sequence([action], runtime_services=runtime_services)
+        except Exception:
+            logger.exception("Managed runtime observation could not be established")
+            return self._finish(
+                action,
+                run_id,
+                perf_counter(),
+                status="failed",
+                exit_code=127,
+                stderr="Managed runtime observation could not be established",
+                decision_reason="Managed runtime session failed",
+                error=_system_error(
+                    "EXECUTION_FAILED",
+                    message="Managed runtime observation could not be established",
+                ),
+            )
+
+        if not result.results:
+            return self._runner_denied(
+                action,
+                run_id,
+                "Runtime observation produced no execution result",
+                False,
+            )
         return result.results[0].execution
 
     def execute_sequence(
@@ -272,6 +333,11 @@ class SafeExecutor:
         *,
         runtime_services: RuntimeServiceMap | None = None,
     ):
+        # HTTP-проверка запрещена вне Docker sandbox.
+        if any(action.tool == "observe_http_surface" for action in actions) and not isinstance(
+            self._sandbox, DockerSandbox
+        ):
+            return self._runner.run(actions, runtime_services=None)
         if runtime_services is None or not isinstance(self._sandbox, DockerSandbox):
             self._active_runtime_services = runtime_services
             try:
@@ -378,7 +444,7 @@ class SafeExecutor:
                         run_id=run_id,
                         tool=action.tool,
                         base_url=base_url,
-                        endpoint=self._registry.endpoint(action.tool),
+                        endpoint=self._registry.endpoint(action.tool) or action.endpoint,
                         request_host=request_host,
                         parameters=parameters,
                         request_timeout_seconds=max(

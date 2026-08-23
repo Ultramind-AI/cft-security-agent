@@ -1,4 +1,4 @@
-"""Bounded sequence runner over the existing approved sandbox execution path."""
+"""Запуск последовательности в рамках ограниченного, заранее утвержденного пути выполнения в «песочнице»."""
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ def _bounded_output(value: str) -> str:
 
 
 class SandboxRunner:
-    """Runs only approved registry actions; failures stop the fixed sequence policy."""
+    """Выполняет только одобренные операции с реестром; в случае сбоя выполнение политики фиксированной последовательности прекращается"""
 
     def __init__(
         self,
@@ -107,6 +107,15 @@ class SandboxRunner:
             self._registry.get(action.tool)
         except KeyError:
             return f"Unknown executor tool: {action.tool}"
+        if action.tool == "observe_http_surface" and (
+            runtime_services is None
+            or action.service is None
+            or action.endpoint is None
+        ):
+            return (
+                "HTTP runtime observation requires a ready RuntimeServiceMap "
+                "and an approved service endpoint"
+            )
         contract_endpoint = self._registry.endpoint(action.tool)
         if contract_endpoint is not None and action.endpoint is not None and action.endpoint != contract_endpoint:
             return "Action endpoint does not match the capability contract"

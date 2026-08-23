@@ -3,6 +3,7 @@ import json
 from agent.model import get_agent_model
 from app.config import settings
 from evidence.interpreter import build_evidence
+from evidence.runtime import build_http_surface_evidence
 from evidence.store import JsonExecutionEvidenceStore
 from executor.approvals import InMemoryApprovalStore
 from executor.executor import SafeExecutor
@@ -50,7 +51,6 @@ def score_finding(state: AgentState) -> dict:
         state["finding"],
         state["architecture_context"],
     )
-
     return {
         "cvss": cvss,
         "context_priority": context_priority,
@@ -146,6 +146,7 @@ def execute_action(state: AgentState) -> dict:
 def collect_evidence(state: AgentState) -> dict:
     execution = state["execution"]
     action = state["proposed_action"]
+    hypothesis = state.get("hypothesis")
     evidence = list(state.get("evidence", []))
 
     # Источник истины после песочницы - сохраненная запись, а не объект в памяти
@@ -168,15 +169,56 @@ def collect_evidence(state: AgentState) -> dict:
     except (OSError, ValueError, json.JSONDecodeError):
         evidence_loaded = False
 
-    evidence.append(
-        build_evidence(
+    sandbox_session_id = record.get("session_id") if evidence_loaded else None
+    if not isinstance(sandbox_session_id, str) or not sandbox_session_id:
+        sandbox_session_id = None
+
+    if action.tool == "observe_http_surface" and evidence_loaded:
+        runtime_evidence = build_http_surface_evidence(
             action=action,
             execution=execution,
             record=record,
-            evidence_loaded=evidence_loaded,
             artifact_refs=artifact_refs,
+            hypothesis_id=(
+                hypothesis.id
+                if hypothesis is not None
+                else f"unlinked-action:{action.id}"
+            ),
         )
-    )
+        if runtime_evidence:
+            evidence.extend(runtime_evidence)
+        else:
+            evidence.append(
+                build_evidence(
+                    action=action,
+                    execution=execution,
+                    record=record,
+                    evidence_loaded=evidence_loaded,
+                    artifact_refs=artifact_refs,
+                    hypothesis_id=(
+                        hypothesis.id
+                        if hypothesis is not None
+                        else f"unlinked-action:{action.id}"
+                    ),
+                    sandbox_session_id=sandbox_session_id,
+                )
+            )
+    else:
+        evidence.append(
+            build_evidence(
+                action=action,
+                execution=execution,
+                record=record,
+                evidence_loaded=evidence_loaded,
+                artifact_refs=artifact_refs,
+                hypothesis_id=(
+                    hypothesis.id
+                    if hypothesis is not None
+                    else f"unlinked-action:{action.id}"
+                ),
+                sandbox_session_id=sandbox_session_id,
+            )
+        )
 
     return {
         "evidence": evidence,

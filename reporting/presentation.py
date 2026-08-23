@@ -132,7 +132,10 @@ def render_final_report(report: FinalReport) -> str:
                 f"  [{index}] {verdict} | {item.reliability} | {item.type}"
             )
             lines.append(f"      {item.summary}")
-            scope = format_evidence_scope(item.details)
+            scope = format_evidence_scope(
+                item.scope.description,
+                item.observation.facts,
+            )
             if scope is not None:
                 lines.append(f"      {scope}")
 

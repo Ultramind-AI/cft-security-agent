@@ -83,6 +83,26 @@ def test_runner_checks_service_and_endpoint_scope() -> None:
     assert seen == []
 
 
+def test_runner_refuses_http_observation_without_a_runtime_service_map() -> None:
+    action = _action("runtime-map-required", tool="observe_http_surface")
+    registry = ToolRegistry()
+    registry.register("observe_http_surface", object())
+    called = False
+
+    def execute(*_args) -> ExecutionResult:
+        nonlocal called
+        called = True
+        raise AssertionError("runtime observation must be denied before execution")
+
+    result = SandboxRunner(
+        approvals=_approved(action), registry=registry, execute_one=execute
+    ).run([action])
+
+    assert result.status == "denied"
+    assert "RuntimeServiceMap" in result.results[0].stderr
+    assert called is False
+
+
 def test_runner_rejects_endpoint_substitution_against_capability_contract() -> None:
     action = _action("substitution", tool="check_sberlab_health", endpoint="/health/")
     registry = ToolRegistry()

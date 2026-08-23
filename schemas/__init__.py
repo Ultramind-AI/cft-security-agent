@@ -50,6 +50,7 @@ from schemas.report import (
 )
 from schemas.runtime import RuntimeService, RuntimeServiceDiagnostic, RuntimeServiceMap
 from schemas.runtime_observations import HttpCookieObservation, HttpSurfaceObservationResult
+from schemas.runtime_telemetry import RuntimeTelemetryEvent, RuntimeTelemetryTimeline
 from schemas.sandbox_runner import SandboxActionResult, SandboxRunResult
 from schemas.scoring import ContextPriority, CVSSResult
 from schemas.security_tools import (
@@ -109,6 +110,8 @@ __all__ = [
     "RuntimeService",
     "RuntimeServiceDiagnostic",
     "RuntimeServiceMap",
+    "RuntimeTelemetryEvent",
+    "RuntimeTelemetryTimeline",
     "SandboxActionResult",
     "SandboxActionSummary",
     "SandboxRunResult",

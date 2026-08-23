@@ -6,9 +6,12 @@ machine-consumable CI decision.
 ```text
 push / pull request
   -> CI runner
+  -> deterministic project discovery
+  -> one managed target sandbox session
   -> Semgrep SAST
   -> normalized findings
-  -> bounded agent workflow for every finding
+  -> bounded agent workflow against ready sandbox services
+  -> runtime telemetry and Evidence
   -> FinalReport JSON per finding
   -> deterministic gate aggregation
   -> PASS / WARN / FAIL
@@ -78,11 +81,18 @@ FinalReport instead of only the compact per-finding summary.
 
 ## GitHub Actions integration
 
-`examples/github-actions/sberlab-security-gate.yml` is a target-repository
-workflow template. Copy it to SberLab as `.github/workflows/cft-security-gate.yml`.
-Then every pull request and every push to `main` can invoke the agent automatically.
+`.github/workflows/security-pipeline.yml` is the single reusable implementation.
+It checks out the complete target into one fixed `target/` location, then uses
+discovery and `SandboxManager` instead of target-specific directory commands.
+`examples/github-actions/sberlab-security-gate.yml` shows the small caller used by
+a target repository on pull requests and pushes.
 
-The workflow deliberately checks out the target and the security agent into
-separate directories. If the agent repository is private, configure
-`CFT_AGENT_REPO_TOKEN` with read access. Provider API keys are GitHub Actions
-secrets and must never be committed.
+The profile binds `metadata.ci.repository` to the allowed GitHub repository. The
+target checkout has no persisted Git credentials, and the target process receives
+an environment with CI tokens, passwords and LLM API keys removed. Provider keys
+remain available only to the agent process.
+
+The reusable job is named `Security gate`; configure that stable check as required
+in the target repository branch protection. Artifacts are uploaded with
+`if: always()` and include discovery, runtime service map, SAST, reports, Gate,
+audit records and runtime telemetry, including technical-failure runs.

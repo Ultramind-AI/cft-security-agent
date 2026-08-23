@@ -16,6 +16,7 @@ dependencies = [
 
 [project.scripts]
 cft-security-pipeline = "app.pipeline_run:main"
+cft-security-ci = "app.ci_pipeline:main"
 
 [project.optional-dependencies]
 dev = [

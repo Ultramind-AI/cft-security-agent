@@ -131,7 +131,18 @@ def execute_action(state: AgentState) -> dict:
         target_repository_path=settings.target_repository_path,
     )
 
-    execution = executor.execute(action)
+    runtime_services = state.get("runtime_services")
+    if runtime_services is None:
+        execution = executor.execute(action)
+    else:
+        # В CI target уже запущен менеджером: второй независимый lifecycle здесь не нужен.
+        sequence = executor.execute_sequence(
+            [action],
+            runtime_services=runtime_services,
+        )
+        if not sequence.results:
+            raise RuntimeError("Sandbox runner returned no action result")
+        execution = sequence.results[0].execution
 
     return {
         "execution": execution,

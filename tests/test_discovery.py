@@ -104,6 +104,10 @@ services:
     assert service.healthcheck is not None
     assert service.healthcheck.path == "/ready/"
     assert service.allowed_local_addresses == ["127.0.0.1:8123"]
+    assert service.internal_port == 8000
+    assert profile.runtime.type == "docker_compose"
+    assert profile.runtime.compose_file == "compose.yml"
+    assert profile.runtime.base_url == "http://127.0.0.1:8123"
 
 
 def test_profile_builder_keeps_discovery_facts_separate_from_manual_overrides(
@@ -124,6 +128,7 @@ def test_profile_builder_keeps_discovery_facts_separate_from_manual_overrides(
                     "root": "app",
                     "type": "custom-framework-label",
                     "healthcheck": {"path": "/manual-health/"},
+                    "request_host": "127.0.0.1:8000",
                 }
             },
             "metadata": {"owner": "team-a"},
@@ -139,6 +144,7 @@ def test_profile_builder_keeps_discovery_facts_separate_from_manual_overrides(
     assert service.dockerfile == "app/Dockerfile"
     assert service.healthcheck is not None
     assert service.healthcheck.path == "/manual-health/"
+    assert service.request_host == "127.0.0.1:8000"
     assert profile.metadata["owner"] == "team-a"
     assert profile.metadata["discovery.version"] == "1"
 

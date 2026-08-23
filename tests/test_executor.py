@@ -15,6 +15,7 @@ from executor.sandbox import (
 from executor.sandbox_policy import SandboxLimits, SandboxPolicy
 from executor.targets import TargetArtifactDefinition, TargetDefinition, TargetRegistry
 from schemas.action import ActionProposal
+from schemas.runtime import RuntimeService, RuntimeServiceMap
 from schemas.validation import ValidationResult
 from validator.validator import PolicyValidator
 
@@ -69,6 +70,8 @@ def _proposal(
     tool: str = "safe_noop",
     target: str = "sberlab-local",
     parameters: dict | None = None,
+    service: str | None = None,
+    endpoint: str | None = None,
 ) -> ActionProposal:
     return ActionProposal(
         id=action_id,
@@ -77,6 +80,8 @@ def _proposal(
         parameters=parameters or {},
         purpose="executor unit test",
         expected_evidence="structured execution evidence",
+        service=service,
+        endpoint=endpoint,
     )
 
 
@@ -263,6 +268,7 @@ def test_health_capability_builds_only_trusted_sandbox_request(tmp_path) -> None
     request = sandbox.requests[0]
     assert request.tool == "check_sberlab_health"
     assert request.base_url == "http://127.0.0.1:8000"
+    assert request.endpoint == "/health/"
     assert request.parameters == {}
     assert request.request_timeout_seconds == 1.6
     assert result.evidence_ref.startswith("execution-")
@@ -324,7 +330,39 @@ def test_public_projects_capability_uses_registered_worker_tool(tmp_path) -> Non
 
     assert result.status == "completed"
     assert sandbox.requests[0].tool == "get_sberlab_public_projects"
+    assert sandbox.requests[0].endpoint == "/api/projects/"
     assert sandbox.requests[0].parameters == {}
+
+
+def test_runtime_map_overrides_host_base_url_for_sandbox_request(tmp_path) -> None:
+    action = _proposal(tool="check_sberlab_health", service="backend", endpoint="/health/")
+    approvals, _ = _approve(action)
+    sandbox = FakeSandbox(stdout='{"status":"ok","database":"ok"}')
+    executor, sandbox, _ = _executor(tmp_path, approvals, sandbox=sandbox)
+    runtime_map = RuntimeServiceMap(
+        session_id="session-1",
+        services={"backend": RuntimeService(name="backend", address="http://backend:8000", request_host="127.0.0.1:8000", ready=True, readiness_source="compose_health", allowed_endpoints=["/health/"])},
+    )
+
+    result = executor.execute_sequence([action], runtime_services=runtime_map)
+
+    assert result.status == "completed"
+    assert sandbox.requests[0].base_url == "http://backend:8000"
+    assert sandbox.requests[0].base_url != "http://127.0.0.1:8000"
+    assert sandbox.requests[0].request_host == "127.0.0.1:8000"
+
+
+def test_runtime_map_passes_only_trusted_request_host(tmp_path) -> None:
+    action = _proposal(tool="check_sberlab_health", service="backend", endpoint="/health/", parameters={"host": "attacker.invalid"})
+    approvals = InMemoryApprovalStore()
+    approvals.record(action, ValidationResult(approved=True, action_id=action.id, reason="test"))
+    sandbox = FakeSandbox(stdout='{"status":"ok","database":"ok"}')
+    executor, sandbox, _ = _executor(tmp_path, approvals, sandbox=sandbox)
+    runtime_map = RuntimeServiceMap(session_id="session-1", services={"backend": RuntimeService(name="backend", address="http://backend:8000", request_host="127.0.0.1:8000", ready=True, readiness_source="compose_health", allowed_endpoints=["/health/"])})
+
+    result = executor.execute_sequence([action], runtime_services=runtime_map)
+    assert result.status == "failed"  # Capability parameters reject proposal-controlled headers before launch.
+    assert sandbox.requests == []
 
 
 def test_executor_limits_replay_of_same_action(tmp_path) -> None:

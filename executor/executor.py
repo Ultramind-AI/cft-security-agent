@@ -20,10 +20,12 @@ from executor.sandbox import (
 )
 from executor.sandbox_audit import AuditRecord
 from executor.sandbox_policy import SandboxLimits, SandboxPolicy
+from executor.sandbox_runner import SandboxRunner
 from executor.targets import TargetRegistry
 from schemas.action import ActionProposal
 from schemas.errors import ErrorDetail
 from schemas.execution import ExecutionResult
+from schemas.runtime import RuntimeServiceMap
 from schemas.target import TargetProfile, TargetRuntimeConfig
 from tools.registry import ToolRegistry
 
@@ -97,11 +99,18 @@ class SafeExecutor:
         self._policy = policy
         self._registry = ToolRegistry()
         self._registry.register("safe_noop", self._safe_noop)
-        self._registry.register("check_sberlab_health", self._no_parameters)
-        self._registry.register("get_sberlab_public_projects", self._no_parameters)
+        self._registry.register("check_sberlab_health", self._no_parameters, endpoint="/health/")
+        self._registry.register("get_sberlab_public_projects", self._no_parameters, endpoint="/api/projects/")
+        self._active_runtime_services: RuntimeServiceMap | None = None
         self._registry.register("inspect_dockerfile_user", self._artifact_id_parameter)
         self._registry.register("inspect_python_password_assignment", self._artifact_id_parameter)
         self._registry.register("inspect_react_dangerous_html_flow", self._react_html_flow_parameters)
+        self._runner = SandboxRunner(
+            approvals=self._approvals,
+            registry=self._registry,
+            execute_one=self._execute_one,
+            deny_one=self._runner_denied,
+        )
 
     def registered_tools(self) -> tuple[str, ...]:
         return self._registry.names()
@@ -254,29 +263,68 @@ class SafeExecutor:
         )
 
     def execute(self, action: ActionProposal) -> ExecutionResult:
+        result = self.execute_sequence([action])
+        return result.results[0].execution
+
+    def execute_sequence(
+        self,
+        actions: list[ActionProposal],
+        *,
+        runtime_services: RuntimeServiceMap | None = None,
+    ):
+        if runtime_services is None or not isinstance(self._sandbox, DockerSandbox):
+            self._active_runtime_services = runtime_services
+            try:
+                return self._runner.run(actions, runtime_services=runtime_services)
+            finally:
+                self._active_runtime_services = None
+        if runtime_services.network_name is None:
+            raise RuntimeError("RuntimeServiceMap has no trusted sandbox network")
+        target = self._targets.get(actions[0].target) if actions else None
+        repository = str(target.repository_path) if target and target.repository_path else ""
+        original_sandbox = self._sandbox
+        with original_sandbox.open_sequence(
+            network_name=runtime_services.network_name,
+            repository_path=repository,
+        ) as runtime:
+            self._sandbox = runtime  # type: ignore[assignment]
+            self._active_runtime_services = runtime_services
+            try:
+                result = self._runner.run(actions, runtime_services=runtime_services)
+            finally:
+                self._sandbox = original_sandbox
+                self._active_runtime_services = None
+        updated = [item.model_copy(update={"runtime_instance_id": runtime.runtime_instance_id}) for item in result.results]
+        return result.model_copy(update={"runtime_instance_id": runtime.runtime_instance_id, "results": updated})
+
+    def _execute_one(
+        self,
+        action: ActionProposal,
+        run_id: str,
+        session_id: str | None = None,
+    ) -> ExecutionResult:
         started = perf_counter()
-        run_id = uuid4().hex
 
         approved, approval_reason = self._approvals.check(action)
         if not approved:
-            return self._finish(action, run_id, started, status="denied", exit_code=126, stderr=approval_reason, decision_reason=approval_reason)
+            return self._finish(action, run_id, started, status="denied", exit_code=126, stderr=approval_reason, decision_reason=approval_reason, session_id=session_id)
 
         try:
             target = self._targets.get(action.target)
         except KeyError:
             message = f"Unknown executor tool: {action.tool}"
-            return self._finish(action, run_id, started, status="denied", exit_code=126, stderr=message, decision_reason="Unknown capability",)
+            return self._finish(action, run_id, started, status="denied", exit_code=126, stderr=message, decision_reason="Unknown capability", session_id=session_id)
 
         try:
             self._policy.validate_target_environment(target.environment)
         except ValueError as exc:
-            return self._finish(action, run_id, started, status="denied", exit_code=126, stderr=str(exc), decision_reason=str(exc))
+            return self._finish(action, run_id, started, status="denied", exit_code=126, stderr=str(exc), decision_reason=str(exc), session_id=session_id)
 
         try:
             handler = self._registry.get(action.tool)
         except KeyError:
             message = f"Unknown executor tool: {action.tool}"
-            return self._finish(action, run_id, started, status="denied", exit_code=126, stderr=message, decision_reason="Unknown capability", )
+            return self._finish(action, run_id, started, status="denied", exit_code=126, stderr=message, decision_reason="Unknown capability", session_id=session_id)
 
         try:
             parameters = handler(action.parameters)
@@ -293,10 +341,11 @@ class SafeExecutor:
                     "VALIDATION_ERROR",
                     message="Capability input validation failed",
                 ),
+                session_id=session_id,
             )
         acquired, limit_reason = self._run_limiter.acquire(action.id)
         if not acquired:
-            return self._finish(action, run_id, started, status="denied", exit_code=75, stderr=limit_reason, decision_reason=limit_reason)
+            return self._finish(action, run_id, started, status="denied", exit_code=75, stderr=limit_reason, decision_reason=limit_reason, session_id=session_id)
 
         try:
             try:
@@ -314,14 +363,23 @@ class SafeExecutor:
                         f"{action.tool}"
                     ),
                     decision_reason="Capability policy missing",
+                    session_id=session_id,
                 )
 
             try:
+                base_url = target.base_url
+                request_host = None
+                if self._active_runtime_services is not None and action.service is not None:
+                    service = self._active_runtime_services.services[action.service]
+                    base_url = service.address
+                    request_host = service.request_host
                 sandbox_result = self._sandbox.run(
                     SandboxRequest(
                         run_id=run_id,
                         tool=action.tool,
-                        base_url=target.base_url,
+                        base_url=base_url,
+                        endpoint=self._registry.endpoint(action.tool),
+                        request_host=request_host,
                         parameters=parameters,
                         request_timeout_seconds=max(
                             0.1,
@@ -353,6 +411,7 @@ class SafeExecutor:
                         "EXECUTION_FAILED",
                         message="Sandbox execution failed",
                     ),
+                    session_id=session_id,
                 )
         finally:
             self._run_limiter.release()
@@ -368,6 +427,25 @@ class SafeExecutor:
             timed_out=sandbox_result.timed_out,
             workspace_id=sandbox_result.workspace_id,
             decision_reason="Sandbox execution completed" if sandbox_result.exit_code == 0 else "Sandbox execution failed",
+            session_id=session_id,
+        )
+
+    def _runner_denied(
+        self,
+        action: ActionProposal,
+        run_id: str,
+        reason: str,
+        timed_out: bool,
+    ) -> ExecutionResult:
+        return self._finish(
+            action,
+            run_id,
+            perf_counter(),
+            status="failed" if timed_out else "denied",
+            exit_code=124 if timed_out else 126,
+            stderr=reason,
+            timed_out=timed_out,
+            decision_reason=reason,
         )
 
     @staticmethod
@@ -403,6 +481,7 @@ class SafeExecutor:
         timed_out: bool = False,
         workspace_id: str = "",
         error: ErrorDetail | None = None,
+        session_id: str | None = None,
     ) -> ExecutionResult:
         duration_ms = int((perf_counter() - started) * 1000)
         policy_dict = self._json_safe(asdict(self._policy))
@@ -422,6 +501,7 @@ class SafeExecutor:
             )
 
         evidence_payload = {
+            "session_id": session_id,
             "run_id": run_id,
             "action_id": action.id,
             "tool": action.tool,
@@ -482,6 +562,7 @@ class SafeExecutor:
             runtime_backend=self._policy.backend,
             network_mode=self._policy.network_mode,
             evidence_ref=evidence_ref,
+            session_id=session_id,
         )
         try:
             audit_ref = self._audit_log.append(audit_record.to_dict())

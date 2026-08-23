@@ -86,6 +86,11 @@ class DiscoveryResolver:
                 DiscoveryComposeCandidate(
                     compose_file=signal.metadata["compose_file"],
                     service=signal.value or "",
+                    internal_port=(
+                        int(signal.metadata["internal_port"])
+                        if signal.metadata.get("internal_port", "").isdecimal()
+                        else None
+                    ),
                     confidence=signal.confidence,
                 )
                 for signal in signals

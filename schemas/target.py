@@ -1,11 +1,23 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path, PurePosixPath
 from typing import Literal
 from urllib.parse import urljoin, urlsplit
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+_REQUEST_HOST = re.compile(r"^(?:[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?|\[[0-9A-Fa-f:.]+\])(?::([0-9]{1,5}))?$")
+
+
+def validate_request_host(value: str) -> str:
+    if len(value) > 255 or not _REQUEST_HOST.fullmatch(value):
+        raise ValueError("request_host must be a valid host or host:port")
+    port = value.rsplit(":", maxsplit=1)[-1] if ":" in value and not value.endswith("]") else ""
+    if port and not 1 <= int(port) <= 65535:
+        raise ValueError("request_host port must be between 1 and 65535")
+    return value
 
 
 class TargetHealthcheck(BaseModel):
@@ -44,6 +56,9 @@ class TargetService(BaseModel):
     run: list[str] = Field(default_factory=list)
     healthcheck: TargetHealthcheck | None = None
     allowed_local_addresses: list[str] = Field(default_factory=list)
+    internal_port: int | None = Field(default=None, ge=1, le=65535)
+    runtime_endpoints: list[str] = Field(default_factory=list)
+    request_host: str | None = None
 
     @field_validator("id", "type")
     @classmethod
@@ -64,6 +79,16 @@ class TargetService(BaseModel):
     @classmethod
     def validate_dependency_files(cls, values: list[str]) -> list[str]:
         return [_normalize_relative_path(value, allow_dot=False) for value in values]
+
+    @field_validator("runtime_endpoints")
+    @classmethod
+    def validate_runtime_endpoints(cls, values: list[str]) -> list[str]:
+        return [TargetHealthcheck(path=value).path for value in values]
+
+    @field_validator("request_host")
+    @classmethod
+    def validate_request_host_value(cls, value: str | None) -> str | None:
+        return validate_request_host(value) if value is not None else None
 
 
 class TargetArtifact(BaseModel):

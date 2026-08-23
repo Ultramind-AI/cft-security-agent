@@ -62,7 +62,7 @@ class TargetProfileBuilder:
 
         if base_profile is not None:
             architecture = base_profile.architecture
-            runtime = base_profile.runtime
+            runtime = _merge_runtime(base_profile.runtime, discovery)
             constraints = base_profile.constraints
             sast = base_profile.sast
             metadata = dict(base_profile.metadata)
@@ -73,7 +73,7 @@ class TargetProfileBuilder:
             architecture = TargetArchitectureConfig(
                 file=Path(architecture_file) if architecture_file is not None else None
             )
-            runtime = TargetRuntimeConfig(type=_runtime_type(discovery))
+            runtime = _discovered_runtime(discovery)
             constraints = TargetConstraints()
             sast = None
             metadata = {}
@@ -114,6 +114,7 @@ def _service_from_component(component: DiscoveredComponent) -> TargetService:
         dockerfile=component.dockerfiles[0] if component.dockerfiles else None,
         compose_file=compose.compose_file if compose else None,
         compose_service=compose.service if compose else None,
+        internal_port=compose.internal_port if compose else None,
         build=component.build_candidates[0].command if component.build_candidates else [],
         run=component.run_candidates[0].command if component.run_candidates else [],
         healthcheck=healthcheck,
@@ -137,6 +138,9 @@ def _merge_service(detected: TargetService, existing: TargetService) -> TargetSe
             "allowed_local_addresses": (
                 existing.allowed_local_addresses or detected.allowed_local_addresses
             ),
+            "internal_port": existing.internal_port or detected.internal_port,
+            "runtime_endpoints": existing.runtime_endpoints,
+            "request_host": existing.request_host,
         }
     )
 
@@ -152,6 +156,48 @@ def _runtime_type(discovery: ProjectDiscoveryResult) -> str:
     if any(component.dockerfiles for component in discovery.components):
         return "dockerfile"
     return "unknown"
+
+
+def _discovered_runtime(discovery: ProjectDiscoveryResult) -> TargetRuntimeConfig:
+    runtime_type = _runtime_type(discovery)
+    compose_files = {
+        candidate.compose_file
+        for component in discovery.components
+        for candidate in component.compose_candidates
+    }
+    compose_file = next(iter(compose_files)) if len(compose_files) == 1 else None
+    addresses = {
+        address
+        for component in discovery.components
+        for address in component.allowed_local_addresses
+    }
+    base_url = None
+    if len(addresses) == 1:
+        address = next(iter(addresses))
+        base_url = f"http://{address}"
+    return TargetRuntimeConfig(
+        type=runtime_type,
+        compose_file=compose_file,
+        base_url=base_url,
+        allowed_local_addresses=sorted(addresses),
+    )
+
+
+def _merge_runtime(
+    existing: TargetRuntimeConfig,
+    discovery: ProjectDiscoveryResult,
+) -> TargetRuntimeConfig:
+    detected = _discovered_runtime(discovery)
+    return existing.model_copy(
+        update={
+            "type": existing.type if existing.type != "unknown" else detected.type,
+            "compose_file": existing.compose_file or detected.compose_file,
+            "base_url": existing.base_url or detected.base_url,
+            "allowed_local_addresses": (
+                existing.allowed_local_addresses or detected.allowed_local_addresses
+            ),
+        }
+    )
 
 
 def _unique_artifact_id(

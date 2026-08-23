@@ -42,6 +42,8 @@ from schemas.report import (
     SandboxActionSummary,
     VerificationSummary,
 )
+from schemas.runtime import RuntimeService, RuntimeServiceDiagnostic, RuntimeServiceMap
+from schemas.sandbox_runner import SandboxActionResult, SandboxRunResult
 from schemas.scoring import ContextPriority, CVSSResult
 from schemas.security_tools import (
     DockerfileUserCheckResult,
@@ -91,7 +93,12 @@ __all__ = [
     "PythonPasswordAssignmentCheckResult",
     "ReactDangerousHtmlFlowCheckResult",
     "ReportFinding",
+    "RuntimeService",
+    "RuntimeServiceDiagnostic",
+    "RuntimeServiceMap",
+    "SandboxActionResult",
     "SandboxActionSummary",
+    "SandboxRunResult",
     "TargetProfile",
     "TargetService",
     "ValidationResult",

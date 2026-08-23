@@ -379,6 +379,7 @@ class ComposeDetector:
                 if not isinstance(raw_service, dict):
                     continue
                 root = _compose_build_root(path, raw_service.get("build"))
+                internal_port = _compose_internal_port(raw_service.get("ports"))
                 signals.append(
                     _signal(
                         self.name,
@@ -389,7 +390,10 @@ class ComposeDetector:
                         value=str(service_name),
                         confidence=0.98 if root is not None else 0.75,
                         anchor=root is not None,
-                        metadata={"compose_file": path},
+                        metadata={
+                            "compose_file": path,
+                            **({"internal_port": str(internal_port)} if internal_port else {}),
+                        },
                     )
                 )
                 if root is None:
@@ -573,6 +577,22 @@ def _compose_local_addresses(ports: object) -> list[str]:
                 if host_ip in {"localhost", "127.0.0.1", "::1"}:
                     addresses.add(f"{host_ip}:{published}")
     return sorted(addresses)
+
+
+def _compose_internal_port(ports: object) -> int | None:
+    if not isinstance(ports, list):
+        return None
+    ports_found: set[int] = set()
+    for port in ports:
+        if isinstance(port, str):
+            value = port.rsplit(":", 1)[-1].split("/", 1)[0]
+            if value.isdecimal():
+                ports_found.add(int(value))
+        elif isinstance(port, dict):
+            value = port.get("target")
+            if isinstance(value, int) or (isinstance(value, str) and value.isdecimal()):
+                ports_found.add(int(value))
+    return next(iter(ports_found)) if len(ports_found) == 1 else None
 
 
 def _compose_health_path(healthcheck: object) -> str | None:

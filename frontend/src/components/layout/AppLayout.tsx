@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   createChatSession,
+  deleteChatSession,
   listChatSessions,
   listProjects,
 } from "../../api/client";
@@ -48,6 +49,15 @@ export function AppLayout() {
     },
     onError: (error) => {
       setShellError(error instanceof Error ? error.message : "Could not open project chat");
+    },
+  });
+
+  const deleteSession = useMutation({
+    mutationFn: (sessionId: string) => deleteChatSession(sessionId),
+    onSuccess: async (_, sessionId) => {
+      setShellError(null);
+      await queryClient.invalidateQueries({ queryKey: ["chat-sessions"] });
+      if (activeSessionId === sessionId) navigate("/");
     },
   });
 
@@ -102,6 +112,7 @@ export function AppLayout() {
         }}
         onOpenProject={openDialog}
         onOpenExisting={openExistingProject}
+        onDeleteChat={(sessionId) => deleteSession.mutateAsync(sessionId)}
       />
       {mobileOpen ? (
         <button

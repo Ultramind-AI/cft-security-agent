@@ -8,6 +8,7 @@ import { EvidenceBlock } from "./EvidenceBlock";
 import { FindingBlock } from "./FindingBlock";
 import { GateBlock } from "./GateBlock";
 import { ToolCall } from "./ToolCall";
+import { SuggestedActions } from "./SuggestedActions";
 
 const project: ApiProject = { id: "demo", name: "Demo", environment: "local", services: ["api"], repository_available: true };
 
@@ -58,5 +59,16 @@ describe("chat interactions", () => {
     expect(screen.getAllByText("Unsafe config").length).toBeGreaterThan(0);
     expect(screen.getByText("No USER directive")).toBeTruthy();
     expect(screen.getByText("FAIL")).toBeTruthy();
+  });
+
+  it("starts a new chat from a suggested action", async () => {
+    const select = vi.fn();
+    render(<SuggestedActions onSelect={select} />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Authentication and sessions" }));
+
+    expect(select).toHaveBeenCalledWith(
+      "Проверь authentication, authorization и управление сессиями",
+    );
   });
 });

@@ -421,6 +421,9 @@ class RunOrchestrator:
     def list_chat_sessions(self, *, limit: int = 100) -> list[ChatSession]:
         return self.store.list_chat_sessions(limit=limit)
 
+    def delete_chat_session(self, session_id: str) -> None:
+        self.store.delete_chat_session(session_id)
+
     def get_chat_snapshot(self, session_id: str) -> ChatSnapshot:
         session = self.store.get_chat_session(session_id)
         messages = self.store.list_chat_messages(session_id)

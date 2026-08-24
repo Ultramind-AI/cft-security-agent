@@ -52,6 +52,13 @@ No actionable P0, P1, or P2 differences remain.
 - Recompared source and implementation in `output/playwright/design-qa-comparison.png`.
 - No actionable P0/P1/P2 mismatch remained.
 
+### Iteration 3 — chat management and starters
+
+- Verified the cleaned sidebar at `http://127.0.0.1:5177/`: one substantive conversation remains and the delete control is exposed by an icon button with an accessible label.
+- Created a fresh chat for the existing QA project and verified the empty state at desktop width: four starter actions are centered above the unchanged composer and disappear once conversation content exists.
+- Opened the custom deletion confirmation and verified its copy, Cancel path, destructive action, and explicit note that runs and Evidence remain available in Debug.
+- Removed the temporary QA chat afterward; no new layout, overflow, or hierarchy issue was observed.
+
 ## Interaction and console verification
 
 - Tested Folder import from a real browser file chooser; only the relative filtered file tree reached the API.
@@ -66,5 +73,6 @@ No actionable P0, P1, or P2 differences remain.
 - [x] Keep technical failures inline and visually distinct from security Gate state.
 - [x] Verify desktop and mobile layouts in a real browser.
 - [x] Verify expanded tool and Evidence states.
+- [x] Verify new-chat starter actions and chat-deletion confirmation.
 
 final result: passed

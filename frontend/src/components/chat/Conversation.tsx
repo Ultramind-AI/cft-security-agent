@@ -16,6 +16,7 @@ import {
 } from "./TimelineEvent";
 import { ToolCall } from "./ToolCall";
 import { UserMessage } from "./UserMessage";
+import { SuggestedActions } from "./SuggestedActions";
 
 export function Conversation({
   items,
@@ -23,12 +24,14 @@ export function Conversation({
   streamState,
   transientError,
   onRetry,
+  onSuggestedAction,
 }: {
   items: ConversationTimelineItem[];
   runActive: boolean;
   streamState: SseState;
   transientError: string | null;
   onRetry: () => void;
+  onSuggestedAction: (prompt: string) => void;
 }) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -68,6 +71,9 @@ export function Conversation({
         }}
       >
         <div className="conversation-feed" aria-live="polite">
+          {items.length === 0 && !runActive ? (
+            <SuggestedActions onSelect={onSuggestedAction} />
+          ) : null}
           {items.map((item) => (
             <div className={`timeline-entry ${item.kind}`} key={item.id}>
               <TimelineContent item={item} onRetry={onRetry} />

@@ -55,10 +55,23 @@ The default bind address is loopback-only.
 ```text
 GET  /health
 GET  /projects
+POST /projects/import
+POST /projects/import-files
+
+GET  /chat/sessions
+POST /chat/sessions
+DELETE /chat/sessions/{session_id}
+GET  /chat/sessions/{session_id}
+POST /chat/sessions/{session_id}/messages
+GET  /chat/sessions/{session_id}/events
+
 GET  /runs
 POST /runs
 POST /runs/{run_id}/cancel
 GET  /runs/{run_id}
+GET  /runs/{run_id}/events
+GET  /runs/{run_id}/progress
+GET  /runs/{run_id}/discovery
 GET  /runs/{run_id}/findings
 GET  /runs/{run_id}/findings/{finding_id}
 GET  /runs/{run_id}/evidence

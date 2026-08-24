@@ -79,6 +79,10 @@ export function ChatPage() {
             chat.clearSendError();
             void chat.send("Перезапусти полный security-анализ");
           }}
+          onSuggestedAction={(prompt) => {
+            chat.clearSendError();
+            void chat.send(prompt);
+          }}
         />
       )}
 

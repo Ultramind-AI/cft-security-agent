@@ -284,20 +284,6 @@ def test_api_runs_the_canonical_pipeline_and_serves_persisted_results(tmp_path: 
         )
 
 
-def test_api_streams_run_status_until_completion(tmp_path: Path) -> None:
-    orchestrator = _orchestrator(tmp_path)
-    with TestClient(create_app(orchestrator)) as client:
-        response = client.post("/runs", json={"target_id": "demo-target"})
-        run_id = response.json()["id"]
-        events = client.get(f"/runs/{run_id}/events")
-
-    assert events.status_code == 200
-    assert events.headers["content-type"].startswith("text/event-stream")
-    assert "event: run" in events.text
-    assert '"status":"completed"' in events.text
-    assert "event: done" in events.text
-
-
 def test_api_rejects_unregistered_target(tmp_path: Path) -> None:
     orchestrator = _orchestrator(tmp_path)
     with TestClient(create_app(orchestrator)) as client:

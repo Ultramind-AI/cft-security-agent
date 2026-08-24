@@ -67,7 +67,7 @@ def test_target_registry_uses_target_profile_contract(tmp_path) -> None:
 
     assert loaded is profile
     assert loaded.repository_path == (tmp_path / "target").resolve()
-    assert loaded.base_url == "http://127.0.0.1:8000"
+    assert loaded.runtime.base_url is None
 
 
 def test_profile_rejects_repository_path_escape_in_artifact() -> None:

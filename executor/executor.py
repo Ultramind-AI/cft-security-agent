@@ -25,6 +25,7 @@ from executor.sandbox_manager import SandboxManager
 from executor.sandbox_policy import SandboxLimits, SandboxPolicy
 from executor.sandbox_runner import SandboxRunner
 from executor.targets import TargetRegistry
+from pipeline.cancellation import RunCancelled
 from schemas.action import ActionProposal
 from schemas.errors import ErrorDetail
 from schemas.execution import ExecutionResult
@@ -64,8 +65,6 @@ def _system_error(
 CAPABILITY_REPOSITORY_ACCESS: dict[str, bool] = {
     "safe_noop": False,
     "sandbox_command": True,
-    "check_sberlab_health": False,
-    "get_sberlab_public_projects": False,
     "observe_http_surface": False,
     "inspect_dockerfile_user": True,
     "inspect_python_password_assignment": True,
@@ -76,8 +75,6 @@ CAPABILITY_REPOSITORY_ACCESS: dict[str, bool] = {
 CAPABILITY_NETWORK_ACCESS: dict[str, str] = {
     "safe_noop": "none",
     "sandbox_command": "none",
-    "check_sberlab_health": "target",  # Только к доверенному target
-    "get_sberlab_public_projects": "target",
     "observe_http_surface": "target",
     "inspect_dockerfile_user": "none",  # Только чтение файлов, без сети
     "inspect_python_password_assignment": "none",
@@ -108,8 +105,6 @@ class SafeExecutor:
         self._registry = ToolRegistry()
         self._registry.register("safe_noop", self._safe_noop)
         self._registry.register("sandbox_command", self._sandbox_command_parameters)
-        self._registry.register("check_sberlab_health", self._no_parameters, endpoint="/health/")
-        self._registry.register("get_sberlab_public_projects", self._no_parameters, endpoint="/api/projects/")
         self._registry.register("observe_http_surface", self._no_parameters)
         self._active_runtime_services: RuntimeServiceMap | None = None
         self._registry.register("inspect_dockerfile_user", self._artifact_id_parameter)
@@ -307,6 +302,8 @@ class SafeExecutor:
             with SandboxManager(policy=self._policy).open(target) as session:
                 runtime_services = RuntimeServiceMapBuilder().build(target, session)
                 result = self.execute_sequence([action], runtime_services=runtime_services)
+        except RunCancelled:
+            raise
         except Exception:
             logger.exception("Managed runtime observation could not be established")
             return self._finish(
@@ -472,7 +469,9 @@ class SafeExecutor:
                 )
 
             try:
-                base_url = target.base_url
+                base_url = ""
+                if network_access == "target":
+                    base_url = target.base_url
                 request_host = None
                 if self._active_runtime_services is not None and action.service is not None:
                     service = self._active_runtime_services.services[action.service]
@@ -499,6 +498,8 @@ class SafeExecutor:
                         artifacts=target.worker_artifacts(),
                     )
                 )
+            except RunCancelled:
+                raise
             except Exception:
                 logger.exception(
                     "Unexpected sandbox failure for action %s",

@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from pipeline.subprocess_runner import run_cancellable_process
 from sast.normalizer import normalize_semgrep_payload
 from schemas.finding import Finding
 
@@ -67,16 +68,10 @@ def run_semgrep_scan(
 
     # SAST запускается только для чтения в каталоге таргета
     try:
-        completed = subprocess.run(
+        completed = run_cancellable_process(
             command,
             cwd=target_path,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            shell=False,
             timeout=timeout_seconds,
-            check=False,
         )
     except subprocess.TimeoutExpired as exc:
         raise SemgrepError(f"Semgrep timed out after {timeout_seconds} seconds") from exc

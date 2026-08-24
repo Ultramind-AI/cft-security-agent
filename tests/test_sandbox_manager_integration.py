@@ -30,24 +30,26 @@ def _docker_ready() -> bool:
         return False
 
 
-def _profile(path_variable: str, base_url_variable: str) -> TargetProfile:
+def _profile(path_variable: str, _base_url_variable: str) -> TargetProfile:
     raw_path = os.getenv(path_variable)
     if not raw_path:
         pytest.skip(f"Set {path_variable} to run this integration test")
     repository = Path(raw_path).resolve()
     if not repository.is_dir():
         pytest.skip(f"{path_variable} is not an existing directory")
-    base = TargetProfile.model_validate({
-        "id": f"integration-{path_variable.lower()}",
-        "repository_path": str(repository),
-        "environment": "local",
-        "runtime": {"base_url": os.getenv(base_url_variable, "") or None},
-    })
+    profile_name = {
+        "SBERLAB_TARGET_PATH": "sberlab.yaml",
+        "AUTODEALER_TARGET_PATH": "autodealer.yaml",
+    }[path_variable]
+    base = TargetProfile.from_yaml(
+        Path("targets") / profile_name,
+        repository_path_override=repository,
+    )
     profile = ProjectDiscovery().build_profile(ProjectDiscovery().discover(repository), base_profile=base)
     if profile.runtime.type != "docker_compose" or not profile.runtime.compose_file:
         pytest.skip("Discovery did not produce an unambiguous Compose runtime")
-    if not profile.runtime.base_url or not profile.healthcheck_paths():
-        pytest.skip("Discovery/profile has no base URL and healthcheck for safe readiness")
+    if not profile.healthcheck_paths():
+        pytest.skip("Discovery/profile has no healthcheck for safe readiness")
     return profile
 
 

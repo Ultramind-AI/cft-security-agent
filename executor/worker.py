@@ -788,35 +788,6 @@ def _execute(payload: dict) -> tuple[int, str, str]:
     if parameters:
         return 2, "", f"{tool} does not accept ActionProposal parameters"
 
-    if tool == "check_sberlab_health":
-        if not isinstance(endpoint, str):
-            return 2, "", "Missing trusted capability endpoint"
-        exit_code, stdout, stderr = _http_get(
-            _fixed_url(base_url, endpoint),
-            timeout,
-            output_limit,
-            request_host,
-        )
-        if exit_code != 0:
-            return exit_code, stdout, stderr
-        try:
-            health = json.loads(stdout)
-        except json.JSONDecodeError:
-            return 1, stdout, "Health endpoint returned invalid JSON"
-        if health.get("status") != "ok" or health.get("database") != "ok":
-            return 1, stdout, "SberLab health response is not ready"
-        return 0, stdout, ""
-
-    if tool == "get_sberlab_public_projects":
-        if not isinstance(endpoint, str):
-            return 2, "", "Missing trusted capability endpoint"
-        return _http_get(
-            _fixed_url(base_url, endpoint),
-            timeout,
-            output_limit,
-            request_host,
-        )
-
     if tool == _HTTP_SURFACE_TOOL:
         if not isinstance(endpoint, str):
             return 2, "", "Missing trusted runtime endpoint"

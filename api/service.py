@@ -13,7 +13,6 @@ import stat
 import subprocess
 import zipfile
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path, PurePosixPath
 from uuid import uuid4
 
@@ -21,9 +20,11 @@ import yaml
 
 from agent.llm import LLMUnavailableError, ProviderFailoverClient, parse_route_specs
 from api.registry import ApiTargetRegistry, RegisteredTarget
+from api.scheduler import ResourceBudget, ResourceRequest, RunScheduler
 from api.store import ApiStore
 from app.config import settings
 from discovery.service import ProjectDiscovery
+from pipeline.cancellation import CancellationToken, RunCancelled, cancellation_scope
 from pipeline.errors import error_from_exception
 from pipeline.progress import PROGRESS_FILE_NAME, read_progress
 from schemas.api import (
@@ -79,7 +80,7 @@ class ProjectImportError(ValueError):
 
 
 class RunOrchestrator:
-    """API orchestration, chat sessions and uploaded-project discovery."""
+    """Bounded background orchestration over the canonical CI pipeline."""
 
     def __init__(
         self,
@@ -90,7 +91,10 @@ class RunOrchestrator:
         project_root: str | Path | None = None,
         max_upload_bytes: int | None = None,
         pipeline_runner: PipelineRunner | None = None,
-        executor: ThreadPoolExecutor | None = None,
+        scheduler: RunScheduler | None = None,
+        resource_budget: ResourceBudget | None = None,
+        resource_request: ResourceRequest | None = None,
+        max_workers: int | None = None,
         chat_answerer: ChatAnswerer | None = None,
     ) -> None:
         self.registry = registry
@@ -104,12 +108,21 @@ class RunOrchestrator:
         self.max_upload_bytes = max_upload_bytes or settings.api_max_upload_bytes
         self.pipeline_runner = pipeline_runner or _default_pipeline_runner
         self.chat_answerer = chat_answerer or _default_chat_answerer
-        # T29 owns parallel scheduling. T23/T24 deliberately serialize real runs.
-        self._executor = executor or ThreadPoolExecutor(
-            max_workers=1,
-            thread_name_prefix="cft-api-run",
+        self._scheduler = scheduler or RunScheduler(
+            workers=max_workers or settings.api_max_concurrent_runs,
         )
-        self._owns_executor = executor is None
+        self._owns_scheduler = scheduler is None
+        self._budget = resource_budget or ResourceBudget(
+            sandboxes=settings.api_max_concurrent_sandboxes,
+            cpu=settings.api_total_cpu_budget,
+            memory_mb=settings.api_total_memory_mb,
+        )
+        self._request = resource_request or ResourceRequest(
+            sandboxes=1,
+            cpu=settings.api_run_cpu,
+            memory_mb=settings.api_run_memory_mb,
+        )
+        self._closed = False
 
         self._load_generated_projects()
         for target in self.registry.list():
@@ -117,6 +130,8 @@ class RunOrchestrator:
                 profile_path=target.profile_path,
                 profile=target.profile,
             )
+        self.store.recover_abandoned()
+        self._restore_queued_runs()
 
     def _load_generated_projects(self) -> None:
         for profile_path in sorted(self.project_root.glob("upload-*/target-profile.yaml")):
@@ -132,12 +147,17 @@ class RunOrchestrator:
                         profile=profile,
                     )
             except (OSError, TypeError, ValueError):
-                # Only server-generated profiles are considered; a broken orphan is ignored.
                 continue
 
     def close(self) -> None:
-        if self._owns_executor:
-            self._executor.shutdown(wait=False, cancel_futures=False)
+        if self._closed:
+            return
+        self._closed = True
+        for run in self.store.list_runs(limit=500):
+            if run.status in {"queued", "running", "cancelling"}:
+                self.cancel_run(run.id, reason="API service is shutting down")
+        if self._owns_scheduler:
+            self._scheduler.close(wait=True)
 
     def list_projects(self) -> list[ApiProject]:
         return self.store.list_projects()
@@ -277,6 +297,8 @@ class RunOrchestrator:
         *,
         chat_session_id: str | None = None,
     ) -> ApiRun:
+        if self._closed:
+            raise RuntimeError("Run orchestrator is closed")
         target = self.registry.get(request.target_id)
         repository = target.profile.repository_path
         if repository is None:
@@ -296,20 +318,26 @@ class RunOrchestrator:
             target_id=request.target_id,
             agent_mode=request.agent_mode,
             max_iterations=request.max_iterations,
-            analysis_request=request.analysis_request,
             artifact_dir=artifact_dir,
+            analysis_request=request.analysis_request,
         )
         if chat_session_id is not None:
             self.store.set_chat_run(chat_session_id, run_id)
-        self._executor.submit(
-            self._execute_run,
+        self._schedule(
             run_id,
             target,
             request,
             artifact_dir,
-            chat_session_id,
+            chat_session_id=chat_session_id,
         )
         return run
+
+    def cancel_run(self, run_id: str, *, reason: str = "Cancelled by operator") -> ApiRun:
+        run = self.store.request_cancel(run_id, reason)
+        if run.status in {"cancelling", "cancelled"}:
+            self._scheduler.cancel(run_id)
+            self._budget.wake()
+        return self.store.get_run(run_id)
 
     def get_run(self, run_id: str) -> ApiRun:
         return self.store.get_run(run_id)
@@ -461,7 +489,7 @@ class RunOrchestrator:
             if session.active_run_id is not None
             else None
         )
-        if current_run is not None and current_run.status in {"queued", "running"}:
+        if current_run is not None and current_run.status in {"queued", "running", "cancelling"}:
             self.store.append_chat_message(
                 session_id=session_id,
                 role="assistant",
@@ -530,40 +558,50 @@ class RunOrchestrator:
         target: RegisteredTarget,
         request: CreateRunRequest,
         artifact_dir: Path,
-        chat_session_id: str | None,
+        token: CancellationToken,
+        chat_session_id: str | None = None,
     ) -> None:
-        self.store.mark_running(run_id)
+        lease = None
+        cancelled = False
         try:
-            args = _pipeline_args(
-                target=target,
-                request=request,
-                artifact_dir=artifact_dir,
-            )
-            exit_code = self.pipeline_runner(args)
-            gate = _read_gate(artifact_dir)
-            reports = _read_reports(artifact_dir)
-            self.store.replace_results(run_id, reports=reports)
-            error = gate.errors[0] if exit_code == 2 and gate.errors else None
-            if chat_session_id is not None:
-                self.store.append_chat_message(
-                    session_id=chat_session_id,
-                    role="assistant",
-                    kind="summary",
-                    content=_run_summary(
-                        gate,
-                        [report for report, _ in reports],
-                        technical_failure=exit_code == 2,
-                    ),
-                    run_id=run_id,
+            with cancellation_scope(token):
+                lease = self._budget.acquire(self._request, token)
+                token.raise_if_cancelled()
+                if not self.store.mark_running(run_id):
+                    return
+                args = _pipeline_args(
+                    target=target,
+                    request=request,
+                    artifact_dir=artifact_dir,
+                    cancellation_token=token,
                 )
-            # Terminal run status is persisted last so a completed snapshot already
-            # contains the final assistant summary and all indexed results.
-            self.store.mark_finished(
-                run_id,
-                exit_code=exit_code,
-                gate_decision=gate.decision,
-                error=error,
-            )
+                exit_code = self.pipeline_runner(args)
+                token.raise_if_cancelled()
+                gate = _read_gate(artifact_dir)
+                reports = _read_reports(artifact_dir)
+                self.store.replace_results(run_id, reports=reports)
+                error = gate.errors[0] if exit_code == 2 and gate.errors else None
+                if chat_session_id is not None:
+                    self.store.append_chat_message(
+                        session_id=chat_session_id,
+                        role="assistant",
+                        kind="summary",
+                        content=_run_summary(
+                            gate,
+                            [report for report, _ in reports],
+                            technical_failure=exit_code == 2,
+                        ),
+                        run_id=run_id,
+                    )
+                if not self.store.mark_finished(
+                    run_id,
+                    exit_code=exit_code,
+                    gate_decision=gate.decision,
+                    error=error,
+                ):
+                    cancelled = self.store.get_run(run_id).status == "cancelling"
+        except RunCancelled:
+            cancelled = True
         except Exception as exc:
             logger.exception("Run %s failed with an orchestration error", run_id)
             error = error_from_exception(
@@ -580,12 +618,65 @@ class RunOrchestrator:
                     run_id=run_id,
                 )
             self.store.mark_failed(run_id, error)
+        finally:
+            if lease is not None:
+                lease.release()
+        if cancelled:
+            # Статус cancelled ставится только после teardown pipeline и возврата ресурсов.
+            self.store.mark_cancelled(run_id)
 
     def _require_completed(self, run_id: str) -> ApiRun:
         run = self.store.get_run(run_id)
-        if run.status in {"queued", "running"}:
-            raise RunNotReadyError("Run is still in progress")
+        if run.status in {"queued", "running", "cancelling", "cancelled"}:
+            raise RunNotReadyError("Run has no completed report artifacts")
         return run
+
+    def _schedule(
+        self,
+        run_id: str,
+        target: RegisteredTarget,
+        request: CreateRunRequest,
+        artifact_dir: Path,
+        *,
+        chat_session_id: str | None = None,
+    ) -> None:
+        self._scheduler.submit(
+            run_id,
+            lambda token: self._execute_run(
+                run_id,
+                target,
+                request,
+                artifact_dir,
+                token,
+                chat_session_id,
+            ),
+        )
+
+    def _restore_queued_runs(self) -> None:
+        for job in self.store.queued_jobs():
+            try:
+                target = self.registry.get(job.target_id)
+                repository = target.profile.repository_path
+                if repository is None or not repository.is_dir():
+                    raise ValueError("Registered target repository is unavailable")
+                self._schedule(
+                    job.run_id,
+                    target,
+                    CreateRunRequest(
+                        target_id=job.target_id,
+                        agent_mode=job.agent_mode,
+                        max_iterations=job.max_iterations,
+                        analysis_request=job.analysis_request,
+                    ),
+                    job.artifact_dir,
+                )
+            except (KeyError, RuntimeError, ValueError) as exc:
+                error = error_from_exception(
+                    exc,
+                    layer="pipeline",
+                    public_message="Queued run could not be restored",
+                )
+                self.store.mark_failed(job.run_id, error)
 
 
 def _pipeline_args(
@@ -593,6 +684,7 @@ def _pipeline_args(
     target: RegisteredTarget,
     request: CreateRunRequest,
     artifact_dir: Path,
+    cancellation_token: CancellationToken,
 ) -> argparse.Namespace:
     profile = target.profile
     assert profile.repository_path is not None
@@ -613,6 +705,7 @@ def _pipeline_args(
         head_ref="HEAD",
         base_findings=None,
         base_architecture=None,
+        cancellation_token=cancellation_token,
     )
 
 
@@ -960,7 +1053,6 @@ def _public_gate(gate: GateResult | None) -> GateResult | None:
         }
     )
 
-
 def _read_reports(artifact_dir: Path) -> list[tuple[FinalReport, Path]]:
     reports_dir = artifact_dir / "reports"
     if not reports_dir.is_dir():
@@ -985,7 +1077,6 @@ def _read_partial_reports(artifact_dir: Path) -> list[FinalReport]:
         try:
             reports.append(FinalReport.model_validate_json(path.read_text(encoding="utf-8")))
         except (OSError, ValueError):
-            # A background writer may still be finishing the file; the next SSE tick retries it.
             continue
     return reports
 
@@ -1103,10 +1194,7 @@ def _default_chat_answerer(question: str, context: dict[str, object]) -> str:
             "finding, action, file, verdict, or Gate decision. If the data does not answer the "
             "question, say that directly. Keep the answer useful and concise."
         ),
-        user_payload={
-            "question": question,
-            "completed_run": context,
-        },
+        user_payload={"question": question, "completed_run": context},
         operation="chat_followup",
     )
     return result.answer.strip()

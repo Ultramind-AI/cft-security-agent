@@ -20,13 +20,15 @@ def main() -> None:
 
     action = ActionProposal(
         id=f"executor-demo-health-{uuid4().hex[:8]}",
-        tool="check_sberlab_health",
+        tool="observe_http_surface",
         target=profile.id,
         environment=profile.environment,
         iteration=1,
         parameters={},
-        purpose="Check that the approved local SberLab target is ready.",
-        expected_evidence="HTTP 200 with status=ok and database=ok.",
+        service="backend",
+        endpoint="/health/",
+        purpose="Observe the approved backend health endpoint in the managed sandbox.",
+        expected_evidence="Structured bounded HTTP response observation.",
     )
 
     validator = PolicyValidator.from_yaml(

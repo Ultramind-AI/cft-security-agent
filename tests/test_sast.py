@@ -71,14 +71,15 @@ def test_runner_uses_local_target_as_cwd(monkeypatch, tmp_path: Path) -> None:
             stderr="",
         )
 
-    monkeypatch.setattr("sast.semgrep_runner.subprocess.run", fake_run)
+    monkeypatch.setattr("sast.semgrep_runner.run_cancellable_process", fake_run)
 
     result = run_semgrep_scan(tmp_path)
 
     assert captured["command"][:2] == ["semgrep", "scan"]
     assert captured["command"][-1] == "."
     assert captured["kwargs"]["cwd"] == tmp_path.resolve()
-    assert captured["kwargs"]["shell"] is False
+    # run_cancellable_process сам всегда использует shell=False.
+    assert "shell" not in captured["kwargs"]
     assert len(result.findings) == 1
 
 

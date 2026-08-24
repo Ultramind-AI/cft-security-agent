@@ -18,6 +18,8 @@ from urllib.request import urlopen
 
 import yaml
 
+from pipeline.cancellation import RunCancelled, check_cancelled, suspend_cancellation
+from pipeline.subprocess_runner import run_cancellable_process
 from schemas.target import TargetProfile
 
 
@@ -115,15 +117,7 @@ def _compose_field(record: dict[object, object], name: str) -> object | None:
 
 def _run_command(argv: list[str], cwd: Path, timeout: float) -> subprocess.CompletedProcess[str]:
     # Команда собирается только из доверенного TargetProfile и фиксированных аргументов.
-    return subprocess.run(
-        argv,
-        cwd=cwd,
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-        shell=False,
-        check=False,
-    )
+    return run_cancellable_process(argv, cwd=cwd, timeout=timeout)
 
 
 def _probe_health(url: str, timeout: float) -> bool:
@@ -158,8 +152,6 @@ class SandboxSession:
         configured_readiness_paths = tuple(readiness_paths or target.healthcheck_paths())
         if not configured_readiness_paths:
             raise ValueError("SandboxSession requires at least one configured service healthcheck")
-        for path in configured_readiness_paths:
-            target.build_url(path)
         self.target = target
         self._readiness_paths = configured_readiness_paths
         if command_timeout <= 0 or startup_timeout <= 0 or readiness_timeout <= 0:
@@ -258,6 +250,10 @@ class SandboxSession:
             self.info.status = SessionStatus.READY
             self.collect_state()
             return self
+        except RunCancelled:
+            self.info.status = SessionStatus.FAILED
+            self.teardown(raise_on_failure=False)
+            raise
         except SessionTimeoutError:
             self.info.status = SessionStatus.TIMED_OUT
             self.teardown(raise_on_failure=False)
@@ -268,10 +264,13 @@ class SandboxSession:
             raise
 
     def _wait_until_ready(self) -> None:
-        urls = [self.target.build_url(path) for path in self._readiness_paths]
+        urls = [self.target.build_url(path) for path in self._readiness_paths] if self.target.runtime.base_url else []
         deadline = self._clock() + self.readiness_timeout
         while self._clock() < deadline:
-            if all(
+            check_cancelled()
+            if self._compose_services_healthy():
+                return
+            if urls and all(
                 self._health_probe(url, min(5.0, self.command_timeout))
                 for url in urls
             ):
@@ -280,6 +279,25 @@ class SandboxSession:
         raise SessionTimeoutError(
             "Target did not become ready within "
             f"{self.readiness_timeout}s: {', '.join(urls)}"
+        )
+
+    def _compose_services_healthy(self) -> bool:
+        """Compose health принадлежит sandbox-сессии и не требует host URL."""
+        result = self._command(self._compose("ps", "--format", "json"), allow_failure=True)
+        services = normalize_compose_ps(result.stdout or "")
+        expected = {service.compose_service or service.id for service in self.target.services.values()}
+        by_name = {
+            str(item.get("Service") or item.get("service")): item
+            for item in services
+        }
+        if not expected or not expected.issubset(by_name):
+            return False
+        return all(
+            str(by_name[name].get("State") or by_name[name].get("state", "")).lower()
+            == "running"
+            and str(by_name[name].get("Health") or by_name[name].get("health", "")).lower()
+            == "healthy"
+            for name in expected
         )
 
     def collect_state(self) -> dict[str, object]:
@@ -321,6 +339,11 @@ class SandboxSession:
     def teardown(self, *, raise_on_failure: bool = True) -> None:
         if self._torn_down:
             return
+        # После cancel обязательный teardown выполняется без проверки токена.
+        with suspend_cancellation():
+            self._teardown_without_cancellation(raise_on_failure=raise_on_failure)
+
+    def _teardown_without_cancellation(self, *, raise_on_failure: bool) -> None:
         self.info.status = SessionStatus.TEARING_DOWN
         verification_errors: list[str] = []
         try:

@@ -30,10 +30,7 @@ class LLMReactHtmlFlowActionChoice(_LLMActionFields):
 class LLMGeneralActionChoice(_LLMActionFields):
     """Текущие общие возможности без shell, доступные для рассуждений живого LLM."""
 
-    tool: Literal[
-        "check_sberlab_health",
-        "get_sberlab_public_projects",
-    ]
+    tool: Literal["observe_http_surface"]
 
 
 class LLMProbeResult(BaseModel):

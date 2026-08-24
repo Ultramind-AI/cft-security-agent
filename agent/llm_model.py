@@ -103,6 +103,7 @@ class FallbackLLMAgentModel:
 
         finding = state["finding"]
         next_iteration = int(state.get("iteration_count", 0)) + 1
+        runtime_target = _runtime_action_target(state) if choice.tool == "observe_http_surface" else (None, None)
         return ActionProposal(
             id=_build_action_id(finding.id, next_iteration),
             tool=choice.tool,
@@ -112,6 +113,8 @@ class FallbackLLMAgentModel:
             parameters=_sanitize_action_parameters(choice, state),
             purpose=choice.purpose,
             expected_evidence=choice.expected_evidence,
+            service=runtime_target[0],
+            endpoint=runtime_target[1],
         )
 
     def build_plan(
@@ -273,7 +276,6 @@ def _reasoning_context(state: AgentState) -> dict[str, Any]:
     runtime_services = state.get("runtime_services")
     return {
         "finding": finding.model_dump(mode="json"),
-        "user_request": state.get("user_request"),
         "code_context": state.get("code_context"),
         "architecture_context": _dump_model(state.get("architecture_context")),
         "cvss": _dump_model(state.get("cvss")),
@@ -353,18 +355,11 @@ def _allowed_execution_tools(state: AgentState) -> list[dict[str, Any]]:
             }
         ]
 
-    return [
-        {
-            "name": "check_sberlab_health",
-            "parameters": {},
-            "purpose": "Fixed GET /health/ against the configured local SberLab target.",
-        },
-        {
-            "name": "get_sberlab_public_projects",
-            "parameters": {},
-            "purpose": "Fixed GET /api/projects/ against the configured local SberLab target.",
-        },
-    ]
+    return [{
+        "name": "observe_http_surface",
+        "parameters": {},
+        "purpose": "Observe one trusted allowlisted endpoint in the current sandbox session.",
+    }]
 
 
 def _allowed_plan_candidates(state: AgentState) -> list[dict[str, Any]]:
@@ -482,7 +477,7 @@ def _sanitize_action_parameters(choice, state: AgentState) -> dict[str, object]:
         }
     if choice.tool == "inspect_react_dangerous_html_flow":
         return _react_html_flow_parameters(state)
-    if choice.tool in {"check_sberlab_health", "get_sberlab_public_projects"}:
+    if choice.tool == "observe_http_surface":
         return {}
     raise ValueError(f"No deterministic parameter contract for tool: {choice.tool}")
 
@@ -492,6 +487,22 @@ def _target_profile(state: AgentState):
     from agent.model import _target_profile as profile_for_state
 
     return profile_for_state(state)
+
+
+def _runtime_action_target(state: AgentState) -> tuple[str, str]:
+    """Choose coordinates from trusted profile/runtime state, never LLM output."""
+    runtime_services = state.get("runtime_services")
+    profile = _target_profile(state)
+    if runtime_services is not None:
+        for service_id in sorted(runtime_services.services):
+            service = runtime_services.services[service_id]
+            if service.ready and service.allowed_endpoints:
+                return service_id, min(service.allowed_endpoints)
+    for service_id in sorted(profile.services):
+        endpoints = profile.services[service_id].runtime_endpoints
+        if endpoints:
+            return service_id, min(endpoints)
+    raise ValueError("TargetProfile has no trusted runtime endpoint")
 
 def _evidence_guard(state: AgentState) -> ReevaluationResult | None:
     action = state.get("proposed_action")

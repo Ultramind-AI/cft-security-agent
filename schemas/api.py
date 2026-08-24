@@ -11,7 +11,14 @@ from schemas.evidence import Evidence
 from schemas.pipeline import GateResult
 from schemas.report import FinalReport, SandboxActionSummary
 
-ApiRunStatus = Literal["queued", "running", "completed", "technical_failure"]
+ApiRunStatus = Literal[
+    "queued",
+    "running",
+    "cancelling",
+    "cancelled",
+    "completed",
+    "technical_failure",
+]
 ChatRole = Literal["user", "assistant", "system"]
 ChatMessageKind = Literal["text", "status", "summary", "error"]
 
@@ -47,8 +54,9 @@ class ApiRun(BaseModel):
     created_at: datetime
     started_at: datetime | None = None
     finished_at: datetime | None = None
-    exit_code: int | None = Field(default=None, ge=0, le=2)
+    exit_code: int | None = Field(default=None, ge=0, le=255)
     gate_decision: Literal["pass", "warn", "fail"] | None = None
+    cancellation_reason: str | None = None
     error: ErrorDetail | None = None
 
 

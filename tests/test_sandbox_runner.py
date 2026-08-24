@@ -104,9 +104,9 @@ def test_runner_refuses_http_observation_without_a_runtime_service_map() -> None
 
 
 def test_runner_rejects_endpoint_substitution_against_capability_contract() -> None:
-    action = _action("substitution", tool="check_sberlab_health", endpoint="/health/")
+    action = _action("substitution", tool="observe_http_surface", endpoint="/health/")
     registry = ToolRegistry()
-    registry.register("check_sberlab_health", object(), endpoint="/api/projects/")
+    registry.register("observe_http_surface", object(), endpoint="/api/projects/")
     called = False
 
     def execute(action: ActionProposal, run_id: str, session_id: str | None) -> ExecutionResult:
@@ -119,10 +119,10 @@ def test_runner_rejects_endpoint_substitution_against_capability_contract() -> N
     assert "does not match" in result.results[0].stderr
     assert called is False
 
-    missing_endpoint = _action("missing-endpoint", tool="check_sberlab_health", endpoint=None)
+    missing_endpoint = _action("missing-endpoint", tool="observe_http_surface", endpoint=None)
     result = SandboxRunner(approvals=_approved(missing_endpoint), registry=registry, execute_one=execute).run([missing_endpoint], runtime_services=_runtime_map())
     assert result.status == "denied"
-    assert "contracted service and endpoint" in result.results[0].stderr
+    assert "approved service endpoint" in result.results[0].stderr
 
     action = _action("endpoint", endpoint="/admin/")
     runner, seen = _runner([action])

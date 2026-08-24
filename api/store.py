@@ -5,6 +5,7 @@ import sqlite3
 import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
@@ -21,6 +22,16 @@ from schemas.errors import ErrorDetail
 from schemas.evidence import Evidence
 from schemas.report import FinalReport
 from schemas.target import TargetProfile
+
+
+@dataclass(frozen=True)
+class StoredRunJob:
+    run_id: str
+    target_id: str
+    agent_mode: str | None
+    max_iterations: int
+    artifact_dir: Path
+    analysis_request: str | None
 
 
 class ApiStore:
@@ -69,13 +80,13 @@ class ApiStore:
                     status TEXT NOT NULL,
                     agent_mode TEXT,
                     max_iterations INTEGER NOT NULL,
-                    analysis_request TEXT,
                     artifact_dir TEXT NOT NULL,
                     created_at TEXT NOT NULL,
                     started_at TEXT,
                     finished_at TEXT,
                     exit_code INTEGER,
                     gate_decision TEXT,
+                    cancellation_reason TEXT,
                     error_json TEXT,
                     FOREIGN KEY(target_id) REFERENCES projects(target_id)
                 );
@@ -111,7 +122,6 @@ class ApiStore:
 
                 CREATE INDEX IF NOT EXISTS idx_evidence_run_finding
                     ON evidence(run_id, finding_id);
-
                 CREATE TABLE IF NOT EXISTS chat_sessions (
                     session_id TEXT PRIMARY KEY,
                     target_id TEXT NOT NULL,
@@ -154,7 +164,8 @@ class ApiStore:
                     ON chat_session_runs(session_id, linked_at, run_id);
                 """
             )
-            # Existing T23 databases predate the chat prompt column.
+            # Existing T23 databases predate cancellation and chat prompt columns.
+            _ensure_column(connection, "runs", "cancellation_reason", "TEXT")
             _ensure_column(connection, "runs", "analysis_request", "TEXT")
             connection.execute(
                 """
@@ -226,8 +237,8 @@ class ApiStore:
         target_id: str,
         agent_mode: str | None,
         max_iterations: int,
-        analysis_request: str | None,
         artifact_dir: Path,
+        analysis_request: str | None = None,
     ) -> ApiRun:
         created_at = _now_iso()
         with self._connection() as connection:
@@ -235,7 +246,7 @@ class ApiStore:
                 """
                 INSERT INTO runs (
                     run_id, target_id, status, agent_mode, max_iterations,
-                    analysis_request, artifact_dir, created_at
+                    artifact_dir, created_at, analysis_request
                 ) VALUES (?, ?, 'queued', ?, ?, ?, ?, ?)
                 """,
                 (
@@ -243,25 +254,24 @@ class ApiStore:
                     target_id,
                     agent_mode,
                     max_iterations,
-                    analysis_request,
                     str(artifact_dir.resolve()),
                     created_at,
+                    analysis_request,
                 ),
             )
         return self.get_run(run_id)
 
-    def mark_running(self, run_id: str) -> None:
+    def mark_running(self, run_id: str) -> bool:
         with self._connection() as connection:
             updated = connection.execute(
                 """
                 UPDATE runs
                 SET status = 'running', started_at = ?, error_json = NULL
-                WHERE run_id = ?
+                WHERE run_id = ? AND status = 'queued'
                 """,
                 (_now_iso(), run_id),
             )
-            if updated.rowcount != 1:
-                raise KeyError(run_id)
+        return updated.rowcount == 1
 
     def mark_finished(
         self,
@@ -270,7 +280,7 @@ class ApiStore:
         exit_code: int,
         gate_decision: str | None,
         error: ErrorDetail | None = None,
-    ) -> None:
+    ) -> bool:
         status = "technical_failure" if exit_code == 2 else "completed"
         error_json = error.model_dump_json() if error is not None else None
         with self._connection() as connection:
@@ -279,7 +289,7 @@ class ApiStore:
                 UPDATE runs
                 SET status = ?, finished_at = ?, exit_code = ?,
                     gate_decision = ?, error_json = ?
-                WHERE run_id = ?
+                WHERE run_id = ? AND status = 'running'
                 """,
                 (
                     status,
@@ -290,16 +300,99 @@ class ApiStore:
                     run_id,
                 ),
             )
-            if updated.rowcount != 1:
-                raise KeyError(run_id)
+        return updated.rowcount == 1
 
     def mark_failed(self, run_id: str, error: ErrorDetail) -> None:
-        self.mark_finished(
-            run_id,
-            exit_code=2,
-            gate_decision="fail",
-            error=error,
+        with self._connection() as connection:
+            connection.execute(
+                """
+                UPDATE runs
+                SET status = 'technical_failure', finished_at = ?, exit_code = 2,
+                    gate_decision = 'fail', error_json = ?
+                WHERE run_id = ? AND status IN ('queued', 'running', 'cancelling')
+                """,
+                (_now_iso(), error.model_dump_json(), run_id),
+            )
+
+    def request_cancel(self, run_id: str, reason: str) -> ApiRun:
+        """Atomically cancel a queued run or signal an active run."""
+        with self._connection() as connection:
+            row = connection.execute(
+                "SELECT status FROM runs WHERE run_id = ?",
+                (run_id,),
+            ).fetchone()
+            if row is None:
+                raise KeyError(run_id)
+            if row["status"] == "queued":
+                connection.execute(
+                    """
+                    UPDATE runs
+                    SET status = 'cancelled', finished_at = ?, exit_code = 130,
+                        cancellation_reason = ?
+                    WHERE run_id = ? AND status = 'queued'
+                    """,
+                    (_now_iso(), reason, run_id),
+                )
+            elif row["status"] == "running":
+                connection.execute(
+                    """
+                    UPDATE runs
+                    SET status = 'cancelling', cancellation_reason = ?
+                    WHERE run_id = ? AND status = 'running'
+                    """,
+                    (reason, run_id),
+                )
+        return self.get_run(run_id)
+
+    def mark_cancelled(self, run_id: str) -> bool:
+        with self._connection() as connection:
+            updated = connection.execute(
+                """
+                UPDATE runs
+                SET status = 'cancelled', finished_at = ?, exit_code = 130,
+                    gate_decision = NULL
+                WHERE run_id = ? AND status = 'cancelling'
+                """,
+                (_now_iso(), run_id),
+            )
+        return updated.rowcount == 1
+
+    def queued_jobs(self) -> list[StoredRunJob]:
+        with self._connection() as connection:
+            rows = connection.execute(
+                "SELECT * FROM runs WHERE status = 'queued' ORDER BY created_at, run_id"
+            ).fetchall()
+        return [
+            StoredRunJob(
+                run_id=row["run_id"],
+                target_id=row["target_id"],
+                agent_mode=row["agent_mode"],
+                max_iterations=row["max_iterations"],
+                artifact_dir=Path(row["artifact_dir"]).resolve(),
+                analysis_request=row["analysis_request"],
+            )
+            for row in rows
+        ]
+
+    def recover_abandoned(self) -> int:
+        """A new process cannot safely resume a previously active sandbox."""
+        error = ErrorDetail(
+            code="INTERNAL_ERROR",
+            layer="pipeline",
+            message="Analysis was interrupted by an API service restart",
+            retryable=True,
         )
+        with self._connection() as connection:
+            updated = connection.execute(
+                """
+                UPDATE runs
+                SET status = 'technical_failure', finished_at = ?, exit_code = 2,
+                    gate_decision = 'fail', error_json = ?
+                WHERE status IN ('running', 'cancelling')
+                """,
+                (_now_iso(), error.model_dump_json()),
+            )
+        return updated.rowcount
 
     def get_run(self, run_id: str) -> ApiRun:
         with self._connection() as connection:
@@ -596,7 +689,6 @@ def _project_from_row(row: sqlite3.Row) -> ApiProject:
         repository_available=bool(repository) and Path(repository).expanduser().is_dir(),
     )
 
-
 def _run_from_row(row: sqlite3.Row) -> ApiRun:
     error = ErrorDetail.model_validate_json(row["error_json"]) if row["error_json"] else None
     return ApiRun(
@@ -611,6 +703,7 @@ def _run_from_row(row: sqlite3.Row) -> ApiRun:
         finished_at=datetime.fromisoformat(row["finished_at"]) if row["finished_at"] else None,
         exit_code=row["exit_code"],
         gate_decision=row["gate_decision"],
+        cancellation_reason=row["cancellation_reason"],
         error=error,
     )
 

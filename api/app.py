@@ -42,7 +42,7 @@ def create_app(orchestrator: RunOrchestrator | None = None) -> FastAPI:
 
     app = FastAPI(
         title="CFT Security Agent API",
-        version="1.1",
+        version="1.0",
         lifespan=lifespan,
     )
     app.state.orchestrator = service
@@ -121,7 +121,7 @@ def create_app(orchestrator: RunOrchestrator | None = None) -> FastAPI:
                 if encoded != last_payload:
                     yield f"event: run\ndata: {encoded}\n\n"
                     last_payload = encoded
-                if run.status not in {"queued", "running"}:
+                if run.status not in {"queued", "running", "cancelling"}:
                     yield f"event: done\ndata: {encoded}\n\n"
                     return
                 await asyncio.sleep(0.75)
@@ -199,7 +199,7 @@ def create_app(orchestrator: RunOrchestrator | None = None) -> FastAPI:
                     yield f"event: snapshot\ndata: {encoded}\n\n"
                     last_payload = encoded
                 run = snapshot.run
-                if run is None or run.status not in {"queued", "running"}:
+                if run is None or run.status not in {"queued", "running", "cancelling"}:
                     yield f"event: done\ndata: {encoded}\n\n"
                     return
                 await asyncio.sleep(0.5)
@@ -208,6 +208,13 @@ def create_app(orchestrator: RunOrchestrator | None = None) -> FastAPI:
             event_stream(),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
+    @app.post("/runs/{run_id}/cancel", response_model=ApiRun)
+    def cancel_run(run_id: str) -> ApiRun:
+        return _not_found(
+            lambda: service.cancel_run(run_id),
+            "Run not found",
         )
 
     @app.get("/runs/{run_id}/progress", response_model=RunProgress)
@@ -270,8 +277,6 @@ def _default_orchestrator() -> RunOrchestrator:
         registry=registry,
         store=ApiStore(settings.api_database_path),
         artifact_root=settings.api_artifact_root,
-        project_root=settings.api_project_root,
-        max_upload_bytes=settings.api_max_upload_bytes,
     )
 
 

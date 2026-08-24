@@ -28,8 +28,6 @@ limits:
 tools:
   allowed:
   - safe_noop
-  - check_sberlab_health
-  - get_sberlab_public_projects
   - observe_http_surface
   - sandbox_command
   - inspect_dockerfile_user
@@ -48,12 +46,6 @@ tools:
         - inconclusive
       max_string_lengths:
         message: 256
-    check_sberlab_health:
-      allowed_keys: []
-      required_keys: []
-    get_sberlab_public_projects:
-      allowed_keys: []
-      required_keys: []
     observe_http_surface:
       allowed_keys: []
       required_keys: []

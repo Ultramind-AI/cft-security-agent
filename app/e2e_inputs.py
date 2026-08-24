@@ -19,7 +19,6 @@ def build_real_initial_state(
     finding_id: str | None = None,
     finding_index: int = 0,
     max_iterations: int = 1,
-    user_request: str | None = None,
 ) -> AgentState:
     if max_iterations < 1:
         raise ValueError("max_iterations must be at least 1")
@@ -58,7 +57,6 @@ def build_real_initial_state(
 
     state: AgentState = {
         "finding": finding,
-        "user_request": user_request,
         "code_context": code.content,
         "architecture_context": architecture,
         "evidence": [],

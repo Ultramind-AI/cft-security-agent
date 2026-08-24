@@ -23,6 +23,7 @@ class AgentState(TypedDict, total=False):
     target_profile: TargetProfile
     runtime_services: RuntimeServiceMap
     finding: Finding
+    user_request: str | None
     code_context: str | None
     architecture_context: ArchitectureContext | None
 

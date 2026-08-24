@@ -13,3 +13,7 @@ executor_data/
 .agents/
 
 api_data/
+
+# T24 frontend build artifacts
+frontend/node_modules/
+frontend/dist/

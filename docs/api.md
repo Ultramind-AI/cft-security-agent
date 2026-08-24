@@ -1,83 +1,63 @@
-# Service API v1
+# Service API v1.1 — runs + chat
 
-T23 wraps the existing `app.ci_pipeline.run_ci_pipeline` flow instead of implementing a second security pipeline.
-That keeps CLI and API verdicts aligned: the same Discovery, SandboxManager, SAST, agent loop, FinalReport and deterministic Gate code is used in both entrypoints.
+The API wraps the canonical `app.ci_pipeline.run_ci_pipeline` flow. Chat and uploads do not create a second security pipeline.
 
 ## Boundaries
 
-- The API accepts only a registered `target_id`; clients cannot submit an arbitrary repository or profile path.
-- Trusted profiles are loaded from the configured `targets/` root.
-- Run/Project/Finding/Evidence metadata is stored in SQLite.
-- Large artifacts, reports, telemetry and executor logs stay under the per-run artifact directory and are referenced from metadata.
-- API responses do not expose the local artifact directory.
-- T23 runs analyses through a single background worker. Queueing, cancellation and parallel sandbox budgets belong to T29.
+- Static targets still come from trusted profiles under `targets/`.
+- A browser may upload a ZIP, but never an arbitrary server path or profile path.
+- Uploaded ZIPs are path/symlink/size checked before extraction.
+- Project Discovery creates a server-owned `TargetProfile`; only that generated profile is registered.
+- User chat text may focus the investigation but cannot widen target/sandbox scope.
+- Run/Project/Finding/Evidence/chat metadata is stored in SQLite.
+- Heavy artifacts remain under the per-run artifact directory and local paths are not exposed by the API.
+- Runs remain serialized until T29 owns parallel scheduling/cancellation/resource quotas.
 
 ## Configuration
-
-Defaults:
 
 ```text
 CFT_API_DATABASE_PATH=api_data/cft-security.sqlite3
 CFT_API_ARTIFACT_ROOT=artifacts/api-runs
+CFT_API_PROJECT_ROOT=api_data/projects
+CFT_API_MAX_UPLOAD_BYTES=104857600
 CFT_API_TARGET_PROFILES=targets/sberlab.yaml
 CFT_API_HOST=127.0.0.1
 CFT_API_PORT=8080
 ```
 
-Register multiple trusted targets with a comma-separated list:
-
-```bash
-export CFT_API_TARGET_PROFILES="targets/sberlab.yaml,targets/autodealer.yaml"
-```
-
-Every listed file must stay under the trusted `targets/` directory. The target repository path itself comes from the trusted `TargetProfile`; it is never accepted from an API request.
-
-## Start
-
-```bash
-python -m pip install -e ".[dev]"
-cft-security-api
-```
-
-The default bind address is loopback-only.
-
-## Endpoints
+## Main endpoints
 
 ```text
 GET  /health
 GET  /projects
+POST /projects/import
+
+GET  /chat/sessions
+POST /chat/sessions
+GET  /chat/sessions/{session_id}
+POST /chat/sessions/{session_id}/messages
+GET  /chat/sessions/{session_id}/events
+
 GET  /runs
 POST /runs
 GET  /runs/{run_id}
+GET  /runs/{run_id}/events
 GET  /runs/{run_id}/findings
-GET  /runs/{run_id}/findings/{finding_id}
 GET  /runs/{run_id}/evidence
 GET  /runs/{run_id}/timeline
 GET  /runs/{run_id}/reports
-GET  /runs/{run_id}/reports/{finding_id}
 GET  /runs/{run_id}/gate
 ```
 
-Create a run:
+ZIP upload uses the raw request body so the service does not need multipart parsing:
 
 ```bash
-curl -sS -X POST http://127.0.0.1:8080/runs \
-  -H 'content-type: application/json' \
-  -d '{"target_id":"sberlab-local","agent_mode":"stub","max_iterations":3}'
+curl -X POST http://127.0.0.1:8080/projects/import \
+  -H 'content-type: application/zip' \
+  -H 'x-project-filename: project.zip' \
+  --data-binary @project.zip
 ```
 
-`POST /runs` returns `202` with a run record. Poll `GET /runs/{run_id}` until `status` is no longer `queued`/`running`.
+The returned project id can be attached to a chat session. The first message starts the same canonical pipeline used by `POST /runs`.
 
-Run status is intentionally separate from the security Gate:
-
-```text
-status=completed + gate_decision=fail + exit_code=1
-```
-
-means the pipeline completed successfully and found a blocking security condition.
-
-```text
-status=technical_failure + exit_code=2
-```
-
-means the pipeline itself failed before a trustworthy security verdict.
+Run status remains separate from the security Gate. `exit_code=1` means a completed security/policy failure; `exit_code=2` means technical pipeline failure.

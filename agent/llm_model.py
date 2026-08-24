@@ -273,6 +273,7 @@ def _reasoning_context(state: AgentState) -> dict[str, Any]:
     runtime_services = state.get("runtime_services")
     return {
         "finding": finding.model_dump(mode="json"),
+        "user_request": state.get("user_request"),
         "code_context": state.get("code_context"),
         "architecture_context": _dump_model(state.get("architecture_context")),
         "cvss": _dump_model(state.get("cvss")),

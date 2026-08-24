@@ -57,6 +57,10 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--findings", help="Existing normalized findings JSON")
     parser.add_argument("--output-dir", default="artifacts/security-pipeline")
     parser.add_argument("--agent-mode", choices=("stub", "llm"), default=None)
+    parser.add_argument(
+        "--analysis-request",
+        help="Optional user request that focuses the agent inside the registered target",
+    )
     parser.add_argument("--max-iterations", type=int, default=1)
     parser.add_argument("--full-reports", action="store_true")
     parser.add_argument("--base-ref")
@@ -232,6 +236,7 @@ def _pipeline_args(
         findings=args.findings,
         agent_mode=args.agent_mode,
         max_iterations=args.max_iterations,
+        analysis_request=getattr(args, "analysis_request", None),
         full_reports=args.full_reports,
         base_ref=args.base_ref,
         head_ref=args.head_ref,

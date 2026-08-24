@@ -67,6 +67,10 @@ def _parse_args() -> argparse.Namespace:
         help="Override CFT_AGENT_MODE for this run",
     )
     parser.add_argument(
+        "--analysis-request",
+        help="Optional user request that focuses the agent without expanding target scope",
+    )
+    parser.add_argument(
         "--max-iterations",
         type=int,
         default=1,
@@ -252,6 +256,7 @@ def run_pipeline(
                 architecture_overrides_path=architecture_overrides,
                 finding_id=finding.id,
                 max_iterations=args.max_iterations,
+                user_request=getattr(args, "analysis_request", None),
             )
             if runtime_services is not None:
                 # Все действия одного CI-запуска используют уже поднятую sandbox-сессию.

@@ -337,6 +337,23 @@ workspace/
 
 ---
 
+## Web UI
+
+T24 is chat-first. Drop a project ZIP (or select a registered target), type an analysis request, and the UI starts the canonical Discovery → SAST → sandbox → Evidence → Gate flow. Live agent actions/reports arrive through SSE, and completed runs support free-form follow-up questions grounded in FinalReport/Evidence data.
+
+```bash
+# terminal 1
+source .venv/bin/activate
+cft-security-api
+
+# terminal 2
+cd frontend
+npm install
+npm run dev
+```
+
+Open `http://127.0.0.1:5173`. The old runs dashboard remains at `/dashboard`. See [`docs/ui-v1.md`](docs/ui-v1.md).
+
 ## Git workflow
 
 `main` должен оставаться рабочей общей базой.

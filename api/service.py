@@ -586,7 +586,11 @@ class RunOrchestrator:
                         session_id=chat_session_id,
                         role="assistant",
                         kind="summary",
-                        content=_run_summary(gate, [report for report, _ in reports]),
+                        content=_run_summary(
+                            gate,
+                            [report for report, _ in reports],
+                            technical_failure=exit_code == 2,
+                        ),
                         run_id=run_id,
                     )
                 if not self.store.mark_finished(
@@ -1077,7 +1081,20 @@ def _read_partial_reports(artifact_dir: Path) -> list[FinalReport]:
     return reports
 
 
-def _run_summary(gate: GateResult, reports: list[FinalReport]) -> str:
+def _run_summary(
+    gate: GateResult,
+    reports: list[FinalReport],
+    *,
+    technical_failure: bool = False,
+) -> str:
+    if technical_failure:
+        error = gate.errors[0] if gate.errors else None
+        detail = error.message if error is not None else "неизвестная ошибка pipeline"
+        return (
+            f"Анализ остановлен из-за технической ошибки: {detail}. "
+            "Security-результат не сформирован; findings и Evidence не оценивались. "
+            "Можно повторить запуск после устранения причины."
+        )
     counts: dict[str, int] = {}
     for report in reports:
         counts[report.status] = counts.get(report.status, 0) + 1

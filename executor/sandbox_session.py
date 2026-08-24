@@ -38,7 +38,7 @@ class SandboxSessionError(RuntimeError):
     pass
 
 
-class SessionTimeoutError(SandboxSessionError):
+class SessionTimeoutError(SandboxSessionError, TimeoutError):
     pass
 
 

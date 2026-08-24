@@ -47,4 +47,41 @@ describe("buildConversationTimeline", () => {
     expect(tools).toHaveLength(1);
     expect(tools[0].kind === "tool" && tools[0].tool.command).toEqual(["rg", "USER", "/target/Dockerfile"]);
   });
+
+  it("shows a technical failure without a duplicate security gate", () => {
+    const failed = structuredClone(snapshot);
+    failed.runs[0].run.status = "technical_failure";
+    failed.runs[0].run.exit_code = 2;
+    failed.runs[0].run.gate_decision = "fail";
+    failed.runs[0].reports = [];
+    failed.messages.push({
+      id: "m-technical-summary",
+      session_id: "chat-1",
+      role: "assistant",
+      kind: "summary",
+      content: "Анализ завершён. Gate: FAIL.",
+      run_id: "run-1",
+      created_at: "2026-08-24T10:02:00Z",
+    });
+    const technicalGate = failed.runs[0].gate!;
+    failed.runs[0].gate = {
+      ...technicalGate,
+      exit_code: 2,
+      decision: "fail",
+      decision_basis: "technical_pipeline_error",
+      reports_total: 0,
+      confirmed: 0,
+      technical_errors: 1,
+    };
+
+    const kinds = buildConversationTimeline(failed).map((item) => item.kind);
+
+    expect(kinds).toContain("technical_error");
+    expect(kinds).not.toContain("gate");
+    expect(
+      buildConversationTimeline(failed).some(
+        (item) => item.kind === "message" && item.message.kind === "summary",
+      ),
+    ).toBe(false);
+  });
 });

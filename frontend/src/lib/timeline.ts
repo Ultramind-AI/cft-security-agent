@@ -89,7 +89,19 @@ const KIND_RANK = {
 export function buildConversationTimeline(
   snapshot: ChatSnapshot,
 ): ConversationTimelineItem[] {
-  const items: ConversationTimelineItem[] = snapshot.messages.map((message) => ({
+  const snapshots = runSnapshots(snapshot);
+  const technicalRunIds = new Set(
+    snapshots
+      .filter(({ run }) => run.status === "technical_failure")
+      .map(({ run }) => run.id),
+  );
+  const messages = snapshot.messages.filter(
+    (message) =>
+      message.kind !== "summary" ||
+      message.run_id === null ||
+      !technicalRunIds.has(message.run_id),
+  );
+  const items: ConversationTimelineItem[] = messages.map((message) => ({
     kind: "message",
     id: `message:${message.id}`,
     runId: message.run_id,
@@ -99,7 +111,7 @@ export function buildConversationTimeline(
     message,
   }));
 
-  for (const runSnapshot of runSnapshots(snapshot)) {
+  for (const runSnapshot of snapshots) {
     appendRun(items, runSnapshot);
   }
 
@@ -199,7 +211,7 @@ function appendRun(
     });
   }
 
-  if (gate) {
+  if (gate && run.status !== "technical_failure") {
     const at = run.finished_at ?? startedAt;
     items.push({
       kind: "gate",

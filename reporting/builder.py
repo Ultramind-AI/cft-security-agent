@@ -10,6 +10,7 @@ from schemas.report import (
     VerificationSummary,
 )
 from schemas.state import AgentState
+from security.error_redaction import redact_error_message
 
 _ALLOWED_STATUSES = {
     "confirmed",
@@ -168,6 +169,18 @@ def _sandbox_actions(state: AgentState) -> list[SandboxActionSummary]:
                 execution_status=(item.execution.status if item.execution is not None else None),
                 exit_code=(item.execution.exit_code if item.execution is not None else None),
                 timed_out=(item.execution.timed_out if item.execution is not None else False),
+                duration_ms=(
+                    item.execution.duration_ms if item.execution is not None else None
+                ),
+                command=_display_command(item.action),
+                cwd=_display_cwd(item.action),
+                stdout=_display_output(
+                    item.execution.stdout if item.execution is not None else ""
+                ),
+                stderr=_display_output(
+                    item.execution.stderr if item.execution is not None else ""
+                ),
+                sandbox_session_id=state.get("sandbox_session_id"),
                 artifact_refs=(
                     list(item.execution.artifacts) if item.execution is not None else []
                 ),
@@ -190,9 +203,48 @@ def _sandbox_actions(state: AgentState) -> list[SandboxActionSummary]:
             execution_status=execution.status if execution is not None else None,
             exit_code=execution.exit_code if execution is not None else None,
             timed_out=execution.timed_out if execution is not None else False,
+            duration_ms=execution.duration_ms if execution is not None else None,
+            command=_display_command(action),
+            cwd=_display_cwd(action),
+            stdout=_display_output(execution.stdout if execution is not None else ""),
+            stderr=_display_output(execution.stderr if execution is not None else ""),
+            sandbox_session_id=state.get("sandbox_session_id"),
             artifact_refs=(list(execution.artifacts) if execution is not None else []),
         )
     ]
+
+
+def _display_command(action) -> list[str]:
+    if action.tool != "sandbox_command":
+        return []
+    raw = action.parameters.get("argv")
+    if not isinstance(raw, list):
+        return []
+    return [
+        redact_error_message(str(item), max_length=1024)
+        for item in raw[:32]
+    ]
+
+
+def _display_cwd(action) -> str | None:
+    if action.tool != "sandbox_command":
+        return None
+    raw = action.parameters.get("cwd")
+    if not isinstance(raw, str) or not raw:
+        return None
+    return redact_error_message(raw, max_length=1024)
+
+
+def _display_output(value: str) -> str | None:
+    if not value:
+        return None
+    redacted = "\n".join(
+        redact_error_message(line, max_length=8192)
+        for line in value.splitlines()
+    )
+    if len(redacted) <= 8192:
+        return redacted
+    return f"{redacted[:8189]}..."
 
 
 def _policy_decisions(state: AgentState) -> list[PolicyDecisionSummary]:

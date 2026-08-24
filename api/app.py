@@ -22,6 +22,9 @@ from schemas.api import (
     ChatSnapshot,
     CreateChatSessionRequest,
     CreateRunRequest,
+    ImportProjectFilesRequest,
+    RunDiscoveryView,
+    RunProgress,
     RunTimeline,
     SendChatMessageRequest,
 )
@@ -68,6 +71,19 @@ def create_app(orchestrator: RunOrchestrator | None = None) -> FastAPI:
                 filename=filename,
                 content=bytes(content),
             )
+        except ProjectImportError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except (OSError, ValueError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.post(
+        "/projects/import-files",
+        response_model=ApiProject,
+        status_code=status.HTTP_201_CREATED,
+    )
+    def import_project_files(request: ImportProjectFilesRequest) -> ApiProject:
+        try:
+            return service.import_project_files(request)
         except ProjectImportError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         except (OSError, ValueError) as exc:
@@ -132,6 +148,8 @@ def create_app(orchestrator: RunOrchestrator | None = None) -> FastAPI:
             return service.create_chat_session(request)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="Unknown registered target") from exc
+        except (ProjectImportError, ValueError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     @app.get("/chat/sessions/{session_id}", response_model=ChatSnapshot)
     def get_chat_snapshot(session_id: str) -> ChatSnapshot:
@@ -181,6 +199,15 @@ def create_app(orchestrator: RunOrchestrator | None = None) -> FastAPI:
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
+
+    @app.get("/runs/{run_id}/progress", response_model=RunProgress)
+    def get_run_progress(run_id: str) -> RunProgress:
+        return _not_found(lambda: service.get_run_progress(run_id), "Run not found")
+
+    @app.get("/runs/{run_id}/discovery", response_model=RunDiscoveryView)
+    def get_run_discovery(run_id: str) -> RunDiscoveryView:
+        # Discovery is available as soon as the pipeline wrote it, even mid-run.
+        return _not_found(lambda: service.get_run_discovery(run_id), "Discovery not found")
 
     @app.get("/runs/{run_id}/findings", response_model=list[ApiFinding])
     def list_findings(run_id: str) -> list[ApiFinding]:
@@ -243,6 +270,8 @@ def _not_found(call, detail: str):
         return call()
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=detail) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 def _completed(call):

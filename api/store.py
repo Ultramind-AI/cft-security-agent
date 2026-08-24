@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
@@ -28,18 +29,23 @@ class ApiStore:
     def __init__(self, path: str | Path) -> None:
         self.path = Path(path).expanduser().resolve()
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        # All operations are short metadata reads/writes coming from both the
+        # API worker pool and the background run thread; serialize them so no
+        # two threads are ever inside sqlite3 on this file at once.
+        self._lock = threading.Lock()
         self._initialize()
 
     @contextmanager
     def _connection(self) -> Iterator[sqlite3.Connection]:
-        connection = sqlite3.connect(self.path, timeout=30.0)
-        connection.row_factory = sqlite3.Row
-        connection.execute("PRAGMA foreign_keys = ON")
-        try:
-            yield connection
-            connection.commit()
-        finally:
-            connection.close()
+        with self._lock:
+            connection = sqlite3.connect(self.path, timeout=30.0)
+            connection.row_factory = sqlite3.Row
+            connection.execute("PRAGMA foreign_keys = ON")
+            try:
+                yield connection
+                connection.commit()
+            finally:
+                connection.close()
 
     def _initialize(self) -> None:
         with self._connection() as connection:
@@ -134,10 +140,39 @@ class ApiStore:
 
                 CREATE INDEX IF NOT EXISTS idx_chat_messages_session_created
                     ON chat_messages(session_id, created_at);
+
+                CREATE TABLE IF NOT EXISTS chat_session_runs (
+                    session_id TEXT NOT NULL,
+                    run_id TEXT NOT NULL,
+                    linked_at TEXT NOT NULL,
+                    PRIMARY KEY(session_id, run_id),
+                    FOREIGN KEY(session_id) REFERENCES chat_sessions(session_id) ON DELETE CASCADE,
+                    FOREIGN KEY(run_id) REFERENCES runs(run_id) ON DELETE CASCADE
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_chat_session_runs_order
+                    ON chat_session_runs(session_id, linked_at, run_id);
                 """
             )
             # Existing T23 databases predate the chat prompt column.
             _ensure_column(connection, "runs", "analysis_request", "TEXT")
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO chat_session_runs (session_id, run_id, linked_at)
+                SELECT session_id, run_id, MIN(created_at)
+                FROM chat_messages
+                WHERE run_id IS NOT NULL
+                GROUP BY session_id, run_id
+                """
+            )
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO chat_session_runs (session_id, run_id, linked_at)
+                SELECT session_id, active_run_id, updated_at
+                FROM chat_sessions
+                WHERE active_run_id IS NOT NULL
+                """
+            )
 
     def upsert_project(self, *, profile_path: Path, profile: TargetProfile) -> None:
         repository = str(profile.repository_path) if profile.repository_path is not None else None
@@ -444,16 +479,38 @@ class ApiStore:
     def set_chat_run(self, session_id: str, run_id: str) -> None:
         self.get_run(run_id)
         with self._connection() as connection:
+            now = _now_iso()
             updated = connection.execute(
                 """
                 UPDATE chat_sessions
                 SET active_run_id = ?, updated_at = ?
                 WHERE session_id = ?
                 """,
-                (run_id, _now_iso(), session_id),
+                (run_id, now, session_id),
             )
             if updated.rowcount != 1:
                 raise KeyError(session_id)
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO chat_session_runs (session_id, run_id, linked_at)
+                VALUES (?, ?, ?)
+                """,
+                (session_id, run_id, now),
+            )
+
+    def list_chat_run_ids(self, session_id: str) -> list[str]:
+        self.get_chat_session(session_id)
+        with self._connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT run_id
+                FROM chat_session_runs
+                WHERE session_id = ?
+                ORDER BY linked_at, run_id
+                """,
+                (session_id,),
+            ).fetchall()
+        return [str(row["run_id"]) for row in rows]
 
     def append_chat_message(
         self,

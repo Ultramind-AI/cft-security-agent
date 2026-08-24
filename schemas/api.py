@@ -129,6 +129,92 @@ class ChatMessage(BaseModel):
     created_at: datetime
 
 
+class RunStageEvent(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    stage: str = Field(max_length=64)
+    status: str = Field(max_length=32)
+    detail: str | None = Field(default=None, max_length=500)
+    at: str | None = None
+
+
+class RunActivityEvent(BaseModel):
+    """One executed sandbox action surfaced from the executor audit log."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    action_id: str
+    tool: str
+    target: str | None = None
+    status: str | None = None
+    exit_code: int | None = None
+    duration_ms: int | None = None
+    at: str | None = None
+
+
+class RunFindingProgressEvent(BaseModel):
+    """Sanitized finding lifecycle event from the progress journal."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    finding_id: str = Field(max_length=256)
+    status: Literal["started", "finished"]
+    title: str | None = Field(default=None, max_length=300)
+    severity: str | None = Field(default=None, max_length=32)
+    rule_id: str | None = Field(default=None, max_length=300)
+    file: str | None = Field(default=None, max_length=1024)
+    index: int | None = Field(default=None, ge=1)
+    total: int | None = Field(default=None, ge=1)
+    result: str | None = Field(default=None, max_length=32)
+    at: str | None = None
+
+
+class RunProgress(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    stages: list[RunStageEvent] = Field(default_factory=list)
+    activities: list[RunActivityEvent] = Field(default_factory=list)
+    finding_events: list[RunFindingProgressEvent] = Field(default_factory=list)
+    findings_total: int | None = None
+    findings_done: int = 0
+    current_finding: str | None = None
+
+
+class DiscoveryComponentView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    root: str
+    technologies: list[str] = Field(default_factory=list)
+    frameworks: list[str] = Field(default_factory=list)
+    dependency_files: list[str] = Field(default_factory=list)
+    dockerfiles: list[str] = Field(default_factory=list)
+    local_addresses: list[str] = Field(default_factory=list)
+
+
+class RunDiscoveryView(BaseModel):
+    """Sanitized Discovery facts; never exposes local repository paths."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    components: list[DiscoveryComponentView] = Field(default_factory=list)
+    services: list[str] = Field(default_factory=list)
+    technologies: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class ChatRunSnapshot(BaseModel):
+    """One run and its sanitized presentation artifacts inside a chat."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    run: ApiRun
+    reports: list[FinalReport] = Field(default_factory=list)
+    gate: GateResult | None = None
+    progress: RunProgress | None = None
+    discovery: RunDiscoveryView | None = None
+
+
 class ChatSnapshot(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -137,6 +223,25 @@ class ChatSnapshot(BaseModel):
     run: ApiRun | None = None
     reports: list[FinalReport] = Field(default_factory=list)
     gate: GateResult | None = None
+    progress: RunProgress | None = None
+    discovery: RunDiscoveryView | None = None
+    runs: list[ChatRunSnapshot] = Field(default_factory=list)
+
+
+class ImportedProjectFile(BaseModel):
+    """One relative project file sent by the browser folder picker."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    path: str = Field(min_length=1, max_length=1024)
+    content_base64: str = Field(min_length=1, max_length=200_000_000)
+
+
+class ImportProjectFilesRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str | None = Field(default=None, max_length=120)
+    files: list[ImportedProjectFile] = Field(min_length=1, max_length=10_000)
 
 
 class ChatLLMAnswer(BaseModel):

@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     api_host: str = "127.0.0.1"
     api_port: int = Field(default=8080, ge=1, le=65535)
 
+    # Digest-pinned image for sandbox-network readiness probes (CFT_SANDBOX_IMAGE).
+    sandbox_image: str = ""
+
     agent_mode: Literal["stub", "llm"] = "stub"
     agent_model_provider: str = ""
     agent_model_name: str = ""

@@ -14,6 +14,7 @@ from architecture.service import ArchitectureService
 from pipeline.errors import error_from_exception
 from pipeline.gate import evaluate_gate
 from pipeline.policy import classify_finding_gate
+from pipeline.progress import PipelineProgressRecorder
 from pr_analysis.git_diff import read_git_diff
 from pr_analysis.service import PRAnalysisService
 from reporting.presentation import render_final_report
@@ -138,6 +139,7 @@ def run_pipeline(
     output_dir = Path(args.output_dir).expanduser()
     reports_dir = output_dir / "reports"
     reports_dir.mkdir(parents=True, exist_ok=True)
+    progress = PipelineProgressRecorder(output_dir)
 
     if args.agent_mode:
         settings.agent_mode = args.agent_mode
@@ -175,6 +177,7 @@ def run_pipeline(
         return gate.exit_code
 
     findings = JsonFindingRepository(findings_path).list_findings()
+    progress.sast_done(len(findings))
     if args.base_ref:
         if not args.base_findings:
             pipeline_errors.append(
@@ -227,11 +230,22 @@ def run_pipeline(
     reports: list[FinalReport] = []
     report_paths: dict[str, str] = {}
     graph = build_graph()
+    if findings:
+        progress.verification_started()
 
     for index, finding in enumerate(findings):
         print()
         location = f"{finding.file}:{finding.line_start or '?'}"
         print(f"[{index + 1}/{len(findings)}] {finding.rule_id} | {location}")
+        progress.finding_started(
+            index=index + 1,
+            total=len(findings),
+            finding_id=finding.id,
+            title=finding.title,
+            severity=finding.severity,
+            rule_id=finding.rule_id,
+            file=finding.file,
+        )
         try:
             service = profile.resolve_service(finding.file) or finding.service
             if not service:
@@ -245,6 +259,10 @@ def run_pipeline(
                 )
                 reports.append(report)
                 report_paths[report.finding_id] = str(report_path)
+                progress.finding_finished(
+                    finding_id=finding.id,
+                    status=report.status,
+                )
                 print("  status=inconclusive capability=none context=repository")
                 continue
 
@@ -270,6 +288,7 @@ def run_pipeline(
             report_path.write_text(report.model_dump_json(indent=2) + "\n", encoding="utf-8")
             reports.append(report)
             report_paths[report.finding_id] = str(report_path)
+            progress.finding_finished(finding_id=finding.id, status=report.status)
 
             print(
                 "  "
@@ -288,6 +307,7 @@ def run_pipeline(
                 public_message=f"Finding workflow failed: {finding.id}",
             )
             pipeline_errors.append(error)
+            progress.finding_finished(finding_id=finding.id, status="error")
             print(f"  ERROR [{error.code}/{error.layer}]: {error.message}")
 
     gate = evaluate_gate(reports, errors=pipeline_errors, report_paths=report_paths)

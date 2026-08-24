@@ -1,10 +1,16 @@
 from __future__ import annotations
 
 import argparse
+import base64
+import binascii
 import io
+import json
+import logging
+import os
 import re
 import shutil
 import stat
+import subprocess
 import zipfile
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
@@ -19,17 +25,26 @@ from api.store import ApiStore
 from app.config import settings
 from discovery.service import ProjectDiscovery
 from pipeline.errors import error_from_exception
+from pipeline.progress import PROGRESS_FILE_NAME, read_progress
 from schemas.api import (
     ApiEvidence,
     ApiFinding,
     ApiProject,
     ApiRun,
     ChatLLMAnswer,
+    ChatRunSnapshot,
     ChatSession,
     ChatSnapshot,
     CreateChatSessionRequest,
     CreateRunRequest,
+    DiscoveryComponentView,
     FindingTimeline,
+    ImportProjectFilesRequest,
+    RunActivityEvent,
+    RunDiscoveryView,
+    RunFindingProgressEvent,
+    RunProgress,
+    RunStageEvent,
     RunTimeline,
     SendChatMessageRequest,
 )
@@ -39,6 +54,8 @@ from schemas.target import TargetProfile
 
 PipelineRunner = Callable[[argparse.Namespace], int]
 ChatAnswerer = Callable[[str, dict[str, object]], str]
+
+logger = logging.getLogger(__name__)
 
 _REANALYZE = re.compile(
     r"(?:^|\s)(?:/analy[sz]e|/reanaly[sz]e|/scan)(?:\s|$)"
@@ -138,41 +155,121 @@ class RunOrchestrator:
         target_id = f"upload-{uuid4().hex[:16]}"
         workspace = self.project_root / target_id
         extract_root = workspace / "source"
-        architecture_path = workspace / "architecture.yaml"
-        profile_path = workspace / "target-profile.yaml"
-        workspace.mkdir(parents=True, exist_ok=False)
 
         try:
             _extract_project_archive(content, extract_root)
-            repository = _repository_root(extract_root)
-            discovery_api = ProjectDiscovery()
-            discovery = discovery_api.discover(repository)
-            if not discovery.components:
-                raise ProjectImportError(
-                    "Discovery found no runnable project components in the archive"
-                )
-
-            profile = discovery_api.build_profile(
-                discovery,
-                profile_id=target_id,
-                name=_project_name(filename),
-                architecture_file=architecture_path,
+            return self._register_discovered_project(
+                workspace=workspace,
+                extract_root=extract_root,
+                target_id=target_id,
+                display_name=_project_name(filename),
             )
-            _write_discovered_architecture(profile, architecture_path)
-            profile_path.write_text(
-                yaml.safe_dump(
-                    profile.model_dump(mode="json"),
-                    allow_unicode=True,
-                    sort_keys=False,
-                ),
-                encoding="utf-8",
-            )
-            self.registry.register_generated(profile_path=profile_path, profile=profile)
-            self.store.upsert_project(profile_path=profile_path, profile=profile)
-            return self.store.get_project(target_id)
         except Exception:
             shutil.rmtree(workspace, ignore_errors=True)
             raise
+
+    def import_project_files(self, request: ImportProjectFilesRequest) -> ApiProject:
+        """Import a browser-selected folder sent as relative paths + base64 files.
+
+        Folder and ZIP imports converge into the same staging + Discovery flow.
+        The server owns the project id and workspace; client paths are untrusted.
+        """
+        display_name = (request.name or "Uploaded project").strip()[:120] or "Uploaded project"
+        total_bytes = 0
+        decoded: list[tuple[PurePosixPath, bytes]] = []
+        seen: set[str] = set()
+        for item in request.files:
+            relative = _validated_manifest_path(item.path)
+            if str(relative) in seen:
+                raise ProjectImportError(f"Duplicate project file path: {item.path}")
+            seen.add(str(relative))
+            try:
+                content = base64.b64decode(
+                    "".join(item.content_base64.split()),
+                    validate=True,
+                )
+            except (binascii.Error, ValueError) as exc:
+                raise ProjectImportError(
+                    f"Project file is not valid base64: {item.path}"
+                ) from exc
+            if len(content) > _MAX_SINGLE_FILE_BYTES:
+                raise ProjectImportError(f"Project file is oversized: {item.path}")
+            total_bytes += len(content)
+            if total_bytes > self.max_upload_bytes:
+                raise ProjectImportError(
+                    "Project folder exceeds "
+                    f"{self.max_upload_bytes // (1024 * 1024)} MiB limit"
+                )
+            decoded.append((relative, content))
+
+        target_id = f"upload-{uuid4().hex[:16]}"
+        workspace = self.project_root / target_id
+        extract_root = workspace / "source"
+
+        try:
+            extract_root.mkdir(parents=True, exist_ok=False)
+            root = extract_root.resolve()
+            for relative, content in decoded:
+                destination = (root / Path(*relative.parts)).resolve()
+                try:
+                    destination.relative_to(root)
+                except ValueError as exc:
+                    raise ProjectImportError(
+                        "Project file escapes the project directory"
+                    ) from exc
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_bytes(content)
+
+            return self._register_discovered_project(
+                workspace=workspace,
+                extract_root=extract_root,
+                target_id=target_id,
+                display_name=display_name,
+            )
+        except Exception:
+            shutil.rmtree(workspace, ignore_errors=True)
+            raise
+
+    def _register_discovered_project(
+        self,
+        *,
+        workspace: Path,
+        extract_root: Path,
+        target_id: str,
+        display_name: str,
+    ) -> ApiProject:
+        architecture_path = workspace / "architecture.yaml"
+        profile_path = workspace / "target-profile.yaml"
+        repository = _repository_root(extract_root)
+        # Uploaded trees live inside the agent's own work tree, which is a git
+        # repo with api_data/ ignored; without their own .git, tools like
+        # Semgrep would treat every file as git-ignored and scan nothing.
+        _init_staging_repository(repository)
+        discovery_api = ProjectDiscovery()
+        discovery = discovery_api.discover(repository)
+        if not discovery.components:
+            raise ProjectImportError(
+                "Discovery found no runnable project components in the uploaded project"
+            )
+
+        profile = discovery_api.build_profile(
+            discovery,
+            profile_id=target_id,
+            name=display_name,
+            architecture_file=architecture_path,
+        )
+        _write_discovered_architecture(profile, architecture_path)
+        profile_path.write_text(
+            yaml.safe_dump(
+                profile.model_dump(mode="json"),
+                allow_unicode=True,
+                sort_keys=False,
+            ),
+            encoding="utf-8",
+        )
+        self.registry.register_generated(profile_path=profile_path, profile=profile)
+        self.store.upsert_project(profile_path=profile_path, profile=profile)
+        return self.store.get_project(target_id)
 
     def create_run(
         self,
@@ -251,7 +348,9 @@ class RunOrchestrator:
         path = self.store.artifact_dir(run_id) / "gate.json"
         if not path.is_file():
             raise FileNotFoundError("Run gate artifact is missing")
-        return GateResult.model_validate_json(path.read_text(encoding="utf-8"))
+        return _public_gate(
+            GateResult.model_validate_json(path.read_text(encoding="utf-8"))
+        )
 
     def get_timeline(self, run_id: str) -> RunTimeline:
         reports = self.list_reports(run_id)
@@ -267,9 +366,27 @@ class RunOrchestrator:
             ],
         )
 
+    def get_run_progress(self, run_id: str) -> RunProgress:
+        """Mid-run progress; safe to poll while the run is queued or running."""
+        artifact_dir = self.store.artifact_dir(run_id)
+        return _build_run_progress(artifact_dir)
+
+    def get_run_discovery(self, run_id: str) -> RunDiscoveryView:
+        artifact_dir = self.store.artifact_dir(run_id)
+        view = _read_discovery_view(artifact_dir)
+        if view is None:
+            raise FileNotFoundError("Run discovery artifact is not available yet")
+        return view
+
     def create_chat_session(self, request: CreateChatSessionRequest) -> ChatSession:
         self.registry.get(request.target_id)
         project = self.store.get_project(request.target_id)
+        if not project.repository_available:
+            # A chat is permanently bound to its project; without a local
+            # checkout no message in it could ever start an analysis.
+            raise ProjectImportError(
+                "Project repository is not available on the server"
+            )
         title = (request.title or project.name or project.id).strip()
         return self.store.create_chat_session(target_id=request.target_id, title=title)
 
@@ -279,19 +396,48 @@ class RunOrchestrator:
     def get_chat_snapshot(self, session_id: str) -> ChatSnapshot:
         session = self.store.get_chat_session(session_id)
         messages = self.store.list_chat_messages(session_id)
+        run_snapshots = [
+            self._chat_run_snapshot(run_id)
+            for run_id in self.store.list_chat_run_ids(session_id)
+        ]
         if session.active_run_id is None:
-            return ChatSnapshot(session=session, messages=messages)
+            return ChatSnapshot(
+                session=session,
+                messages=messages,
+                runs=run_snapshots,
+            )
 
-        run = self.store.get_run(session.active_run_id)
-        artifact_dir = self.store.artifact_dir(run.id)
-        reports = _read_partial_reports(artifact_dir)
-        gate = _read_optional_gate(artifact_dir)
+        active = next(
+            (
+                item
+                for item in reversed(run_snapshots)
+                if item.run.id == session.active_run_id
+            ),
+            None,
+        )
+        if active is None:
+            active = self._chat_run_snapshot(session.active_run_id)
+            run_snapshots.append(active)
         return ChatSnapshot(
             session=session,
             messages=messages,
+            run=active.run,
+            reports=active.reports,
+            gate=active.gate,
+            progress=active.progress,
+            discovery=active.discovery,
+            runs=run_snapshots,
+        )
+
+    def _chat_run_snapshot(self, run_id: str) -> ChatRunSnapshot:
+        run = self.store.get_run(run_id)
+        artifact_dir = self.store.artifact_dir(run.id)
+        return ChatRunSnapshot(
             run=run,
-            reports=reports,
-            gate=gate,
+            reports=_read_partial_reports(artifact_dir),
+            gate=_public_gate(_read_optional_gate(artifact_dir)),
+            progress=_build_run_progress(artifact_dir),
+            discovery=_read_discovery_view(artifact_dir),
         )
 
     def send_chat_message(
@@ -411,7 +557,8 @@ class RunOrchestrator:
                 gate_decision=gate.decision,
                 error=error,
             )
-        except Exception as exc:  # noqa: BLE001 - background boundary becomes persisted error
+        except Exception as exc:
+            logger.exception("Run %s failed with an orchestration error", run_id)
             error = error_from_exception(
                 exc,
                 layer="pipeline",
@@ -462,6 +609,210 @@ def _pipeline_args(
     )
 
 
+def _validated_manifest_path(raw_path: str) -> PurePosixPath:
+    if raw_path.startswith(("/", "\\")):
+        raise ProjectImportError("Project file path must be relative")
+    normalized = raw_path.replace("\\", "/").strip().strip("/")
+    if not normalized:
+        raise ProjectImportError("Project file path is empty")
+    relative = PurePosixPath(normalized)
+    if relative.is_absolute() or ".." in relative.parts:
+        raise ProjectImportError("Project file path escapes the project directory")
+    if any(part in {"", "."} for part in relative.parts):
+        raise ProjectImportError(f"Project file path is not normalized: {raw_path}")
+    if ":" in relative.parts[0]:
+        raise ProjectImportError("Project file contains an absolute Windows path")
+    if len(relative.parts) > 32:
+        raise ProjectImportError("Project file path is too deep")
+    return relative
+
+
+def _build_run_progress(artifact_dir: Path) -> RunProgress:
+    raw_events = read_progress(artifact_dir / PROGRESS_FILE_NAME)
+    stages = [
+        RunStageEvent(
+            stage=str(event.get("stage", "pipeline"))[:32],
+            status=str(event.get("status", "running")),
+            detail=(
+                str(event["detail"])[:500]
+                if event.get("detail") is not None
+                else None
+            ),
+            at=str(event["ts"]) if event.get("ts") is not None else None,
+        )
+        for event in raw_events
+        if event.get("kind") == "stage"
+    ]
+    activities = _read_audit_activities(artifact_dir)
+
+    findings_total: int | None = None
+    current_finding: str | None = None
+    finished: set[str] = set()
+    finding_events: list[RunFindingProgressEvent] = []
+    for event in raw_events:
+        kind = event.get("kind")
+        if kind == "finding_started":
+            total = event.get("total")
+            if isinstance(total, int) and total > 0:
+                findings_total = total
+            finding_id = str(event.get("finding_id", ""))
+            if finding_id and finding_id not in finished:
+                title = event.get("title")
+                current_finding = (
+                    str(title)[:300] if title else str(event.get("rule_id", ""))
+                )
+                finding_events.append(
+                    RunFindingProgressEvent(
+                        finding_id=finding_id[:256],
+                        status="started",
+                        title=str(title)[:300] if title else None,
+                        severity=(
+                            str(event["severity"])[:32]
+                            if event.get("severity") is not None
+                            else None
+                        ),
+                        rule_id=(
+                            str(event["rule_id"])[:300]
+                            if event.get("rule_id") is not None
+                            else None
+                        ),
+                        file=(
+                            str(event["file"])[:1024]
+                            if event.get("file") is not None
+                            else None
+                        ),
+                        index=(
+                            event["index"]
+                            if isinstance(event.get("index"), int)
+                            and event["index"] > 0
+                            else None
+                        ),
+                        total=(
+                            total if isinstance(total, int) and total > 0 else None
+                        ),
+                        at=str(event["ts"]) if event.get("ts") is not None else None,
+                    )
+                )
+        elif kind == "finding_finished":
+            finding_id = str(event.get("finding_id", ""))
+            if finding_id:
+                finished.add(finding_id)
+                if current_finding is not None:
+                    current_finding = None
+                finding_events.append(
+                    RunFindingProgressEvent(
+                        finding_id=finding_id[:256],
+                        status="finished",
+                        result=(
+                            str(event["status"])[:32]
+                            if event.get("status") is not None
+                            else None
+                        ),
+                        at=str(event["ts"]) if event.get("ts") is not None else None,
+                    )
+                )
+
+    return RunProgress(
+        stages=stages,
+        activities=activities,
+        finding_events=finding_events,
+        findings_total=findings_total,
+        findings_done=len(finished),
+        current_finding=current_finding,
+    )
+
+
+def _read_audit_activities(artifact_dir: Path) -> list[RunActivityEvent]:
+    audit_path = artifact_dir / "audit" / "executor.jsonl"
+    events: list[RunActivityEvent] = []
+    try:
+        raw_lines = audit_path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+    for line in raw_lines[-100:]:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        action_id = record.get("action_id")
+        tool = record.get("tool")
+        if not action_id or not tool:
+            continue
+        exit_code = record.get("exit_code")
+        duration_ms = record.get("duration_ms")
+        events.append(
+            RunActivityEvent(
+                action_id=str(action_id)[:128],
+                tool=str(tool)[:128],
+                target=(
+                    str(record["target"])[:200]
+                    if record.get("target") is not None
+                    else None
+                ),
+                status=str(record["status"])[:64] if record.get("status") else None,
+                exit_code=exit_code if isinstance(exit_code, int) else None,
+                duration_ms=duration_ms if isinstance(duration_ms, int) else None,
+                at=str(record["timestamp"]) if record.get("timestamp") else None,
+            )
+        )
+    return events
+
+
+def _read_discovery_view(artifact_dir: Path) -> RunDiscoveryView | None:
+    discovery_payload = _read_optional_json(artifact_dir / "discovery.json")
+    profile_payload = _read_optional_json(artifact_dir / "target-profile.json")
+    if discovery_payload is None:
+        return None
+
+    components: list[DiscoveryComponentView] = []
+    technologies: list[str] = []
+    for raw in discovery_payload.get("components") or []:
+        if not isinstance(raw, dict):
+            continue
+        component_tech = [str(item) for item in raw.get("technologies") or []]
+        frameworks = [str(item) for item in raw.get("frameworks") or []]
+        for name in [*component_tech, *frameworks]:
+            if name and name not in technologies:
+                technologies.append(name)
+        components.append(
+            DiscoveryComponentView(
+                id=str(raw.get("id", ""))[:120],
+                root=str(raw.get("root", "."))[:200],
+                technologies=component_tech[:12],
+                frameworks=frameworks[:12],
+                dependency_files=[str(item) for item in (raw.get("dependency_files") or [])][:16],
+                dockerfiles=[str(item) for item in (raw.get("dockerfiles") or [])][:16],
+                local_addresses=[
+                    str(item) for item in (raw.get("allowed_local_addresses") or [])
+                ][:8],
+            )
+        )
+
+    services: list[str] = []
+    if isinstance(profile_payload, dict):
+        raw_services = profile_payload.get("services")
+        if isinstance(raw_services, dict):
+            services = sorted(str(key) for key in raw_services)
+
+    return RunDiscoveryView(
+        components=components[:24],
+        services=services[:24],
+        technologies=technologies[:24],
+        warnings=[str(item)[:300] for item in (discovery_payload.get("warnings") or [])][:10],
+    )
+
+
+def _read_optional_json(path: Path) -> dict | None:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
 def _extract_project_archive(content: bytes, destination: Path) -> None:
     destination.mkdir(parents=True, exist_ok=False)
     try:
@@ -507,6 +858,34 @@ def _extract_project_archive(content: bytes, destination: Path) -> None:
             target.parent.mkdir(parents=True, exist_ok=True)
             with archive.open(info, "r") as source, target.open("wb") as output:
                 shutil.copyfileobj(source, output, length=1024 * 1024)
+
+
+def _init_staging_repository(root: Path) -> None:
+    """Best-effort `git init` + index for a staged upload; never fails import.
+
+    The staging directory must behave like an ordinary project checkout for
+    git-aware tools (Semgrep, diff tooling). Only the local index is touched:
+    nothing is committed and no identity or network is required.
+    """
+    try:
+        subprocess.run(
+            ["git", "init", "-q"],
+            cwd=root,
+            capture_output=True,
+            timeout=30,
+            check=False,
+        )
+        subprocess.run(
+            ["git", "add", "-A"],
+            cwd=root,
+            capture_output=True,
+            timeout=120,
+            check=False,
+            env={**os.environ, "GIT_AUTHOR_NAME": "cft", "GIT_AUTHOR_EMAIL": "cft@local",
+                 "GIT_COMMITTER_NAME": "cft", "GIT_COMMITTER_EMAIL": "cft@local"},
+        )
+    except (OSError, subprocess.SubprocessError):
+        return
 
 
 def _repository_root(extract_root: Path) -> Path:
@@ -559,6 +938,20 @@ def _read_optional_gate(artifact_dir: Path) -> GateResult | None:
         return GateResult.model_validate_json(path.read_text(encoding="utf-8"))
     except ValueError:
         return None
+
+
+def _public_gate(gate: GateResult | None) -> GateResult | None:
+    """Remove server-owned artifact paths from API/chat representations."""
+    if gate is None:
+        return None
+    return gate.model_copy(
+        update={
+            "findings": [
+                finding.model_copy(update={"report_path": None})
+                for finding in gate.findings
+            ]
+        }
+    )
 
 
 def _read_reports(artifact_dir: Path) -> list[tuple[FinalReport, Path]]:
@@ -702,6 +1095,13 @@ def _default_chat_answerer(question: str, context: dict[str, object]) -> str:
 def _default_pipeline_runner(args: argparse.Namespace) -> int:
     # Keep the API importable for metadata/read-only clients; the heavy LangGraph
     # dependency is loaded only when a real analysis run starts.
+    from app.config import settings as pipeline_settings
+
+    if pipeline_settings.sandbox_image:
+        # The readiness probe reads this directly from the process environment;
+        # pydantic-settings only exposes it on the settings object.
+        os.environ.setdefault("CFT_SANDBOX_IMAGE", pipeline_settings.sandbox_image)
+
     from app.ci_pipeline import run_ci_pipeline
 
     return run_ci_pipeline(args)

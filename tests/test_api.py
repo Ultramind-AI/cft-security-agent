@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import io
+import json
 import time
 import zipfile
 from pathlib import Path
@@ -12,6 +14,7 @@ from api.app import create_app
 from api.registry import ApiTargetRegistry
 from api.service import RunOrchestrator
 from api.store import ApiStore
+from pipeline.progress import PipelineProgressRecorder
 from schemas.agent_loop import AgentDecisionRecord
 from schemas.api import CreateChatSessionRequest, CreateRunRequest
 from schemas.errors import ErrorDetail
@@ -21,7 +24,7 @@ from schemas.evidence import (
     EvidenceObservation,
     EvidenceScope,
 )
-from schemas.pipeline import GateResult
+from schemas.pipeline import GateResult, PipelineFindingResult
 from schemas.report import (
     FinalReport,
     ReportFinding,
@@ -161,6 +164,16 @@ def _fake_pipeline(args: argparse.Namespace) -> int:
         reports_total=1,
         confirmed=1,
         reasons=["Confirmed HIGH finding blocks the gate."],
+        findings=[
+            PipelineFindingResult(
+                finding_id="finding-1",
+                status="confirmed",
+                gate_effect="fail",
+                category="confirmed_risk",
+                reason="Confirmed HIGH finding blocks the gate.",
+                report_path=str((reports_dir / "000-finding-1.json").resolve()),
+            )
+        ],
     )
     (output_dir / "gate.json").write_text(
         gate.model_dump_json(indent=2) + "\n",
@@ -265,6 +278,10 @@ def test_api_runs_the_canonical_pipeline_and_serves_persisted_results(tmp_path: 
         gate = client.get(f"/runs/{run_id}/gate")
         assert gate.status_code == 200
         assert gate.json()["decision"] == "fail"
+        assert all(
+            finding["report_path"] is None
+            for finding in gate.json()["findings"]
+        )
 
 
 def test_api_streams_run_status_until_completion(tmp_path: Path) -> None:
@@ -412,6 +429,7 @@ def test_chat_starts_analysis_streams_persisted_result_and_answers_followup(
 
         snapshot = client.get(f"/chat/sessions/{session_id}").json()
         assert snapshot["run"]["status"] == "completed"
+        assert [item["run"]["id"] for item in snapshot["runs"]] == [run_id]
         assert snapshot["reports"][0]["finding_id"] == "finding-1"
         assert snapshot["gate"]["decision"] == "fail"
         assert any(message["kind"] == "summary" for message in snapshot["messages"])
@@ -425,6 +443,38 @@ def test_chat_starts_analysis_streams_persisted_result_and_answers_followup(
         assert messages[-1]["role"] == "assistant"
         assert "Ответ по Evidence" in messages[-1]["content"]
         assert followup.json()["session"]["active_run_id"] == run_id
+
+
+def test_chat_snapshot_retains_multiple_analysis_runs(tmp_path: Path) -> None:
+    orchestrator = _orchestrator(tmp_path)
+    with TestClient(create_app(orchestrator)) as client:
+        session = client.post(
+            "/chat/sessions", json={"target_id": "demo-target"}
+        ).json()
+        session_id = session["id"]
+
+        first = client.post(
+            f"/chat/sessions/{session_id}/messages",
+            json={"content": "Проведи полный анализ", "agent_mode": "stub"},
+        ).json()
+        first_run_id = first["session"]["active_run_id"]
+        _wait_for_completion(client, first_run_id)
+
+        second = client.post(
+            f"/chat/sessions/{session_id}/messages",
+            json={"content": "Перепроверь auth глубже", "agent_mode": "stub"},
+        ).json()
+        second_run_id = second["session"]["active_run_id"]
+        assert second_run_id != first_run_id
+        _wait_for_completion(client, second_run_id)
+
+        snapshot = client.get(f"/chat/sessions/{session_id}").json()
+        assert [item["run"]["id"] for item in snapshot["runs"]] == [
+            first_run_id,
+            second_run_id,
+        ]
+        assert all(item["reports"] for item in snapshot["runs"])
+        assert all(item["gate"]["decision"] == "fail" for item in snapshot["runs"])
 
 
 
@@ -462,3 +512,259 @@ def test_generated_upload_profile_is_reloaded_after_service_restart(tmp_path: Pa
         assert session.target_id == project.id
     finally:
         second.close()
+
+
+def _folder_manifest() -> dict:
+    files = {
+        "manage.py": "print('manage')\n",
+        "requirements.txt": "Django==5.0\n",
+        "backend/requirements.txt": "Django==5.0\n",
+        "backend/app/views.py": "password = ''\n",
+        "Dockerfile": "FROM python:3.11-slim\n",
+        "docker-compose.yml": (
+            "services:\n  app:\n    build: .\n    ports:\n      - '8000:8000'\n"
+        ),
+    }
+    return {
+        "name": "folder demo",
+        "files": [
+            {"path": path, "content_base64": base64.b64encode(content.encode()).decode()}
+            for path, content in files.items()
+        ],
+    }
+
+
+def test_api_imports_folder_manifest_with_nested_paths(tmp_path: Path) -> None:
+    orchestrator = _orchestrator(tmp_path)
+    with TestClient(create_app(orchestrator)) as client:
+        response = client.post("/projects/import-files", json=_folder_manifest())
+        assert response.status_code == 201
+        project = response.json()
+
+        assert project["id"].startswith("upload-")
+        assert project["name"] == "folder demo"
+        assert project["repository_available"] is True
+        assert project["services"]
+
+        registered = orchestrator.registry.get(project["id"])
+        repository = registered.profile.repository_path
+        assert repository is not None
+        # Directory structure must survive the import.
+        assert (repository / "backend" / "app" / "views.py").is_file()
+
+
+def test_api_rejects_unsafe_folder_manifest_paths(tmp_path: Path) -> None:
+    orchestrator = _orchestrator(tmp_path)
+    with TestClient(create_app(orchestrator)) as client:
+        for unsafe in ("../escape.txt", "/etc/passwd", "C:evil.py", "a/../../b.py"):
+            payload = {
+                "name": "bad",
+                "files": [
+                    {"path": unsafe, "content_base64": base64.b64encode(b"x").decode()}
+                ],
+            }
+            response = client.post("/projects/import-files", json=payload)
+            assert response.status_code == 422, unsafe
+            assert "escapes" in response.json()["detail"] or "path" in response.json()["detail"]
+
+
+def test_api_rejects_invalid_base64_folder_manifest(tmp_path: Path) -> None:
+    orchestrator = _orchestrator(tmp_path)
+    with TestClient(create_app(orchestrator)) as client:
+        payload = {
+            "name": "bad",
+            "files": [{"path": "manage.py", "content_base64": "!!!not-base64!!!"}],
+        }
+        response = client.post("/projects/import-files", json=payload)
+
+    assert response.status_code == 422
+
+
+def test_api_rejects_oversized_folder_manifest(tmp_path: Path) -> None:
+    orchestrator = RunOrchestrator(
+        registry=_target_registry(tmp_path),
+        store=ApiStore(tmp_path / "api.sqlite3"),
+        artifact_root=tmp_path / "artifacts",
+        project_root=tmp_path / "uploaded-projects",
+        pipeline_runner=_fake_pipeline,
+        max_upload_bytes=64,
+    )
+    with TestClient(create_app(orchestrator)) as client:
+        payload = {
+            "name": "big",
+            "files": [
+                {"path": "manage.py", "content_base64": base64.b64encode(b"x" * 4096).decode()}
+            ],
+        }
+        response = client.post("/projects/import-files", json=payload)
+
+    assert response.status_code == 422
+
+
+def _progress_pipeline(args: argparse.Namespace) -> int:
+    output_dir = Path(args.output_dir)
+    recorder = PipelineProgressRecorder(output_dir)
+    recorder.discovery_done("1 components: python, django")
+    recorder.sast_done(2)
+    recorder.finding_started(
+        index=1,
+        total=2,
+        finding_id="finding-1",
+        title="Demo finding",
+        severity="HIGH",
+        rule_id="demo.rule",
+        file="app.py",
+    )
+    recorder.finding_finished(finding_id="finding-1", status="confirmed")
+
+    audit_dir = output_dir / "audit"
+    audit_dir.mkdir(parents=True, exist_ok=True)
+    audit_record = {
+        "timestamp": "2026-01-01T00:00:00+00:00",
+        "run_id": args.output_dir,
+        "session_id": "session-1",
+        "action_id": "action-1",
+        "tool": "observe_http_response",
+        "target": "demo-target",
+        "status": "completed",
+        "exit_code": 0,
+        "duration_ms": 120,
+        "evidence_ref": "evidence:evidence-1",
+        "proposal_digest": "a" * 64,
+        "evidence_digest": "b" * 64,
+        "policy_digest": "c" * 64,
+        "runtime_backend": "docker",
+        "network_mode": "none",
+    }
+    (audit_dir / "executor.jsonl").write_text(
+        json.dumps(audit_record) + "\n", encoding="utf-8"
+    )
+
+    discovery = {
+        "repository_root": str(output_dir),
+        "components": [
+            {
+                "id": "app",
+                "root": ".",
+                "technologies": ["python"],
+                "frameworks": ["django"],
+                "dependency_files": ["requirements.txt"],
+                "dockerfiles": ["Dockerfile"],
+                "compose_candidates": [],
+                "build_candidates": [],
+                "run_candidates": [],
+                "healthcheck_candidates": [],
+                "allowed_local_addresses": ["127.0.0.1:8000"],
+                "source_paths": ["."],
+                "confidence": 0.9,
+            }
+        ],
+        "signals": [],
+        "project_files": [],
+        "warnings": [],
+    }
+    (output_dir / "discovery.json").write_text(
+        json.dumps(discovery), encoding="utf-8"
+    )
+    (output_dir / "target-profile.json").write_text(
+        json.dumps({"services": {"app": {"type": "django"}}}), encoding="utf-8"
+    )
+    return _fake_pipeline(args)
+
+
+def test_api_serves_progress_and_discovery_during_and_after_run(tmp_path: Path) -> None:
+    orchestrator = _orchestrator(tmp_path, pipeline_runner=_progress_pipeline)
+    with TestClient(create_app(orchestrator)) as client:
+        response = client.post("/runs", json={"target_id": "demo-target"})
+        run_id = response.json()["id"]
+
+        progress_payload: dict | None = None
+        deadline = time.monotonic() + 5.0
+        while time.monotonic() < deadline:
+            progress = client.get(f"/runs/{run_id}/progress")
+            assert progress.status_code == 200
+            progress_payload = progress.json()
+            # Stages and the executor audit trail are written at slightly
+            # different moments by the background pipeline thread.
+            if progress_payload["stages"] and progress_payload["activities"]:
+                break
+            time.sleep(0.05)
+        assert progress_payload is not None and progress_payload["stages"]
+        assert progress_payload["activities"], "executor audit activity missing"
+
+        stage_names = [stage["stage"] for stage in progress_payload["stages"]]
+        assert "discovery" in stage_names
+        sast_stage = next(item for item in progress_payload["stages"] if item["stage"] == "sast")
+        assert sast_stage["status"] == "done"
+        assert "2 findings" in (sast_stage["detail"] or "")
+        assert progress_payload["findings_total"] == 2
+        assert progress_payload["findings_done"] >= 1
+        assert progress_payload["finding_events"][0]["status"] == "started"
+        assert progress_payload["finding_events"][0]["title"] == "Demo finding"
+        assert progress_payload["finding_events"][1]["status"] == "finished"
+        assert progress_payload["finding_events"][1]["result"] == "confirmed"
+        activities = progress_payload["activities"]
+        assert activities[0]["tool"] == "observe_http_response"
+        assert activities[0]["exit_code"] == 0
+        assert "digest" not in json.dumps(activities)
+
+        discovery = client.get(f"/runs/{run_id}/discovery")
+        assert discovery.status_code == 200
+        discovery_text = discovery.text
+        assert "django" in discovery_text
+        # The sanitized view must never leak local artifact or repository paths.
+        assert str(orchestrator.artifact_root) not in discovery_text
+
+        completed = _wait_for_completion(client, run_id)
+        assert completed["status"] == "completed"
+
+        final_progress = client.get(f"/runs/{run_id}/progress").json()
+        assert final_progress["findings_total"] == 2
+
+
+def test_chat_session_rejects_project_without_repository(tmp_path: Path) -> None:
+    # Build the trusted profile, then remove the checkout it points to so the
+    # project is registered but its repository_available becomes False.
+    registry = _target_registry(tmp_path)
+    import shutil as _shutil
+
+    _shutil.rmtree(tmp_path / "target-repo")
+    store = ApiStore(tmp_path / "api.sqlite3")
+    orchestrator = RunOrchestrator(
+        registry=registry,
+        store=store,
+        artifact_root=tmp_path / "artifacts",
+        project_root=tmp_path / "uploaded-projects",
+        pipeline_runner=_fake_pipeline,
+    )
+    with TestClient(create_app(orchestrator)) as client:
+        assert client.get("/projects").json()[0]["repository_available"] is False
+        response = client.post(
+            "/chat/sessions", json={"target_id": "demo-target"}
+        )
+        assert response.status_code == 422
+        assert "not available" in response.json()["detail"]
+
+
+def test_chat_snapshot_includes_progress_and_discovery(tmp_path: Path) -> None:
+    orchestrator = _orchestrator(tmp_path, pipeline_runner=_progress_pipeline)
+    with TestClient(create_app(orchestrator)) as client:
+        session = client.post(
+            "/chat/sessions", json={"target_id": "demo-target"}
+        ).json()
+        started = client.post(
+            f"/chat/sessions/{session['id']}/messages",
+            json={"content": "Проведи полный анализ", "agent_mode": "stub"},
+        )
+        assert started.status_code == 200
+        snapshot = started.json()
+        run_id = snapshot["session"]["active_run_id"]
+        _wait_for_completion(client, run_id)
+
+        snapshot = client.get(f"/chat/sessions/{session['id']}").json()
+        assert snapshot["progress"]["findings_total"] == 2
+        assert snapshot["discovery"]["technologies"]
+
+        completed_snapshot = client.get(f"/chat/sessions/{session['id']}").json()
+        assert completed_snapshot["gate"]["decision"] == "fail"
+        assert completed_snapshot["progress"]["stages"]

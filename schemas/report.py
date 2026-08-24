@@ -56,6 +56,12 @@ class SandboxActionSummary(BaseModel):
     execution_status: str | None = None
     exit_code: int | None = None
     timed_out: bool = False
+    duration_ms: int | None = Field(default=None, ge=0)
+    command: list[str] = Field(default_factory=list, max_length=32)
+    cwd: str | None = Field(default=None, max_length=1024)
+    stdout: str | None = Field(default=None, max_length=8192)
+    stderr: str | None = Field(default=None, max_length=8192)
+    sandbox_session_id: str | None = Field(default=None, max_length=256)
     artifact_refs: list[str] = Field(default_factory=list)
 
 

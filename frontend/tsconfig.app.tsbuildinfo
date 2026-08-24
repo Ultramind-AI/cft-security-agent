@@ -1,1 +1,0 @@
-{"root":["./src/app.tsx","./src/api.ts","./src/main.tsx","./src/types.ts","./src/vite-env.d.ts","./src/components/agenttimeline.tsx","./src/components/chatanalysispanel.tsx","./src/components/evidencecard.tsx","./src/components/statuspill.tsx","./src/pages/chatpage.tsx","./src/pages/dashboardpage.tsx","./src/pages/runpage.tsx"],"version":"5.9.3"}

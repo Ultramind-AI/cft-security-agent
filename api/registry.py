@@ -13,7 +13,7 @@ class RegisteredTarget:
 
 
 class ApiTargetRegistry:
-    """Trusted static profiles plus server-generated profiles for uploaded projects."""
+    """Trusted TargetProfile registry used by the service API."""
 
     def __init__(self, targets: list[RegisteredTarget]) -> None:
         self._targets = {target.profile.id: target for target in targets}
@@ -47,16 +47,6 @@ class ApiTargetRegistry:
         if not targets:
             raise ValueError("At least one API target profile must be registered")
         return cls(targets)
-
-    def register_generated(self, *, profile_path: Path, profile: TargetProfile) -> None:
-        """Register a profile created by the server from deterministic Discovery."""
-
-        if profile.id in self._targets:
-            raise ValueError(f"Duplicate API target id: {profile.id}")
-        self._targets[profile.id] = RegisteredTarget(
-            profile_path=profile_path.resolve(),
-            profile=profile,
-        )
 
     def get(self, target_id: str) -> RegisteredTarget:
         try:

@@ -68,7 +68,7 @@ The agent-facing tool catalog is defined in `tools/contracts.py`. The catalog is
 metadata only: it fixes names, typed input/output schemas, expected errors and
 permissions without granting the model any direct execution primitive. These
 agent-facing contracts are deliberately separate from Executor capabilities such
-as `safe_noop`, `check_sberlab_health`, or the fixed
+as `safe_noop`, `observe_http_surface`, or the fixed
 `inspect_dockerfile_user`, `inspect_python_password_assignment` and `inspect_react_dangerous_html_flow` bounded source verifiers.
 
 | Tool | Access | Purpose | Permission | Validator |

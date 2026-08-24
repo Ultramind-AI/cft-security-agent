@@ -117,8 +117,8 @@ def test_sberlab_approved_runner_sequence_uses_manager_runtime_map_and_audit(tmp
         assert runtime_map.network_name, diagnostic
         assert "token=" not in diagnostic.lower() and "password=" not in diagnostic.lower(), diagnostic
         actions = [
-            ActionProposal(id="runner-health", tool="check_sberlab_health", target=profile.id, purpose="health", expected_evidence="health", service="backend", endpoint="/health/"),
-            ActionProposal(id="runner-projects", tool="get_sberlab_public_projects", target=profile.id, purpose="projects", expected_evidence="projects", service="backend", endpoint="/api/projects/"),
+            ActionProposal(id="runner-health", tool="observe_http_surface", target=profile.id, purpose="health", expected_evidence="health", service="backend", endpoint="/health/"),
+            ActionProposal(id="runner-projects", tool="observe_http_surface", target=profile.id, purpose="projects", expected_evidence="projects", service="backend", endpoint="/api/projects/"),
         ]
         for action in actions:
             approvals.record(action, ValidationResult(approved=True, action_id=action.id, reason="integration"))

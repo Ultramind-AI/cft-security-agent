@@ -12,9 +12,6 @@ sast:
 
 runtime:
   type: docker_compose
-  base_url: http://127.0.0.1:8000
-  allowed_local_addresses:
-    - 127.0.0.1:8000
   compose_file: docker-compose.yml
 
 services:
@@ -26,8 +23,6 @@ services:
     dockerfile: backend/Dockerfile
     healthcheck:
       path: /health/
-    allowed_local_addresses:
-      - 127.0.0.1:8000
     internal_port: 8000
     runtime_endpoints:
       - /health/

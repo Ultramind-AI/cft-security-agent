@@ -56,4 +56,5 @@ python -m app.pipeline_run \
 
 `Project Discovery` не входит в эту задачу: сейчас профиль задаётся оператором. Автоматическое построение/дополнение профиля — T03.
 
-Legacy runtime tools `check_sberlab_health` и `get_sberlab_public_projects` пока остаются для текущего MVP. Их замена на generic runtime actions относится к runtime/sandbox задачам.
+Runtime-проверки используют общий `observe_http_surface`: допустимые service и
+endpoint берутся из `TargetProfile` и готового `RuntimeServiceMap`.

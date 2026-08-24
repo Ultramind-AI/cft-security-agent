@@ -27,11 +27,15 @@ class Settings(BaseSettings):
 
     api_database_path: Path = Path("api_data/cft-security.sqlite3")
     api_artifact_root: Path = Path("artifacts/api-runs")
-    api_project_root: Path = Path("api_data/projects")
-    api_max_upload_bytes: int = Field(default=104_857_600, ge=1_048_576)
     api_target_profiles: str = "targets/sberlab.yaml"
     api_host: str = "127.0.0.1"
     api_port: int = Field(default=8080, ge=1, le=65535)
+    api_max_concurrent_runs: int = Field(default=2, ge=1, le=32)
+    api_max_concurrent_sandboxes: int = Field(default=2, ge=1, le=32)
+    api_total_cpu_budget: float = Field(default=2.0, gt=0)
+    api_total_memory_mb: int = Field(default=1024, ge=128)
+    api_run_cpu: float = Field(default=1.0, gt=0)
+    api_run_memory_mb: int = Field(default=512, ge=64)
 
     agent_mode: Literal["stub", "llm"] = "stub"
     agent_model_provider: str = ""

@@ -15,7 +15,6 @@ from executor.sandbox import (
 from executor.sandbox_policy import SandboxLimits, SandboxPolicy
 from executor.targets import TargetArtifactDefinition, TargetDefinition, TargetRegistry
 from schemas.action import ActionProposal
-from schemas.runtime import RuntimeService, RuntimeServiceMap
 from schemas.validation import ValidationResult
 from validator.validator import PolicyValidator
 
@@ -249,109 +248,6 @@ def test_executor_denies_production_environment(tmp_path) -> None:
     assert "production" in result.stderr
 
 
-def test_health_capability_builds_only_trusted_sandbox_request(tmp_path) -> None:
-    action = _proposal(tool="check_sberlab_health")
-    approvals, _ = _approve(action)
-    sandbox = FakeSandbox(stdout='{"status":"ok","database":"ok"}')
-
-    executor, sandbox, audit_log = _executor(
-        tmp_path,
-        approvals,
-        sandbox=sandbox,
-    )
-    result = executor.execute(action)
-
-    assert result.status == "completed"
-    assert result.error is None
-    assert result.exit_code == 0
-    assert len(sandbox.requests) == 1
-    request = sandbox.requests[0]
-    assert request.tool == "check_sberlab_health"
-    assert request.base_url == "http://127.0.0.1:8000"
-    assert request.endpoint == "/health/"
-    assert request.parameters == {}
-    assert request.request_timeout_seconds == 1.6
-    assert result.evidence_ref.startswith("execution-")
-    assert result.audit_ref.startswith("audit:")
-    assert len(result.artifacts) == 1
-    assert audit_log.records()[0]["run_id"] == result.run_id
-
-
-def test_health_capability_rejects_arbitrary_parameters_without_start(tmp_path) -> None:
-    action = _proposal(
-        tool="check_sberlab_health",
-        parameters={"unexpected": "value", "url": "http://example.invalid"},
-    )
-    approvals = InMemoryApprovalStore()
-    approvals.record(
-        action,
-        ValidationResult(
-            approved=True,
-            action_id=action.id,
-            reason="synthetic executor defense-in-depth test",
-        ),
-    )
-
-    executor, sandbox, _ = _executor(tmp_path, approvals)
-    result = executor.execute(action)
-
-    assert result.status == "failed"
-    assert result.exit_code == 2
-    assert result.error is not None
-    assert result.error.code == "VALIDATION_ERROR"
-    assert result.error.layer == "executor"
-    assert "do not accept" in result.stderr
-    assert sandbox.requests == []
-
-
-def test_health_capability_reports_unavailable_target(tmp_path) -> None:
-    action = _proposal(tool="check_sberlab_health")
-    approvals, _ = _approve(action)
-    sandbox = FakeSandbox(
-        exit_code=1,
-        stderr="HTTP request failed: connection refused",
-    )
-
-    executor, _, _ = _executor(tmp_path, approvals, sandbox=sandbox)
-    result = executor.execute(action)
-
-    assert result.status == "failed"
-    assert result.exit_code == 1
-    assert "connection refused" in result.stderr
-
-
-def test_public_projects_capability_uses_registered_worker_tool(tmp_path) -> None:
-    action = _proposal(tool="get_sberlab_public_projects")
-    approvals, _ = _approve(action)
-    sandbox = FakeSandbox(stdout='[{"id":1,"title":"demo"}]')
-
-    executor, sandbox, _ = _executor(tmp_path, approvals, sandbox=sandbox)
-    result = executor.execute(action)
-
-    assert result.status == "completed"
-    assert sandbox.requests[0].tool == "get_sberlab_public_projects"
-    assert sandbox.requests[0].endpoint == "/api/projects/"
-    assert sandbox.requests[0].parameters == {}
-
-
-def test_runtime_map_overrides_host_base_url_for_sandbox_request(tmp_path) -> None:
-    action = _proposal(tool="check_sberlab_health", service="backend", endpoint="/health/")
-    approvals, _ = _approve(action)
-    sandbox = FakeSandbox(stdout='{"status":"ok","database":"ok"}')
-    executor, sandbox, _ = _executor(tmp_path, approvals, sandbox=sandbox)
-    runtime_map = RuntimeServiceMap(
-        session_id="session-1",
-        services={"backend": RuntimeService(name="backend", address="http://backend:8000", request_host="127.0.0.1:8000", ready=True, readiness_source="compose_health", allowed_endpoints=["/health/"])},
-    )
-
-    result = executor.execute_sequence([action], runtime_services=runtime_map)
-
-    assert result.status == "completed"
-    assert sandbox.requests[0].base_url == "http://backend:8000"
-    assert sandbox.requests[0].base_url != "http://127.0.0.1:8000"
-    assert sandbox.requests[0].request_host == "127.0.0.1:8000"
-
-
 def test_http_observation_refuses_process_sandbox_without_starting_target(tmp_path) -> None:
     action = _proposal(
         tool="observe_http_surface",
@@ -365,19 +261,6 @@ def test_http_observation_refuses_process_sandbox_without_starting_target(tmp_pa
 
     assert result.status == "denied"
     assert "Docker sandbox backend" in result.stderr
-    assert sandbox.requests == []
-
-
-def test_runtime_map_passes_only_trusted_request_host(tmp_path) -> None:
-    action = _proposal(tool="check_sberlab_health", service="backend", endpoint="/health/", parameters={"host": "attacker.invalid"})
-    approvals = InMemoryApprovalStore()
-    approvals.record(action, ValidationResult(approved=True, action_id=action.id, reason="test"))
-    sandbox = FakeSandbox(stdout='{"status":"ok","database":"ok"}')
-    executor, sandbox, _ = _executor(tmp_path, approvals, sandbox=sandbox)
-    runtime_map = RuntimeServiceMap(session_id="session-1", services={"backend": RuntimeService(name="backend", address="http://backend:8000", request_host="127.0.0.1:8000", ready=True, readiness_source="compose_health", allowed_endpoints=["/health/"])})
-
-    result = executor.execute_sequence([action], runtime_services=runtime_map)
-    assert result.status == "failed"  # Capability parameters reject proposal-controlled headers before launch.
     assert sandbox.requests == []
 
 
@@ -507,8 +390,6 @@ def test_executor_exposes_only_predefined_tools(tmp_path) -> None:
     executor, _, _ = _executor(tmp_path, InMemoryApprovalStore())
 
     assert executor.registered_tools() == (
-        "check_sberlab_health",
-        "get_sberlab_public_projects",
         "inspect_dockerfile_user",
             "inspect_python_password_assignment",
             "inspect_react_dangerous_html_flow",

@@ -36,8 +36,8 @@ The worker contains a second fixed dispatch table for:
 
 ```text
 safe_noop
-check_sberlab_health
-get_sberlab_public_projects
+observe_http_surface
+registered source-verification capabilities
 ```
 
 Unknown capability names exit with a failure and no fallback interpretation. T14.1 adds
@@ -102,17 +102,11 @@ approval and quota state to a transactional persistent store.
 
 ## Target isolation
 
-The proposal contains the logical target id `sberlab-local`, never a URL. The
-trusted target registry resolves its base URL. The worker itself maps capability
-names to fixed paths:
-
-```text
-check_sberlab_health        → GET /health/
-get_sberlab_public_projects → GET /api/projects/
-```
-
-Both HTTP capabilities reject every proposal parameter. `production` is absent
-from the environment allowlist.
+The proposal contains a logical target id, service id and allowlisted endpoint,
+never a caller-controlled URL. `RuntimeServiceMap` resolves the service to
+Compose-internal DNS, while `TargetProfile` supplies the trusted endpoint list
+and optional Host header. `observe_http_surface` rejects endpoint substitution.
+`production` is absent from the environment allowlist.
 
 ## Evidence and audit lifecycle
 

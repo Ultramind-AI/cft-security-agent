@@ -16,6 +16,8 @@ from typing import TYPE_CHECKING, Protocol, Self
 
 from executor.sandbox_policy import SandboxPolicy
 from executor.sandbox_session import SandboxSession
+from pipeline.cancellation import check_cancelled, suspend_cancellation
+from pipeline.subprocess_runner import run_cancellable_process
 from schemas.target import TargetProfile, TargetService
 from security.error_redaction import redact_error_message
 
@@ -57,7 +59,7 @@ def _safe_argv(argv: Sequence[str]) -> tuple[str, ...]:
 
 
 def _run(argv: list[str], cwd: Path, timeout: float) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(argv, cwd=cwd, capture_output=True, text=True, timeout=timeout, shell=False, check=False)
+    return run_cancellable_process(argv, cwd=cwd, timeout=timeout)
 
 
 def _probe(url: str, timeout: float) -> bool:
@@ -94,12 +96,14 @@ class ManagedSandboxSession:
             return self
         except TimeoutError:
             self.status = "timed_out"
-            self._teardown()
+            with suspend_cancellation():
+                self._teardown()
             self._closed = True
             raise
         except Exception:
             self.status = "failed"
-            self._teardown()
+            with suspend_cancellation():
+                self._teardown()
             self._closed = True
             raise
 
@@ -118,7 +122,8 @@ class ManagedSandboxSession:
             return
         self.status = "tearing_down"
         try:
-            self._teardown()
+            with suspend_cancellation():
+                self._teardown()
         finally:
             self._closed = True
             self.ready = False
@@ -167,6 +172,7 @@ class _CommandAdapter:
         url = self.target.build_url(service.healthcheck.path)
         deadline = time.monotonic() + self.readiness_timeout
         while time.monotonic() < deadline:
+            check_cancelled()
             if self.health_probe(url, min(5.0, self.command_timeout)):
                 self.logs.append(SandboxLog(self.session_id, self.name, "healthcheck", service.id, ("GET", service.healthcheck.path), "ok", "ready", "", 0, False, 0))
                 return

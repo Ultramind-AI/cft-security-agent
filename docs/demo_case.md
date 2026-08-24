@@ -27,12 +27,12 @@ Finding
 Executor отдельно имеет рабочий локальный demo-проход:
 
 ```text
-ActionProposal(check_sberlab_health)
+ActionProposal(observe_http_surface, service=backend, endpoint=/health/)
 → Validator
 → ApprovalRecord
 → Executor
 → bounded worker process
-→ fixed GET configured SberLab /health/
+→ fixed GET to an endpoint from RuntimeServiceMap
 → ExecutionResult
 → JSON evidence + JSONL audit
 → agent reads JSON evidence by evidence_ref

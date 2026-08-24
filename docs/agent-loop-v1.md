@@ -56,6 +56,10 @@ The loop is bounded by both step count and wall-clock time. Supported stop reaso
 - `plan_rejected`;
 - `step_budget_exhausted`;
 - `wall_clock_budget_exhausted`;
+- `execution_timeout`;
+- `build_failure`;
+- `unsupported_runtime`;
+- `isolation_or_policy_blocked`;
 - `execution_failed`;
 - `insufficient_evidence`.
 

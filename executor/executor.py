@@ -21,9 +21,10 @@ from executor.sandbox import (
     SandboxRequest,
 )
 from executor.sandbox_audit import AuditRecord
-from executor.sandbox_manager import SandboxManager
+from executor.sandbox_manager import SandboxConfigurationError, SandboxManager
 from executor.sandbox_policy import SandboxLimits, SandboxPolicy
 from executor.sandbox_runner import SandboxRunner
+from executor.sandbox_session import SessionCleanupError, SessionTimeoutError
 from executor.targets import TargetRegistry
 from pipeline.cancellation import RunCancelled
 from schemas.action import ActionProposal
@@ -47,6 +48,9 @@ def _system_error(
     code: Literal[
         "VALIDATION_ERROR",
         "TIMEOUT",
+        "BUILD_FAILED",
+        "UNSUPPORTED_RUNTIME",
+        "ISOLATION_BLOCKED",
         "PERSISTENCE_ERROR",
         "EXECUTION_FAILED",
     ],
@@ -61,6 +65,59 @@ def _system_error(
         message=message,
         retryable=retryable,
     )
+
+
+def _runtime_setup_error(exc: Exception) -> ErrorDetail:
+    """Преобразует ожидаемые ошибки управляемого runtime в стабильные коды."""
+    if isinstance(exc, (TimeoutError, SessionTimeoutError)):
+        return _system_error(
+            "TIMEOUT",
+            message="Managed runtime session timed out",
+            retryable=True,
+        )
+    if isinstance(exc, SessionCleanupError):
+        return _system_error(
+            "ISOLATION_BLOCKED",
+            message="Managed runtime cleanup could not confirm isolation",
+        )
+    if isinstance(exc, SandboxConfigurationError):
+        detail = str(exc).lower()
+        if "build" in detail or "failed to solve" in detail:
+            return _system_error(
+                "BUILD_FAILED",
+                message="Target build failed before runtime verification",
+            )
+        if "unsupported" in detail or "ambiguous target runtime" in detail:
+            return _system_error(
+                "UNSUPPORTED_RUNTIME",
+                message="Target runtime is not supported by the approved sandbox",
+            )
+        return _system_error(
+            "ISOLATION_BLOCKED",
+            message="Managed runtime configuration violated an isolation boundary",
+        )
+    if "persistent docker runner" in str(exc).lower():
+        return _system_error(
+            "ISOLATION_BLOCKED",
+            message="Managed Docker runner could not be established",
+        )
+    return _system_error(
+        "EXECUTION_FAILED",
+        message="Managed runtime observation could not be established",
+    )
+
+
+def _sandbox_result_error(result) -> ErrorDetail | None:
+    """Отмечает сбои запуска Docker как нарушение границы изоляции."""
+    stderr = result.stderr.lower()
+    if result.runtime_backend == "docker" and (
+        "docker container launch failed" in stderr or "docker exec failed" in stderr
+    ):
+        return _system_error(
+            "ISOLATION_BLOCKED",
+            message="Docker sandbox could not be launched safely",
+        )
+    return None
 
 CAPABILITY_REPOSITORY_ACCESS: dict[str, bool] = {
     "safe_noop": False,
@@ -304,20 +361,18 @@ class SafeExecutor:
                 result = self.execute_sequence([action], runtime_services=runtime_services)
         except RunCancelled:
             raise
-        except Exception:
+        except Exception as exc:
             logger.exception("Managed runtime observation could not be established")
+            error = _runtime_setup_error(exc)
             return self._finish(
                 action,
                 run_id,
                 perf_counter(),
                 status="failed",
                 exit_code=127,
-                stderr="Managed runtime observation could not be established",
+                stderr=error.message,
                 decision_reason="Managed runtime session failed",
-                error=_system_error(
-                    "EXECUTION_FAILED",
-                    message="Managed runtime observation could not be established",
-                ),
+                error=error,
             )
 
         if not result.results:
@@ -545,6 +600,7 @@ class SafeExecutor:
             timed_out=sandbox_result.timed_out,
             workspace_id=sandbox_result.workspace_id,
             decision_reason="Sandbox execution completed" if sandbox_result.exit_code == 0 else "Sandbox execution failed",
+            error=_sandbox_result_error(sandbox_result),
             session_id=session_id,
         )
 
@@ -555,6 +611,15 @@ class SafeExecutor:
         reason: str,
         timed_out: bool,
     ) -> ExecutionResult:
+        error = None
+        if any(
+            marker in reason.lower()
+            for marker in ("docker sandbox backend", "docker security boundary")
+        ):
+            error = _system_error(
+                "ISOLATION_BLOCKED",
+                message="Execution was blocked by the Docker isolation boundary",
+            )
         return self._finish(
             action,
             run_id,
@@ -564,6 +629,7 @@ class SafeExecutor:
             stderr=reason,
             timed_out=timed_out,
             decision_reason=reason,
+            error=error,
         )
 
     @staticmethod

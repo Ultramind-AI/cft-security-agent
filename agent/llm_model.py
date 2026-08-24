@@ -225,7 +225,9 @@ class FallbackLLMAgentModel:
         )
 
     def reevaluate(self, state: AgentState) -> ReevaluationResult:
-        deterministic = _evidence_guard(state)
+        from evidence.guard import evaluate_evidence
+
+        deterministic = evaluate_evidence(state)
         if deterministic is not None:
             if getattr(self.client, "trace", False):
                 print(
@@ -233,7 +235,10 @@ class FallbackLLMAgentModel:
                     f"-> {deterministic.status}",
                     file=sys.stderr,
                 )
-            return deterministic
+            return ReevaluationResult(
+                status=deterministic.status,
+                explanation=deterministic.explanation,
+            )
 
         result = self.client.complete_model(
             output_model=ReevaluationResult,
@@ -503,51 +508,6 @@ def _runtime_action_target(state: AgentState) -> tuple[str, str]:
         if endpoints:
             return service_id, min(endpoints)
     raise ValueError("TargetProfile has no trusted runtime endpoint")
-
-def _evidence_guard(state: AgentState) -> ReevaluationResult | None:
-    action = state.get("proposed_action")
-    execution = state.get("execution")
-    if action is None or execution is None:
-        return None
-
-    iteration_count = int(state.get("iteration_count", 0))
-    max_iterations = int(state.get("max_steps", state.get("max_iterations", 2)))
-
-    if execution.status != "completed" or execution.exit_code != 0:
-        if iteration_count >= max_iterations:
-            return ReevaluationResult(
-                status="inconclusive",
-                explanation="Approved verification did not complete successfully.",
-            )
-        return None
-
-    matching = [
-        item
-        for item in state.get("evidence", [])
-        if item.action_id == action.id and item.verdict is not None
-    ]
-    # Терминальный verdict допускается только от Evidence этой ActionProposal
-    if matching:
-        verdict = matching[-1].verdict
-        if verdict in {"confirmed", "rejected"}:
-            return ReevaluationResult(
-                status=verdict,
-                explanation=(
-                    "Capability-specific structured Evidence established the finding "
-                    f"verdict: {verdict}."
-                ),
-            )
-
-    if iteration_count >= max_iterations:
-        return ReevaluationResult(
-            status="inconclusive",
-            explanation=(
-                "The iteration limit was reached without capability-specific Evidence "
-                "for a confirmed or rejected verdict."
-            ),
-        )
-    return None
-
 
 def _dump_model(value: Any) -> Any:
     if value is None:

@@ -34,12 +34,11 @@ def budget_stop_reason(state: AgentState) -> AgentStopReason | None:
 
 
 def terminal_evidence_status(state: AgentState) -> str | None:
-    action = state.get("proposed_action")
-    if action is None:
-        return None
-    for item in reversed(state.get("evidence", [])):
-        if item.action_id == action.id and item.verdict in {"confirmed", "rejected"}:
-            return item.verdict
+    from evidence.guard import evaluate_evidence
+
+    decision = evaluate_evidence(state)
+    if decision is not None and decision.status in {"confirmed", "rejected"}:
+        return decision.status
     return None
 
 

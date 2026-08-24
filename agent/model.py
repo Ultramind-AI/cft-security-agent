@@ -214,8 +214,19 @@ class DeterministicAgentModel:
 
     def reevaluate(self, state: AgentState) -> ReevaluationResult:
         execution = state["execution"]
+        action = state["proposed_action"]
         iteration_count = int(state.get("iteration_count", 0))
         max_iterations = int(state.get("max_steps", state.get("max_iterations", 2)))
+
+        if action.tool != "safe_noop":
+            from evidence.guard import evaluate_evidence
+
+            decision = evaluate_evidence(state)
+            if decision is not None:
+                return ReevaluationResult(
+                    status=decision.status,
+                    explanation=decision.explanation,
+                )
 
         if execution.status != "completed" or execution.exit_code != 0:
             if iteration_count >= max_iterations:
@@ -228,7 +239,7 @@ class DeterministicAgentModel:
                 explanation="Execution failed; another controlled iteration is allowed.",
             )
 
-        if state["proposed_action"].tool != "safe_noop":
+        if action.tool != "safe_noop":
             current_action_id = state["proposed_action"].id
             # Для реальных возможностей успех запуска еще не является вердиктом
             capability_evidence = [

@@ -224,6 +224,19 @@ def test_workflow_runs_full_target_and_always_uploads_artifacts() -> None:
     assert "--target ../target" in workflow
 
 
+def test_workflow_runs_ruff_and_boundary_tests_for_both_registered_targets() -> None:
+    workflow = Path(".github/workflows/security-pipeline.yml").read_text(encoding="utf-8")
+
+    assert "python -m ruff check ." in workflow
+    assert "python -m pytest -q -ra" in workflow
+    assert "Ultramind-AI/sberlab_hack" in workflow
+    assert "stavrmoris/autodealer" in workflow
+    assert "SBERLAB_TARGET_PATH: ../sberlab-target" in workflow
+    assert "AUTODEALER_TARGET_PATH: ../autodealer-target" in workflow
+    assert "tests/test_docker_sandbox_boundary.py" in workflow
+    assert "tests/test_sandbox_manager_integration.py" in workflow
+
+
 def test_repository_level_finding_does_not_become_technical_failure(
     tmp_path: Path,
 ) -> None:

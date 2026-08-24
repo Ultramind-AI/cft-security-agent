@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 
+import executor.executor as executor_module
 from evidence.audit import JsonlAuditLog
 from evidence.store import JsonExecutionEvidenceStore
 from executor.approvals import InMemoryApprovalStore
@@ -12,7 +13,9 @@ from executor.sandbox import (
     SandboxRequest,
     SandboxResult,
 )
+from executor.sandbox_manager import SandboxConfigurationError
 from executor.sandbox_policy import SandboxLimits, SandboxPolicy
+from executor.sandbox_session import SessionCleanupError
 from executor.targets import TargetArtifactDefinition, TargetDefinition, TargetRegistry
 from schemas.action import ActionProposal
 from schemas.validation import ValidationResult
@@ -261,7 +264,63 @@ def test_http_observation_refuses_process_sandbox_without_starting_target(tmp_pa
 
     assert result.status == "denied"
     assert "Docker sandbox backend" in result.stderr
+    assert result.error is not None
+    assert result.error.code == "ISOLATION_BLOCKED"
     assert sandbox.requests == []
+
+
+@pytest.mark.parametrize(
+    ("failure", "expected_code"),
+    [
+        (SandboxConfigurationError("dockerfile build failed (1)"), "BUILD_FAILED"),
+        (SandboxConfigurationError("Unsupported target runtime: vm"), "UNSUPPORTED_RUNTIME"),
+        (SandboxConfigurationError("Target path must stay inside the repository"), "ISOLATION_BLOCKED"),
+        (SessionCleanupError("target cleanup could not be confirmed"), "ISOLATION_BLOCKED"),
+    ],
+)
+def test_runtime_setup_failures_use_guard_error_codes(
+    tmp_path,
+    monkeypatch,
+    failure: Exception,
+    expected_code: str,
+) -> None:
+    action = _proposal(
+        tool="observe_http_surface",
+        service="backend",
+        endpoint="/health/",
+    )
+    approvals, _ = _approve(action)
+
+    class DockerBoundarySandbox:
+        pass
+
+    class FailingSession:
+        def __enter__(self):
+            raise failure
+
+        def __exit__(self, *_: object) -> bool:
+            return False
+
+    class FailingManager:
+        def __init__(self, **_: object) -> None:
+            pass
+
+        def open(self, _target):
+            return FailingSession()
+
+    monkeypatch.setattr(executor_module, "DockerSandbox", DockerBoundarySandbox)
+    monkeypatch.setattr(executor_module, "SandboxManager", FailingManager)
+    executor, _, _ = _executor(
+        tmp_path,
+        approvals,
+        sandbox=DockerBoundarySandbox(),
+    )
+
+    result = executor.execute(action)
+
+    assert result.status == "failed"
+    assert result.error is not None
+    assert result.error.code == expected_code
 
 
 def test_executor_limits_replay_of_same_action(tmp_path) -> None:

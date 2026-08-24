@@ -72,8 +72,107 @@ permissions:
   contents: read
 
 jobs:
+  quality:
+    name: Unit tests and Ruff
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout security agent
+        uses: actions/checkout@v4
+        with:
+          repository: Ultramind-AI/cft-security-agent
+          ref: ${{ inputs.agent_ref }}
+          persist-credentials: false
+          token: ${{ secrets.AGENT_REPOSITORY_TOKEN || github.token }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install test dependencies
+        run: python -m pip install -e ".[dev]"
+
+      - name: Run Ruff
+        run: python -m ruff check .
+
+      - name: Run test suite
+        env:
+          CFT_AGENT_MODE: stub
+        run: python -m pytest -q -ra
+
+  security-boundary-integration:
+    name: Security boundary integration
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout security agent
+        uses: actions/checkout@v4
+        with:
+          repository: Ultramind-AI/cft-security-agent
+          ref: ${{ inputs.agent_ref }}
+          path: agent
+          persist-credentials: false
+          token: ${{ secrets.AGENT_REPOSITORY_TOKEN || github.token }}
+
+      - name: Checkout SberLab target
+        uses: actions/checkout@v4
+        with:
+          repository: Ultramind-AI/sberlab_hack
+          ref: main
+          path: sberlab-target
+          fetch-depth: 0
+          persist-credentials: false
+          token: ${{ secrets.TARGET_REPOSITORY_TOKEN || github.token }}
+
+      - name: Checkout AutoDealer target
+        uses: actions/checkout@v4
+        with:
+          repository: stavrmoris/autodealer
+          ref: main
+          path: autodealer-target
+          fetch-depth: 0
+          persist-credentials: false
+          token: ${{ secrets.TARGET_REPOSITORY_TOKEN || github.token }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: agent/pyproject.toml
+
+      - name: Install test dependencies
+        working-directory: agent
+        run: python -m pip install -e ".[dev]"
+
+      - name: Prepare immutable sandbox image
+        shell: bash
+        run: |
+          docker pull python:3.12-alpine
+          image_digest="$(docker image inspect python:3.12-alpine --format '{{index .RepoDigests 0}}')"
+          test -n "$image_digest"
+          echo "CFT_SANDBOX_IMAGE=$image_digest" >> "$GITHUB_ENV"
+
+      - name: Run trusted target boundary tests
+        working-directory: agent
+        env:
+          CFT_AGENT_MODE: stub
+          SBERLAB_TARGET_PATH: ../sberlab-target
+          AUTODEALER_TARGET_PATH: ../autodealer-target
+        run: >
+          python -m pytest -q -ra -m integration
+          tests/test_docker_sandbox_boundary.py
+          tests/test_sandbox_manager_integration.py
+
   security-gate:
     name: Security gate
+    needs: [quality, security-boundary-integration]
     runs-on: ubuntu-latest
     timeout-minutes: 25
 

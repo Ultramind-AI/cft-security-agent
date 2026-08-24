@@ -5,12 +5,12 @@ from agent.loop import (
     apply_budget_to_reevaluation,
     budget_stop_reason,
     decision_record,
-    terminal_evidence_status,
     wall_clock_exhausted,
 )
 from agent.model import get_agent_model
 from agent.planning import DynamicPlanValidator
 from app.config import settings
+from evidence.guard import evaluate_evidence
 from evidence.interpreter import build_evidence
 from evidence.runtime import build_http_surface_evidence
 from evidence.store import JsonExecutionEvidenceStore
@@ -364,8 +364,19 @@ def collect_evidence(state: AgentState) -> dict:
 
 def reevaluate(state: AgentState) -> dict:
     check_cancelled()
-    terminal = terminal_evidence_status(state)
-    if terminal is None and wall_clock_exhausted(state):
+    action = state.get("proposed_action")
+    guard = (
+        evaluate_evidence(state)
+        if action is not None and action.tool != "safe_noop"
+        else None
+    )
+    if guard is not None:
+        result = ReevaluationResult(
+            status=guard.status,
+            explanation=guard.explanation,
+        )
+        stop_reason = guard.stop_reason
+    elif wall_clock_exhausted(state):
         result = ReevaluationResult(
             status="inconclusive",
             explanation="Agent wall-clock budget was exhausted without terminal Evidence.",

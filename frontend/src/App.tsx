@@ -1,32 +1,35 @@
-import { NavLink, Route, Routes } from "react-router-dom";
-
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { AppLayout } from "./components/layout/AppLayout";
 import { ChatPage } from "./pages/ChatPage";
-import { DashboardPage } from "./pages/DashboardPage";
+import { DebugRunsPage } from "./pages/DebugRunsPage";
 import { RunPage } from "./pages/RunPage";
 
-export function App() {
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: 1,
+      refetchOnWindowFocus: false,
+      staleTime: 5_000,
+    },
+  },
+});
+
+export default function App() {
   return (
-    <div className="app-frame">
-      <header className="topbar">
-        <NavLink className="brand" to="/">
-          <span className="brand-mark">CFT</span>
-          <span>
-            <strong>Security Agent</strong>
-            <small>chat-first evidence analysis</small>
-          </span>
-        </NavLink>
-        <nav className="topbar-nav">
-          <NavLink to="/">Chat</NavLink>
-          <NavLink to="/dashboard">Runs</NavLink>
-        </nav>
-      </header>
-      <Routes>
-        <Route path="/" element={<ChatPage />} />
-        <Route path="/chats/:sessionId" element={<ChatPage />} />
-        <Route path="/dashboard" element={<DashboardPage />} />
-        <Route path="/runs/:runId" element={<RunPage />} />
-        <Route path="*" element={<ChatPage />} />
-      </Routes>
-    </div>
+    <QueryClientProvider client={queryClient}>
+      <BrowserRouter>
+        <Routes>
+          <Route element={<AppLayout />}>
+            <Route path="/" element={<ChatPage />} />
+            <Route path="/chats/:sessionId" element={<ChatPage />} />
+            <Route path="/debug/runs" element={<DebugRunsPage />} />
+            <Route path="/dashboard" element={<Navigate to="/debug/runs" replace />} />
+            <Route path="/runs/:runId" element={<RunPage />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Route>
+        </Routes>
+      </BrowserRouter>
+    </QueryClientProvider>
   );
 }

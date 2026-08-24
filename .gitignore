@@ -11,5 +11,6 @@ executor_data/
 .idea/
 .codex/
 .agents/
+.playwright-cli/
 
 api_data/

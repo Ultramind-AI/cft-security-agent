@@ -1,5 +1,8 @@
 from agent.graph import build_graph
+from reporting.builder import _sandbox_actions
 from reporting.presentation import render_final_report
+from schemas.action import ActionProposal
+from schemas.execution import ExecutionResult
 from schemas.finding import Finding
 
 
@@ -87,3 +90,42 @@ def test_terminal_report_does_not_overclaim_agent_hypothesis() -> None:
     assert report.status == "confirmed"
     assert "reported security condition" in report.explanation
     assert "verification hypothesis" not in report.explanation
+
+
+def test_sandbox_command_summary_is_bounded_redacted_and_ui_ready() -> None:
+    action = ActionProposal(
+        id="action-1",
+        tool="sandbox_command",
+        target="demo",
+        environment="local",
+        parameters={
+            "argv": ["python", "/Users/alice/project/check.py", "token=secret-value"],
+            "cwd": "/Users/alice/project",
+        },
+        purpose="Inspect source",
+        expected_evidence="Command output",
+    )
+    execution = ExecutionResult(
+        run_id="run-1",
+        action_id="action-1",
+        status="completed",
+        exit_code=0,
+        stdout="line one\npassword=hunter2\nline three",
+        evidence_ref="evidence.json",
+        audit_ref="audit.jsonl",
+        duration_ms=17,
+    )
+
+    summary = _sandbox_actions(
+        {
+            "proposed_action": action,
+            "execution": execution,
+            "sandbox_session_id": "sandbox-1",
+        }
+    )[0]
+
+    assert summary.command == ["python", "<home>/project/check.py", "token=<redacted>"]
+    assert summary.cwd == "<home>/project"
+    assert summary.stdout == "line one\npassword=<redacted>\nline three"
+    assert summary.duration_ms == 17
+    assert summary.sandbox_session_id == "sandbox-1"

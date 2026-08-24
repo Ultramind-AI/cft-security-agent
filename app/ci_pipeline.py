@@ -25,6 +25,7 @@ from pipeline.cancellation import (
 from pipeline.errors import error_from_exception
 from pipeline.gate import evaluate_gate
 from pipeline.subprocess_runner import run_cancellable_process
+from pipeline.progress import PipelineProgressRecorder
 from schemas.pipeline import GateResult
 from schemas.target import TargetProfile
 
@@ -139,6 +140,7 @@ def _run_ci_pipeline_inner(
 
     output_dir = Path(args.output_dir).expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
+    progress = PipelineProgressRecorder(output_dir)
     settings_snapshot = {
         "target_file": settings.target_file,
         "target_repository_path": settings.target_repository_path,
@@ -173,6 +175,7 @@ def _run_ci_pipeline_inner(
         )
         _write_json(output_dir / "discovery.json", discovery.model_dump(mode="json"))
         _write_json(output_dir / "target-profile.json", profile.model_dump(mode="json"))
+        progress.discovery_done(_discovery_summary(discovery))
 
         settings.target_file = profile_path
         settings.target_repository_path = target
@@ -186,6 +189,7 @@ def _run_ci_pipeline_inner(
         )
         builder = runtime_builder or RuntimeServiceMapBuilder()
         check_cancelled()
+        progress.sandbox(status="running")
         session = manager.open(profile)
 
         with session:
@@ -200,10 +204,20 @@ def _run_ci_pipeline_inner(
                 diagnostics = "; ".join(
                     item.diagnostic for item in runtime_services.diagnostics
                 )
+                progress.sandbox(
+                    status="failed",
+                    detail=(
+                        "no ready services" + (f": {diagnostics}" if diagnostics else "")
+                    ),
+                )
                 raise RuntimeError(
                     "Sandbox has no ready services"
                     + (f": {diagnostics}" if diagnostics else "")
                 )
+            progress.sandbox(
+                status="done",
+                detail=f"{len(runtime_services.services)} services ready",
+            )
 
             pipeline_args = _pipeline_args(args, profile_path=profile_path)
             check_cancelled()
@@ -213,7 +227,6 @@ def _run_ci_pipeline_inner(
                 runtime_services=runtime_services,
             )
             check_cancelled()
-
             timeline = session.collect_telemetry(run_id=runtime_services.session_id)
             telemetry_ref, telemetry_path = JsonRuntimeTelemetryStore(
                 output_dir / "telemetry"
@@ -241,6 +254,11 @@ def _run_ci_pipeline_inner(
     except RunCancelled:
         raise
     except Exception as exc:  # noqa: BLE001 - CI boundary converts failures into Gate
+        progress.stage(
+            "pipeline",
+            status="failed",
+            detail=type(exc).__name__,
+        )
         return _write_technical_failure(output_dir, exc)
     finally:
         for name, value in settings_snapshot.items():
@@ -297,6 +315,22 @@ def _trusted_profile_path(value: str, *, require_project_profile: bool) -> Path:
         except ValueError as exc:
             raise ValueError("CI target profile must be stored under targets/") from exc
     return path
+
+
+def _discovery_summary(discovery) -> str:
+    components = getattr(discovery, "components", None) or []
+    technologies: list[str] = []
+    for component in components:
+        for name in [
+            *(getattr(component, "technologies", None) or []),
+            *(getattr(component, "frameworks", None) or []),
+        ]:
+            if name not in technologies:
+                technologies.append(name)
+    summary = f"{len(components)} components"
+    if technologies:
+        summary += ": " + ", ".join(technologies[:6])
+    return summary
 
 
 def _write_technical_failure(output_dir: Path, exc: Exception) -> int:

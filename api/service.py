@@ -602,7 +602,7 @@ class RunOrchestrator:
                     cancelled = self.store.get_run(run_id).status == "cancelling"
         except RunCancelled:
             cancelled = True
-        except Exception as exc:  # noqa: BLE001 - background errors are persisted
+        except Exception as exc:
             logger.exception("Run %s failed with an orchestration error", run_id)
             error = error_from_exception(
                 exc,

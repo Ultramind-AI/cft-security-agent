@@ -24,8 +24,8 @@ from pipeline.cancellation import (
 )
 from pipeline.errors import error_from_exception
 from pipeline.gate import evaluate_gate
-from pipeline.subprocess_runner import run_cancellable_process
 from pipeline.progress import PipelineProgressRecorder
+from pipeline.subprocess_runner import run_cancellable_process
 from schemas.pipeline import GateResult
 from schemas.target import TargetProfile
 

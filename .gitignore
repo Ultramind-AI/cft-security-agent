@@ -11,3 +11,5 @@ executor_data/
 .idea/
 .codex/
 .agents/
+
+api_data/

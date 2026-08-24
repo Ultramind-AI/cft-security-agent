@@ -25,6 +25,12 @@ class Settings(BaseSettings):
     evidence_dir: Path = Path("executor_data/evidence")
     executor_audit_log: Path = Path("executor_data/audit/executor.jsonl")
 
+    api_database_path: Path = Path("api_data/cft-security.sqlite3")
+    api_artifact_root: Path = Path("artifacts/api-runs")
+    api_target_profiles: str = "targets/sberlab.yaml"
+    api_host: str = "127.0.0.1"
+    api_port: int = Field(default=8080, ge=1, le=65535)
+
     agent_mode: Literal["stub", "llm"] = "stub"
     agent_model_provider: str = ""
     agent_model_name: str = ""

@@ -468,3 +468,21 @@ and the gate determine the final result.
 
 See `docs/ci-cd.md` for exit codes, artifacts, and the GitHub Actions target-repo
 template in `examples/github-actions/sberlab-security-gate.yml`.
+
+---
+
+## Service API
+
+The same canonical CI pipeline can now run behind a local FastAPI service. The API only accepts
+registered `TargetProfile` ids, persists Run/Project/Finding/Evidence metadata in SQLite, and keeps
+large executor/report/telemetry artifacts outside the database.
+
+```bash
+python -m pip install -e ".[dev]"
+cft-security-api
+```
+
+The default service binds to `127.0.0.1:8080`. Register more trusted targets with
+`CFT_API_TARGET_PROFILES=targets/sberlab.yaml,targets/autodealer.yaml`.
+
+See [`docs/api.md`](docs/api.md) for the endpoint contract and run-status semantics.

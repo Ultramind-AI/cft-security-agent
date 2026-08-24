@@ -942,3 +942,29 @@ terminal result is supported by Evidence
 the run is reproducible
 every step is explainable during the demo
 ```
+
+---
+
+# 24. Service API v1 (T23)
+
+The service API is an orchestration layer around the canonical CI pipeline, not a second implementation.
+
+Invariant:
+
+```text
+POST /runs
+→ registered TargetProfile
+→ app.ci_pipeline.run_ci_pipeline
+→ existing artifacts / FinalReport / Gate
+→ SQLite metadata index
+```
+
+Rules:
+
+1. API callers select only a registered `target_id`; they cannot supply arbitrary repository/profile paths.
+2. Trusted profile paths stay under the configured `targets/` root.
+3. SQLite stores Run/Project/Finding/Evidence metadata; large logs, telemetry and report artifacts stay on disk.
+4. API responses must not leak local artifact-directory paths.
+5. Security Gate semantics remain unchanged: exit `1` is a completed security/policy failure, exit `2` is a technical pipeline failure.
+6. T23 deliberately uses one background worker. Parallel runs, cancellation and shared sandbox quotas belong to T29.
+7. UI work in T24 consumes this API; it must not bypass the canonical pipeline or read executor internals directly.

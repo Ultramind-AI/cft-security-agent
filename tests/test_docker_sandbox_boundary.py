@@ -265,3 +265,44 @@ finally:
 
     assert result.exit_code == 0
     assert result.stdout.strip() == "network-blocked"
+
+
+def test_generic_sandbox_command_is_free_inside_lab_but_cannot_escape_boundary(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "trusted-repository"
+    repo.mkdir()
+    marker = repo / "marker.txt"
+    marker.write_text("visible", encoding="utf-8")
+    code = (
+        "from pathlib import Path; import socket; "
+        "p=Path('/target/marker.txt'); assert p.read_text() == 'visible'; "
+        "blocked_write=False; "
+        "\ntry:\n p.write_text('changed')\nexcept OSError:\n blocked_write=True\n"
+        "assert blocked_write; s=socket.socket(); s.settimeout(1); blocked_net=False; "
+        "\ntry:\n s.connect(('1.1.1.1', 53))\nexcept OSError:\n blocked_net=True\nfinally:\n s.close()\n"
+        "assert blocked_net; print('bounded-lab-ok')"
+    )
+    sandbox = DockerSandbox(
+        policy=SandboxPolicy(
+            backend="docker",
+            network_mode="none",
+            sandbox_image=TEST_SANDBOX_IMAGE,
+        )
+    )
+
+    result = sandbox.run(
+        SandboxRequest(
+            run_id="generic-command-boundary",
+            tool="sandbox_command",
+            base_url="http://127.0.0.1",
+            parameters={"argv": ["python", "-c", code], "cwd": "/target"},
+            request_timeout_seconds=3,
+            network_access="none",
+            repository_path=str(repo),
+        )
+    )
+
+    assert result.exit_code == 0
+    assert result.stdout.strip() == "bounded-lab-ok"
+    assert marker.read_text(encoding="utf-8") == "visible"

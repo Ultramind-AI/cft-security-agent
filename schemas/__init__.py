@@ -1,4 +1,5 @@
 from schemas.action import ActionProposal
+from schemas.agent_loop import AgentActionRecord, AgentDecisionRecord, AgentStopReason
 from schemas.architecture import (
     ArchitectureContext,
     ArchitectureContextOverride,
@@ -64,6 +65,9 @@ from schemas.validation import ValidationResult
 
 __all__ = [
     "ActionProposal",
+    "AgentActionRecord",
+    "AgentDecisionRecord",
+    "AgentStopReason",
     "ArchitectureContext",
     "ArchitectureContextOverride",
     "ArchitectureOverrides",

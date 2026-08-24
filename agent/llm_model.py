@@ -121,24 +121,31 @@ class FallbackLLMAgentModel:
         hypothesis: Hypothesis,
     ) -> DynamicPlan:
         candidates = _allowed_plan_candidates(state)
-        if not candidates:
-            raise ValueError("No registered action candidates are available for DynamicPlan")
-
         choice = self.client.complete_model(
             output_model=LLMDynamicPlanChoice,
             system_prompt=SYSTEM_PROMPT,
             user_payload={
                 "task": (
-                    "Build a bounded multi-step verification plan. Choose actions only "
-                    "by candidate_id from allowed_candidates. Do not invent targets, "
-                    "services, endpoints, URLs, paths, commands or sandbox sessions."
+                    "Build a bounded verification plan. You may either choose a deterministic "
+                    "registered candidate or propose a sandbox_command argv. sandbox_command runs "
+                    "only inside the disposable Docker lab with a read-only target mount, bounded "
+                    "resources and no arbitrary network. Use registered runtime candidates for "
+                    "network observations. Never invent target identity or sandbox session ids."
                 ),
                 "state": _reasoning_context(state),
                 "analysis": analysis.model_dump(mode="json"),
                 "hypothesis": hypothesis.model_dump(mode="json"),
-                "allowed_candidates": [
+                "registered_candidates": [
                     _public_candidate(candidate) for candidate in candidates
                 ],
+                "sandbox_command_contract": {
+                    "kind": "sandbox_command",
+                    "argv": "1-32 argv tokens; shell text is allowed only through an explicit argv such as sh -lc",
+                    "cwd": ["/target", "/workspace"],
+                    "network": "none; use registered runtime candidates for target HTTP",
+                    "target_mount": "read-only at /target",
+                    "workspace": "ephemeral writable /workspace",
+                },
             },
             operation="build_dynamic_plan",
         )
@@ -147,32 +154,49 @@ class FallbackLLMAgentModel:
             raise ValueError("LLM DynamicPlan contains more steps than max_steps")
 
         by_id = {str(candidate["candidate_id"]): candidate for candidate in candidates}
-        selected_ids = [step.candidate_id for step in choice.steps]
+        selected_ids = [
+            step.candidate_id
+            for step in choice.steps
+            if step.kind == "candidate" and step.candidate_id is not None
+        ]
         if len(set(selected_ids)) != len(selected_ids):
-            raise ValueError("LLM DynamicPlan cannot repeat the same action candidate")
+            raise ValueError("LLM DynamicPlan cannot repeat the same registered candidate")
 
         profile = _target_profile(state)
         runtime_services = state.get("runtime_services")
         first_iteration = int(state.get("iteration_count", 0)) + 1
         planned_steps: list[PlannedAction] = []
         for index, step in enumerate(choice.steps, start=1):
-            candidate = by_id.get(step.candidate_id)
-            if candidate is None:
-                raise ValueError(
-                    f"LLM selected unknown DynamicPlan candidate: {step.candidate_id!r}"
+            iteration = first_iteration + index - 1
+            if step.kind == "sandbox_command":
+                action = ActionProposal(
+                    id=_build_action_id(state["finding"].id, iteration),
+                    tool="sandbox_command",
+                    target=profile.id,
+                    environment=profile.environment,
+                    iteration=iteration,
+                    parameters={"argv": list(step.argv), "cwd": step.cwd},
+                    purpose=step.purpose or "Run a bounded command inside the disposable lab.",
+                    expected_evidence=step.expected_observation,
                 )
-            action = ActionProposal(
-                id=_build_action_id(state["finding"].id, first_iteration + index - 1),
-                tool=str(candidate["tool"]),
-                target=profile.id,
-                environment=profile.environment,
-                iteration=first_iteration + index - 1,
-                parameters=dict(candidate.get("parameters", {})),
-                purpose=str(candidate["purpose"]),
-                expected_evidence=step.expected_observation,
-                service=_optional_string(candidate.get("service")),
-                endpoint=_optional_string(candidate.get("endpoint")),
-            )
+            else:
+                candidate = by_id.get(str(step.candidate_id))
+                if candidate is None:
+                    raise ValueError(
+                        f"LLM selected unknown DynamicPlan candidate: {step.candidate_id!r}"
+                    )
+                action = ActionProposal(
+                    id=_build_action_id(state["finding"].id, iteration),
+                    tool=str(candidate["tool"]),
+                    target=profile.id,
+                    environment=profile.environment,
+                    iteration=iteration,
+                    parameters=dict(candidate.get("parameters", {})),
+                    purpose=str(candidate["purpose"]),
+                    expected_evidence=step.expected_observation,
+                    service=_optional_string(candidate.get("service")),
+                    endpoint=_optional_string(candidate.get("endpoint")),
+                )
             planned_steps.append(
                 PlannedAction(
                     index=index,
@@ -224,7 +248,7 @@ class FallbackLLMAgentModel:
         # Последняя защитная проверка: вывод LLM не является Evidence
         if result.status in {"confirmed", "rejected"}:
             iteration_count = int(state.get("iteration_count", 0))
-            max_iterations = int(state.get("max_iterations", 2))
+            max_iterations = int(state.get("max_steps", state.get("max_iterations", 2)))
             if iteration_count >= max_iterations:
                 return ReevaluationResult(
                     status="inconclusive",
@@ -267,11 +291,22 @@ def _reasoning_context(state: AgentState) -> dict[str, Any]:
         },
         "runtime_services": _dump_model(runtime_services),
         "sandbox_session_id": (
-            runtime_services.session_id if runtime_services is not None else None
+            runtime_services.session_id
+            if runtime_services is not None
+            else state.get("sandbox_session_id")
         ),
         "evidence": [item.model_dump(mode="json") for item in state.get("evidence", [])],
+        "action_history": [
+            item.model_dump(mode="json") for item in state.get("action_history", [])
+        ],
+        "decision_history": [
+            item.model_dump(mode="json") for item in state.get("decision_history", [])
+        ],
         "iteration_count": int(state.get("iteration_count", 0)),
-        "max_iterations": int(state.get("max_iterations", 2)),
+        "max_steps": int(state.get("max_steps", state.get("max_iterations", 2))),
+        "wall_clock_budget_seconds": float(state.get("wall_clock_budget_seconds", 120.0)),
+        "started_at": _dump_model(state.get("started_at")),
+        "stop_reason": state.get("stop_reason"),
     }
 
 
@@ -464,7 +499,7 @@ def _evidence_guard(state: AgentState) -> ReevaluationResult | None:
         return None
 
     iteration_count = int(state.get("iteration_count", 0))
-    max_iterations = int(state.get("max_iterations", 2))
+    max_iterations = int(state.get("max_steps", state.get("max_iterations", 2)))
 
     if execution.status != "completed" or execution.exit_code != 0:
         if iteration_count >= max_iterations:
@@ -503,7 +538,13 @@ def _evidence_guard(state: AgentState) -> ReevaluationResult | None:
 
 
 def _dump_model(value: Any) -> Any:
-    return value.model_dump(mode="json") if value is not None else None
+    if value is None:
+        return None
+    if hasattr(value, "model_dump"):
+        return value.model_dump(mode="json")
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    return value
 
 
 def _build_plan_id(finding_id: str, iteration: int) -> str:

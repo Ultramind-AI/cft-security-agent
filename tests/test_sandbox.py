@@ -459,3 +459,29 @@ def test_docker_runtime_mounts_only_explicit_trusted_repository_read_only(
     ]
 
     assert target_mounts == [expected_mount]
+
+
+def test_worker_runs_generic_command_only_in_declared_lab_directory(tmp_path: Path) -> None:
+    source = tmp_path / "marker.txt"
+    source.write_text("sandbox-visible", encoding="utf-8")
+
+    code, stdout, stderr = worker._execute(
+        {
+            "tool": "sandbox_command",
+            "repository_path": str(tmp_path),
+            "parameters": {
+                "argv": [sys.executable, "-c", "from pathlib import Path; print(Path('marker.txt').read_text())"],
+                "cwd": "/target",
+            },
+            "request_timeout_seconds": 1.0,
+            "max_output_bytes": 1024,
+        }
+    )
+
+    assert code == 0
+    assert stdout.strip() == "sandbox-visible"
+    assert stderr == ""
+
+
+def test_sandbox_command_capability_has_no_network_access() -> None:
+    assert CAPABILITY_NETWORK_ACCESS["sandbox_command"] == "none"

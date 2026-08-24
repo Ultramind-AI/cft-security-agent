@@ -17,10 +17,12 @@ from schemas.security_tools import (
     PythonPasswordAssignmentCheckResult,
     ReactDangerousHtmlFlowCheckResult,
 )
+from security.error_redaction import redact_error_message
 
 DOCKERFILE_USER_TOOL = "inspect_dockerfile_user"
 PYTHON_PASSWORD_TOOL = "inspect_python_password_assignment"
 REACT_HTML_FLOW_TOOL = "inspect_react_dangerous_html_flow"
+SANDBOX_COMMAND_TOOL = "sandbox_command"
 
 
 _SPECIALIZED_RESULTS: dict[str, tuple[type[BaseModel], str]] = {
@@ -47,6 +49,17 @@ def build_evidence(
     sandbox_session_id: str | None = None,
 ) -> Evidence:
     """Преобразует сохраненный результат Executor в Evidence"""
+    if action.tool == SANDBOX_COMMAND_TOOL:
+        return _sandbox_command_evidence(
+            action=action,
+            execution=execution,
+            record=record,
+            evidence_loaded=evidence_loaded,
+            artifact_refs=artifact_refs,
+            hypothesis_id=hypothesis_id,
+            sandbox_session_id=sandbox_session_id,
+        )
+
     specialized = _SPECIALIZED_RESULTS.get(action.tool)
     if specialized is not None:
         evidence = _structured_capability_evidence(
@@ -89,6 +102,54 @@ def build_evidence(
         sandbox_session_id=sandbox_session_id,
     )
 
+
+
+def _sandbox_command_evidence(
+    *,
+    action: ActionProposal,
+    execution: ExecutionResult,
+    record: dict,
+    evidence_loaded: bool,
+    artifact_refs: list[str],
+    hypothesis_id: str,
+    sandbox_session_id: str | None,
+) -> Evidence:
+    status = str(record.get("status", execution.status)) if evidence_loaded else execution.status
+    exit_code = int(record.get("exit_code", execution.exit_code)) if evidence_loaded else execution.exit_code
+    stdout = str(record.get("stdout", execution.stdout)) if evidence_loaded else execution.stdout
+    stderr = str(record.get("stderr", execution.stderr)) if evidence_loaded else execution.stderr
+    stdout = stdout[:8_192]
+    stderr = stderr[:4_096]
+    return _evidence(
+        action=action,
+        execution=execution,
+        evidence_type="sandbox_command_observation",
+        summary=(
+            "Bounded command observation from the disposable security lab: "
+            f"status={status}, exit_code={exit_code}."
+        ),
+        facts={
+            "executor_status": status,
+            "exit_code": exit_code,
+            "timed_out": execution.timed_out,
+            "stdout": stdout,
+            "stderr": stderr,
+            "cwd": action.parameters.get("cwd"),
+            "argv": [
+                redact_error_message(str(item), max_length=1024)
+                for item in action.parameters.get("argv", [])
+            ],
+            "record_loaded": evidence_loaded,
+        },
+        scope_description=(
+            "disposable sandbox command output; target repository is read-only and "
+            "the command has no arbitrary network access"
+        ),
+        artifact_refs=artifact_refs,
+        reliability="high" if evidence_loaded else "low",
+        hypothesis_id=hypothesis_id,
+        sandbox_session_id=sandbox_session_id,
+    )
 
 def _structured_capability_evidence(
     *,

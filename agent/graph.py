@@ -6,6 +6,7 @@ from agent.nodes import (
     collect_evidence,
     execute_action,
     form_hypothesis,
+    guard_agent_budget,
     load_context,
     propose_action,
     reevaluate,
@@ -13,6 +14,10 @@ from agent.nodes import (
     validate_action,
 )
 from schemas.state import AgentState
+
+# T15 has several LangGraph super-steps per agent iteration; keep LangGraph
+# recursion guard above the application-level max_steps budget.
+_AGENT_GRAPH_RECURSION_LIMIT = 128
 
 
 def _after_validation(state: AgentState) -> str:
@@ -22,10 +27,14 @@ def _after_validation(state: AgentState) -> str:
     return "report"
 
 
+def _after_budget_guard(state: AgentState) -> str:
+    return "analyse" if state.get("status") == "budget_ok" else "report"
+
+
 def _after_reevaluation(state: AgentState) -> str:
     if state.get("status") == "continue":
-        # Повторный круг всегда остается под общим лимитом итераций
-        return "analyse"
+        # Новая итерация заново анализирует накопленный Evidence и строит свежий план.
+        return "guard_agent_budget"
     return "report"
 
 
@@ -34,6 +43,7 @@ def build_graph():
 
     graph.add_node("load_context", load_context)
     graph.add_node("score_finding", score_finding)
+    graph.add_node("guard_agent_budget", guard_agent_budget)
     graph.add_node("analyse", analyse)
     graph.add_node("form_hypothesis", form_hypothesis)
     graph.add_node("propose_action", propose_action)
@@ -45,7 +55,15 @@ def build_graph():
 
     graph.add_edge(START, "load_context")
     graph.add_edge("load_context", "score_finding")
-    graph.add_edge("score_finding", "analyse")
+    graph.add_edge("score_finding", "guard_agent_budget")
+    graph.add_conditional_edges(
+        "guard_agent_budget",
+        _after_budget_guard,
+        {
+            "analyse": "analyse",
+            "report": "report",
+        },
+    )
     graph.add_edge("analyse", "form_hypothesis")
     graph.add_edge("form_hypothesis", "propose_action")
     graph.add_edge("propose_action", "validate_action")
@@ -66,11 +84,13 @@ def build_graph():
         "reevaluate",
         _after_reevaluation,
         {
-            "analyse": "analyse",
+            "guard_agent_budget": "guard_agent_budget",
             "report": "report",
         },
     )
 
     graph.add_edge("report", END)
 
-    return graph.compile()
+    compiled = graph.compile()
+    compiled.config = {"recursion_limit": _AGENT_GRAPH_RECURSION_LIMIT}
+    return compiled

@@ -266,16 +266,17 @@ Evidence определяет результат
 
 Mandatory invariants:
 
-1. Agent never gets arbitrary shell execution.
+1. Raw command execution is allowed only through `sandbox_command` inside the disposable Docker lab, never on the host.
 2. Agent never directly invokes an execution capability.
 3. Every active `ActionProposal` passes through `Validator`.
 4. `Validator` decisions are deterministic code/policy, not prompt-only rules.
-5. `Executor` can run only registered capabilities.
-6. `confirmed` requires Evidence.
-7. Agent cannot expand target scope.
-8. Active checks run only against approved local / sandbox / staging environments.
-9. The workflow has an iteration limit.
-10. Production target access is out of scope for the MVP.
+5. `Executor` can run only registered capabilities; `sandbox_command` is the intentionally broad capability whose safety boundary is Docker isolation rather than a concrete command allowlist.
+6. Generic sandbox commands have no arbitrary network access; target network observations use trusted runtime capabilities.
+7. `confirmed` requires Evidence.
+8. Agent cannot expand target scope.
+9. Active checks run only against approved local / sandbox / staging environments.
+10. The workflow has step and wall-clock limits.
+11. Production target access is out of scope for the MVP.
 
 ---
 
@@ -321,15 +322,23 @@ context_priority
 
 analysis
 hypothesis
+dynamic_plan
+plan_history
 proposed_action
 
 validation
 execution
 evidence
+action_history
+decision_history
 
 status
+stop_reason
 iteration_count
-max_iterations
+max_steps
+started_at
+wall_clock_budget_seconds
+sandbox_session_id
 
 final_report
 ```
@@ -373,7 +382,9 @@ Re-evaluation branch:
 
 ```text
 continue
-→ analyse
+→ budget guard
+→ analyse accumulated Evidence
+→ fresh hypothesis / DynamicPlan
 ```
 
 ```text
@@ -460,6 +471,8 @@ Security boundaries are:
 Validator
 Policy
 Executor registry
+Docker sandbox isolation
+Network/scope rules
 Runtime limits
 ```
 
@@ -577,7 +590,7 @@ Executor must not:
 ```text
 plan
 reinterpret the goal
-accept arbitrary shell text from LLM
+execute sandbox_command outside the Docker security boundary
 execute unknown tools
 bypass Validator
 ```
@@ -588,6 +601,8 @@ operational runtime checks plus three reusable source-verification capability cl
 ```text
 check_sberlab_health
 get_sberlab_public_projects
+observe_http_surface
+sandbox_command
 inspect_dockerfile_user
 inspect_python_password_assignment
 inspect_react_dangerous_html_flow
@@ -607,8 +622,10 @@ ActionProposal, checks the configured target environment and launches only the
 fixed `executor/worker.py` in a disposable working directory. Linux/WSL runs
 receive wall-time, CPU, memory, file-size and process-count limits. Output is
 bounded, every decision gets persistent JSON evidence and a JSONL audit event,
-and exact `action_id` replay/concurrent runs are limited. It still does not
-accept arbitrary URLs, paths or shell text from the agent.
+and exact `action_id` replay/concurrent runs are limited. It still does not accept
+arbitrary URLs or host paths from the agent. `sandbox_command` is the deliberate
+exception for generic argv: it is Docker-only, networkless, bounded and receives the
+target repository read-only at `/target`.
 
 ---
 

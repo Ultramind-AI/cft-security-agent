@@ -195,3 +195,27 @@ def test_validator_rejects_unregistered_artifact() -> None:
 
     assert result.approved is False
     assert result.policy_rules[-1] == "target_artifact_denied"
+
+
+def test_validator_allows_bounded_sandbox_command_contract() -> None:
+    result = _validator().validate(
+        _proposal(
+            tool="sandbox_command",
+            parameters={"argv": ["python", "-V"], "cwd": "/target"},
+        )
+    )
+
+    assert result.approved is True
+    assert "parameter_values_valid" in result.policy_rules
+
+
+def test_validator_rejects_invalid_sandbox_command_argv() -> None:
+    result = _validator().validate(
+        _proposal(
+            tool="sandbox_command",
+            parameters={"argv": [""], "cwd": "/target"},
+        )
+    )
+
+    assert result.approved is False
+    assert result.policy_rules[-1] == "parameter_values_denied"

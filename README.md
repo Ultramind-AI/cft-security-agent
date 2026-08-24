@@ -250,7 +250,7 @@ AgentState
 - связывает approval с хешем полного `ActionProposal`;
 - запрещает выполнение изменённого после approval предложения;
 - разрешает только `local`, `sandbox` и `staging` target;
-- не принимает URL, path или shell-команду от агента;
+- не принимает произвольные URL или host path; generic argv разрешён только через Docker-only `sandbox_command`;
 - запускает capability отдельным процессом без `shell=True`;
 - создаёт отдельную одноразовую рабочую директорию для каждого запуска;
 - ограничивает wall timeout, CPU, память, размер файлов и число процессов;
@@ -279,7 +279,7 @@ AgentState
 
 CPU/memory/process/file limits применяются в Linux/WSL через POSIX resource
 limits. Wall timeout, раздельная рабочая директория, ограниченный вывод,
-allowlist и отсутствие shell действуют на всех поддерживаемых платформах.
+allowlist действует на всех поддерживаемых платформах; generic `sandbox_command` не имеет fallback на ProcessSandbox.
 Это защитная обвязка MVP, а не production-grade контейнерная изоляция.
 
 Зависший процесс принудительно завершается и возвращается как

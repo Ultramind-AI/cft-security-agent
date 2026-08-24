@@ -79,3 +79,53 @@ def test_hypothesis_has_a_run_scoped_identity_for_evidence_links() -> None:
     )
 
     assert hypothesis.id.startswith("hypothesis-")
+
+
+def test_sandbox_command_evidence_preserves_bounded_observation_without_verdict() -> None:
+    from evidence.interpreter import build_evidence
+    from schemas.action import ActionProposal
+    from schemas.execution import ExecutionResult
+
+    action = ActionProposal(
+        id="sandbox-action-1",
+        tool="sandbox_command",
+        target="target-1",
+        environment="sandbox",
+        parameters={
+            "argv": ["python", "-c", "print('token=must-not-be-retained')"],
+            "cwd": "/target",
+        },
+        purpose="Inspect repository state inside the disposable lab.",
+        expected_evidence="Bounded command output.",
+    )
+    execution = ExecutionResult(
+        run_id="run-sandbox-1",
+        action_id=action.id,
+        status="completed",
+        exit_code=0,
+        stdout="setting=true",
+        stderr="",
+        workspace_id="run-sandbox-1-workspace",
+        evidence_ref="execution-sandbox-1",
+        audit_ref="audit:run-sandbox-1",
+    )
+    evidence = build_evidence(
+        action=action,
+        execution=execution,
+        record={
+            "status": "completed",
+            "exit_code": 0,
+            "stdout": "setting=true",
+            "stderr": "",
+        },
+        evidence_loaded=True,
+        artifact_refs=[],
+        hypothesis_id="hypothesis-1",
+        sandbox_session_id="run-sandbox-1-workspace",
+    )
+
+    assert evidence.source == "runtime"
+    assert evidence.verdict is None
+    assert evidence.observation.facts["stdout"] == "setting=true"
+    assert "must-not-be-retained" not in str(evidence.observation.facts["argv"])
+    assert evidence.scope.description.startswith("disposable sandbox command output")

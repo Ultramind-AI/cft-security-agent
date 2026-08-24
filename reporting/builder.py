@@ -140,6 +140,7 @@ def build_final_report(state: AgentState) -> FinalReport:
         evidence=evidence,
         sandbox_actions=_sandbox_actions(state),
         policy_decisions=_policy_decisions(state),
+        agent_decisions=list(state.get("decision_history", [])),
         ci_gate_impact=CIGateImpact(
             effect=gate.effect,
             category=gate.category,
@@ -149,14 +150,34 @@ def build_final_report(state: AgentState) -> FinalReport:
         limitations=_limitations(state, status),
         next_step=_NEXT_STEPS[status],
         iterations=int(state.get("iteration_count", 0)),
+        stop_reason=state.get("stop_reason"),
     )
 
 
 def _sandbox_actions(state: AgentState) -> list[SandboxActionSummary]:
+    history = list(state.get("action_history", []))
+    if history:
+        return [
+            SandboxActionSummary(
+                action_id=item.action.id,
+                capability=item.action.tool,
+                target=item.action.target,
+                environment=item.action.environment,
+                purpose=item.action.purpose,
+                parameter_names=sorted(item.action.parameters),
+                execution_status=(item.execution.status if item.execution is not None else None),
+                exit_code=(item.execution.exit_code if item.execution is not None else None),
+                timed_out=(item.execution.timed_out if item.execution is not None else False),
+                artifact_refs=(
+                    list(item.execution.artifacts) if item.execution is not None else []
+                ),
+            )
+            for item in history
+        ]
+
     action = state.get("proposed_action")
     if action is None:
         return []
-
     execution = state.get("execution")
     return [
         SandboxActionSummary(
@@ -175,6 +196,18 @@ def _sandbox_actions(state: AgentState) -> list[SandboxActionSummary]:
 
 
 def _policy_decisions(state: AgentState) -> list[PolicyDecisionSummary]:
+    history = list(state.get("action_history", []))
+    if history:
+        return [
+            PolicyDecisionSummary(
+                action_id=item.validation.action_id,
+                decision="approved" if item.validation.approved else "denied",
+                reason=item.validation.reason,
+                rules=list(item.validation.policy_rules),
+            )
+            for item in history
+        ]
+
     validation = state.get("validation")
     if validation is None:
         return []
@@ -189,6 +222,11 @@ def _policy_decisions(state: AgentState) -> list[PolicyDecisionSummary]:
 
 
 def _decision_basis(state: AgentState, status: str) -> str:
+    if state.get("stop_reason") in {
+        "step_budget_exhausted",
+        "wall_clock_budget_exhausted",
+    }:
+        return "agent_budget"
     if status == "policy_blocked":
         return "validator_policy"
 
@@ -200,7 +238,7 @@ def _decision_basis(state: AgentState, status: str) -> str:
         return "capability_specific_evidence"
 
     if status == "inconclusive" and int(state.get("iteration_count", 0)) >= int(
-        state.get("max_iterations", 2)
+        state.get("max_steps", state.get("max_iterations", 2))
     ):
         return "iteration_limit"
 
@@ -219,5 +257,10 @@ def _limitations(state: AgentState, status: str) -> list[str]:
         limitations.append("No verification action was executed after Validator denial.")
     elif status == "inconclusive":
         limitations.append("No terminal capability-specific Evidence was obtained.")
+
+    if state.get("stop_reason") == "step_budget_exhausted":
+        limitations.append("Agent stopped because the configured step budget was exhausted.")
+    elif state.get("stop_reason") == "wall_clock_budget_exhausted":
+        limitations.append("Agent stopped because the wall-clock budget was exhausted.")
 
     return list(dict.fromkeys(limitations))

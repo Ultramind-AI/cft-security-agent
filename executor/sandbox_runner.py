@@ -107,6 +107,10 @@ class SandboxRunner:
             self._registry.get(action.tool)
         except KeyError:
             return f"Unknown executor tool: {action.tool}"
+        if action.tool == "sandbox_command" and (
+            action.service is not None or action.endpoint is not None
+        ):
+            return "sandbox_command cannot request runtime network scope"
         if action.tool == "observe_http_surface" and (
             runtime_services is None
             or action.service is None

@@ -334,3 +334,64 @@ def test_invalid_plan_scope_is_blocked_before_policy_validator(monkeypatch) -> N
     assert validated["validation"].approved is False
     assert validated["status"] == "policy_blocked"
     assert "not allowed" in validated["validation"].reason
+
+
+def test_llm_can_plan_generic_networkless_sandbox_command() -> None:
+    choice = LLMDynamicPlanChoice(
+        goal="Inspect repository configuration before choosing a runtime observation.",
+        max_steps=1,
+        continuation_reason="Replan after reading the command Evidence.",
+        stop_conditions=["terminal_evidence", "step_limit_reached"],
+        steps=[
+            LLMPlanStepChoice(
+                kind="sandbox_command",
+                argv=["python", "-c", "print('inspect-settings')"],
+                cwd="/target",
+                purpose="Inspect target files inside the disposable security lab.",
+                expected_observation="A bounded command observation.",
+                continue_if="The observation is not terminal Evidence.",
+            )
+        ],
+    )
+    client = _FakeClient(choice)
+    model = FallbackLLMAgentModel(client)
+    state = _state()
+
+    plan = model.build_plan(
+        state,
+        AnalysisResult(summary="Repository inspection is required."),
+        state["hypothesis"],
+    )
+
+    action = plan.steps[0].action
+    assert action.tool == "sandbox_command"
+    assert action.parameters == {
+        "argv": ["python", "-c", "print('inspect-settings')"],
+        "cwd": "/target",
+    }
+    assert action.service is None
+    assert action.endpoint is None
+    assert DynamicPlanValidator().validate(plan, state).approved is True
+    contract = client.calls[0]["user_payload"]["sandbox_command_contract"]
+    assert contract["network"].startswith("none")
+
+
+def test_dynamic_plan_rejects_sandbox_command_with_runtime_scope() -> None:
+    action = ActionProposal(
+        id="sandbox-command-1",
+        tool="sandbox_command",
+        target="demo-target",
+        environment="sandbox",
+        iteration=1,
+        parameters={"argv": ["python", "-V"], "cwd": "/target"},
+        purpose="Inspect the repository inside the disposable lab.",
+        expected_evidence="Bounded command output.",
+        service="api",
+        endpoint="/health/",
+    )
+    plan = _plan(action=action)
+
+    result = DynamicPlanValidator().validate(plan, _state())
+
+    assert result.approved is False
+    assert "cannot request runtime network scope" in result.reason

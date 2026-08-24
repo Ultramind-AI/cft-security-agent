@@ -5,7 +5,7 @@ Docker socket, внешних сетей и соседних Compose-проек�
 
 ## Границы доверия
 
-- Агент никогда не передаёт shell, пути хоста, произвольные URL или аргументы Docker.
+- Агент не задаёт пути хоста, произвольные URL или аргументы Docker. Generic argv разрешён только внутри networkless disposable Docker sandbox.
 - Executor принимает только зарегистрированные capabilities и метаданные, принадлежащие цели.
 - Репозитории целей монтируются в контейнеры capability только для чтения.
 - Образы Docker sandbox — неизменяемые digest references; они используют non-root user,

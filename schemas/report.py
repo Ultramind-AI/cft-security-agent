@@ -2,6 +2,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from schemas.agent_loop import AgentDecisionRecord, AgentStopReason
 from schemas.architecture import ArchitectureContext
 from schemas.evidence import Evidence
 from schemas.pipeline import FindingGateEffect, GateCategory
@@ -10,6 +11,7 @@ from schemas.scoring import ContextPriority, CVSSResult
 
 ReportStatus = Literal["confirmed", "rejected", "inconclusive", "policy_blocked"]
 DecisionBasis = Literal[
+    "agent_budget",
     "capability_specific_evidence",
     "validator_policy",
     "iteration_limit",
@@ -89,9 +91,11 @@ class FinalReport(BaseModel):
     evidence: list[Evidence] = Field(default_factory=list)
     sandbox_actions: list[SandboxActionSummary] = Field(default_factory=list)
     policy_decisions: list[PolicyDecisionSummary] = Field(default_factory=list)
+    agent_decisions: list[AgentDecisionRecord] = Field(default_factory=list)
     ci_gate_impact: CIGateImpact | None = None
 
     explanation: str
     limitations: list[str] = Field(default_factory=list)
     next_step: str
     iterations: int = 0
+    stop_reason: AgentStopReason | None = None

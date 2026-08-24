@@ -1,4 +1,5 @@
 import logging
+import os
 import shutil
 from dataclasses import asdict
 from pathlib import Path
@@ -29,6 +30,7 @@ from schemas.errors import ErrorDetail
 from schemas.execution import ExecutionResult
 from schemas.runtime import RuntimeServiceMap
 from schemas.target import TargetProfile, TargetRuntimeConfig
+from security.error_redaction import redact_error_message
 from tools.registry import ToolRegistry
 
 logger = logging.getLogger(__name__)
@@ -61,6 +63,7 @@ def _system_error(
 
 CAPABILITY_REPOSITORY_ACCESS: dict[str, bool] = {
     "safe_noop": False,
+    "sandbox_command": True,
     "check_sberlab_health": False,
     "get_sberlab_public_projects": False,
     "observe_http_surface": False,
@@ -72,6 +75,7 @@ CAPABILITY_REPOSITORY_ACCESS: dict[str, bool] = {
 # Определяет, какой сетевой доступ разрешён для каждой capability
 CAPABILITY_NETWORK_ACCESS: dict[str, str] = {
     "safe_noop": "none",
+    "sandbox_command": "none",
     "check_sberlab_health": "target",  # Только к доверенному target
     "get_sberlab_public_projects": "target",
     "observe_http_surface": "target",
@@ -103,6 +107,7 @@ class SafeExecutor:
         self._policy = policy
         self._registry = ToolRegistry()
         self._registry.register("safe_noop", self._safe_noop)
+        self._registry.register("sandbox_command", self._sandbox_command_parameters)
         self._registry.register("check_sberlab_health", self._no_parameters, endpoint="/health/")
         self._registry.register("get_sberlab_public_projects", self._no_parameters, endpoint="/api/projects/")
         self._registry.register("observe_http_surface", self._no_parameters)
@@ -163,7 +168,7 @@ class SafeExecutor:
 
         runtime_policy = policy_data.get("runtime", {})
 
-        sandbox_image = runtime_policy.get(
+        sandbox_image = os.getenv("CFT_SANDBOX_IMAGE") or runtime_policy.get(
             "sandbox_image",
             policy_data.get("sandbox_image", ""),
         )
@@ -333,12 +338,28 @@ class SafeExecutor:
         *,
         runtime_services: RuntimeServiceMap | None = None,
     ):
-        # HTTP-проверка запрещена вне Docker sandbox.
+        requires_target_network = any(
+            CAPABILITY_NETWORK_ACCESS.get(action.tool) == "target" for action in actions
+        )
+        has_sandbox_command = any(action.tool == "sandbox_command" for action in actions)
+        if has_sandbox_command and not isinstance(self._sandbox, DockerSandbox):
+            return self._runner.run(actions, runtime_services=runtime_services)
+        # Generic commands are deliberately networkless. They must never inherit the
+        # target Compose network just because a RuntimeServiceMap exists for the run.
+        if has_sandbox_command and requires_target_network:
+            raise ValueError(
+                "sandbox_command cannot share one execution sequence with target-network capabilities"
+            )
+        # Existing HTTP observation capability remains Docker-only.
         if any(action.tool == "observe_http_surface" for action in actions) and not isinstance(
             self._sandbox, DockerSandbox
         ):
             return self._runner.run(actions, runtime_services=None)
-        if runtime_services is None or not isinstance(self._sandbox, DockerSandbox):
+        if (
+            runtime_services is None
+            or not isinstance(self._sandbox, DockerSandbox)
+            or not requires_target_network
+        ):
             self._active_runtime_services = runtime_services
             try:
                 return self._runner.run(actions, runtime_services=runtime_services)
@@ -360,8 +381,13 @@ class SafeExecutor:
             finally:
                 self._sandbox = original_sandbox
                 self._active_runtime_services = None
-        updated = [item.model_copy(update={"runtime_instance_id": runtime.runtime_instance_id}) for item in result.results]
-        return result.model_copy(update={"runtime_instance_id": runtime.runtime_instance_id, "results": updated})
+        updated = [
+            item.model_copy(update={"runtime_instance_id": runtime.runtime_instance_id})
+            for item in result.results
+        ]
+        return result.model_copy(
+            update={"runtime_instance_id": runtime.runtime_instance_id, "results": updated}
+        )
 
     def _execute_one(
         self,
@@ -391,6 +417,19 @@ class SafeExecutor:
         except KeyError:
             message = f"Unknown executor tool: {action.tool}"
             return self._finish(action, run_id, started, status="denied", exit_code=126, stderr=message, decision_reason="Unknown capability", session_id=session_id)
+
+        if action.tool == "sandbox_command" and not isinstance(self._sandbox, DockerSandbox):
+            reason = "sandbox_command requires the Docker security boundary"
+            return self._finish(
+                action,
+                run_id,
+                started,
+                status="denied",
+                exit_code=126,
+                stderr=reason,
+                decision_reason=reason,
+                session_id=session_id,
+            )
 
         try:
             parameters = handler(action.parameters)
@@ -482,14 +521,26 @@ class SafeExecutor:
         finally:
             self._run_limiter.release()
 
+        stdout = sandbox_result.stdout
+        stderr = sandbox_result.stderr
+        if action.tool == "sandbox_command":
+            stdout = redact_error_message(
+                stdout,
+                max_length=self._policy.limits.max_output_bytes,
+            )
+            stderr = redact_error_message(
+                stderr,
+                max_length=self._policy.limits.max_output_bytes,
+            )
+
         return self._finish(
             action,
             run_id,
             started,
             status="completed" if sandbox_result.exit_code == 0 else "failed",
             exit_code=sandbox_result.exit_code,
-            stdout=sandbox_result.stdout,
-            stderr=sandbox_result.stderr,
+            stdout=stdout,
+            stderr=stderr,
             timed_out=sandbox_result.timed_out,
             workspace_id=sandbox_result.workspace_id,
             decision_reason="Sandbox execution completed" if sandbox_result.exit_code == 0 else "Sandbox execution failed",
@@ -690,6 +741,22 @@ class SafeExecutor:
         if outcome not in {"confirmed", "rejected", "inconclusive"}:
             raise CapabilityInputError("Invalid safe_noop test_outcome")
         return {"message": str(parameters.get("message", "ok"))[:256], "test_outcome": outcome}
+
+    @staticmethod
+    def _sandbox_command_parameters(parameters: dict) -> dict:
+        if set(parameters) != {"argv", "cwd"}:
+            raise CapabilityInputError("sandbox_command requires exactly argv and cwd")
+        argv = parameters.get("argv")
+        cwd = parameters.get("cwd")
+        if not isinstance(argv, list) or not argv or len(argv) > 32:
+            raise CapabilityInputError("sandbox_command argv must contain 1-32 items")
+        if any(not isinstance(item, str) or not item or "\x00" in item for item in argv):
+            raise CapabilityInputError("sandbox_command argv items must be non-empty strings")
+        if any(len(item) > 1024 for item in argv) or sum(len(item) for item in argv) > 8192:
+            raise CapabilityInputError("sandbox_command argv exceeds bounded command size")
+        if cwd not in {"/target", "/workspace"}:
+            raise CapabilityInputError("sandbox_command cwd is outside the disposable lab")
+        return {"argv": list(argv), "cwd": cwd}
 
     @staticmethod
     def _no_parameters(parameters: dict) -> dict:

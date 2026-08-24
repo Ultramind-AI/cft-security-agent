@@ -31,6 +31,7 @@ tools:
   - check_sberlab_health
   - get_sberlab_public_projects
   - observe_http_surface
+  - sandbox_command
   - inspect_dockerfile_user
   - inspect_python_password_assignment
   - inspect_react_dangerous_html_flow
@@ -56,6 +57,23 @@ tools:
     observe_http_surface:
       allowed_keys: []
       required_keys: []
+    sandbox_command:
+      allowed_keys:
+      - argv
+      - cwd
+      required_keys:
+      - argv
+      - cwd
+      enum_values:
+        cwd:
+        - /target
+        - /workspace
+      string_list_parameters:
+      - argv
+      max_list_lengths:
+        argv: 32
+      max_list_item_lengths:
+        argv: 1024
     inspect_dockerfile_user:
       allowed_keys:
       - artifact_id

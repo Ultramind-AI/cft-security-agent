@@ -63,7 +63,7 @@ def test_system_prompt_contains_security_boundaries() -> None:
     required_phrases = [
         "Never execute actions directly.",
         "Never bypass Validator.",
-        "Never request arbitrary shell commands.",
+        "Raw commands are allowed only through sandbox_command inside the disposable Docker lab.",
         "Never mark a finding confirmed without Evidence.",
     ]
 

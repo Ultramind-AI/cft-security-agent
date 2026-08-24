@@ -18,7 +18,7 @@ approval digest check
 → structured ExecutionResult
 ```
 
-No proposal field is used as shell text, executable path, HTTP method or URL.
+No proposal field becomes a host command, host path, HTTP method or URL. `sandbox_command` is an explicit Docker-only argv capability and is never executed by ProcessSandbox.
 
 ## Sandbox v0.3
 
@@ -40,8 +40,9 @@ check_sberlab_health
 get_sberlab_public_projects
 ```
 
-It is not a generic command runner. Unknown names exit with a failure and no
-fallback interpretation.
+Unknown capability names exit with a failure and no fallback interpretation. T14.1 adds
+one explicit generic capability, `sandbox_command`: the fixed worker may execute its
+bounded argv only when the parent Executor selected the Docker sandbox boundary.
 
 ## Default limits
 
@@ -150,14 +151,20 @@ storage when the agent itself is containerized.
 
 ## Explicitly unsupported
 
-Executor has no capability for:
+Executor still has no capability for:
 
-- arbitrary shell or subprocess text from the agent;
-- arbitrary Python;
-- caller-controlled URLs, paths or HTTP methods;
+- generic command execution on the host or through ProcessSandbox;
+- generic command access to the target network or the public Internet;
+- caller-controlled URLs, host paths or HTTP methods;
 - production targets;
 - automatic privilege escalation;
 - unbounded retries or parallel starts.
+
+`sandbox_command` intentionally permits broad argv inside a disposable Docker lab. The
+lab has a read-only target mount, ephemeral `/workspace`, read-only root filesystem,
+dropped capabilities, `no-new-privileges`, PID/CPU/memory/time/output limits and
+`--network none`. Target HTTP observations continue through registered runtime
+capabilities and `RuntimeServiceMap`.
 
 ### macOS resource-limit compatibility
 

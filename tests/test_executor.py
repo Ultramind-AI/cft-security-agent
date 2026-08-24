@@ -514,6 +514,7 @@ def test_executor_exposes_only_predefined_tools(tmp_path) -> None:
             "inspect_react_dangerous_html_flow",
             "observe_http_surface",
             "safe_noop",
+            "sandbox_command",
     )
 
 
@@ -616,3 +617,18 @@ limits:
             audit_log_path=tmp_path / "audit.jsonl",
             workspace_directory=tmp_path / "workspace",
         )
+
+
+def test_sandbox_command_never_falls_back_to_process_sandbox(tmp_path) -> None:
+    action = _proposal(
+        tool="sandbox_command",
+        parameters={"argv": ["python", "-V"], "cwd": "/target"},
+    )
+    approvals, _ = _approve(action)
+    executor, sandbox, _ = _executor(tmp_path, approvals)
+
+    result = executor.execute(action)
+
+    assert result.status == "denied"
+    assert "Docker security boundary" in result.stderr
+    assert sandbox.requests == []

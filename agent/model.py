@@ -215,7 +215,7 @@ class DeterministicAgentModel:
     def reevaluate(self, state: AgentState) -> ReevaluationResult:
         execution = state["execution"]
         iteration_count = int(state.get("iteration_count", 0))
-        max_iterations = int(state.get("max_iterations", 2))
+        max_iterations = int(state.get("max_steps", state.get("max_iterations", 2)))
 
         if execution.status != "completed" or execution.exit_code != 0:
             if iteration_count >= max_iterations:

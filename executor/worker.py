@@ -3,6 +3,7 @@
 import ast
 import json
 import re
+import subprocess
 import sys
 import warnings
 from pathlib import Path, PurePosixPath
@@ -14,6 +15,7 @@ _DOCKERFILE_USER_TOOL = "inspect_dockerfile_user"
 _PYTHON_PASSWORD_TOOL = "inspect_python_password_assignment"
 _REACT_HTML_FLOW_TOOL = "inspect_react_dangerous_html_flow"
 _HTTP_SURFACE_TOOL = "observe_http_surface"
+_SANDBOX_COMMAND_TOOL = "sandbox_command"
 _MAX_SOURCE_BYTES = 512 * 1024
 _MAX_ARTIFACTS = 64
 
@@ -140,6 +142,63 @@ def _safe_noop(parameters: dict) -> tuple[int, str, str]:
     if outcome not in {"confirmed", "rejected", "inconclusive"}:
         return 2, "", "Invalid safe_noop test_outcome"
     return 0, f"safe_noop:{message}:outcome={outcome}", ""
+
+
+def _sandbox_command(
+    repository_path: str,
+    parameters: dict,
+    timeout: float,
+    output_limit: int,
+) -> tuple[int, str, str]:
+    if set(parameters) != {"argv", "cwd"}:
+        return 2, "", "sandbox_command requires exactly argv and cwd"
+    argv = parameters.get("argv")
+    cwd = parameters.get("cwd")
+    if not isinstance(argv, list) or not argv or len(argv) > 32:
+        return 2, "", "sandbox_command argv must contain 1-32 items"
+    if any(not isinstance(item, str) or not item or "\x00" in item for item in argv):
+        return 2, "", "sandbox_command argv items must be non-empty strings"
+    if any(len(item) > 1024 for item in argv) or sum(len(item) for item in argv) > 8192:
+        return 2, "", "sandbox_command argv exceeds bounded command size"
+
+    if cwd == "/target":
+        if not repository_path:
+            return 2, "", "sandbox_command requires the trusted target mount"
+        workdir = Path(repository_path)
+    elif cwd == "/workspace":
+        workdir = Path("/workspace")
+    else:
+        return 2, "", "sandbox_command cwd is outside the disposable lab"
+
+    try:
+        workdir = workdir.resolve(strict=True)
+    except OSError:
+        return 2, "", "sandbox_command cwd is unavailable inside the disposable lab"
+    if not workdir.is_dir():
+        return 2, "", "sandbox_command cwd is not a directory"
+
+    try:
+        result = subprocess.run(
+            argv,
+            cwd=workdir,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            shell=False,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return 124, "", "sandbox_command timed out"
+    except OSError as exc:
+        return 127, "", f"sandbox_command failed to start: {type(exc).__name__}: {exc}"
+
+    stdout = result.stdout or ""
+    stderr = result.stderr or ""
+    if len(stdout) > output_limit:
+        stdout = f"{stdout[:output_limit]}\n...[truncated]"
+    if len(stderr) > output_limit:
+        stderr = f"{stderr[:output_limit]}\n...[truncated]"
+    return int(result.returncode), stdout, stderr
 
 
 def _validated_artifacts(raw_artifacts: object) -> dict[str, dict[str, str]]:
@@ -711,6 +770,9 @@ def _execute(payload: dict) -> tuple[int, str, str]:
 
     if tool == "safe_noop":
         return _safe_noop(parameters)
+
+    if tool == _SANDBOX_COMMAND_TOOL:
+        return _sandbox_command(repository_path, parameters, timeout, output_limit)
 
     if tool in {_DOCKERFILE_USER_TOOL, _PYTHON_PASSWORD_TOOL, _REACT_HTML_FLOW_TOOL}:
         try:

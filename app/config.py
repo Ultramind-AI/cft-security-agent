@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     policy_file: Path = Path("policies/default.yaml")
     target_file: Path = Path("targets/sberlab.yaml")
     max_iterations: int = 5
+    agent_wall_clock_seconds: float = 120.0
     target_base_url: str | None = None
     target_repository_path: Path | None = None
     executor_timeout_seconds: float = 5.0

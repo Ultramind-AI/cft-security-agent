@@ -36,8 +36,8 @@ class DynamicPlanValidator:
         rules.append("hypothesis_matches_state")
 
         current_iteration = int(state.get("iteration_count", 0))
-        max_iterations = int(state.get("max_iterations", 2))
-        remaining = max_iterations - current_iteration
+        max_steps = int(state.get("max_steps", state.get("max_iterations", 2)))
+        remaining = max_steps - current_iteration
         if remaining < 1:
             return self._deny(plan, "No iteration budget remains for DynamicPlan", rules)
         if plan.max_steps > remaining or len(plan.steps) > remaining:
@@ -86,6 +86,18 @@ class DynamicPlanValidator:
                     "DynamicPlan action escapes current target scope",
                     rules,
                 )
+
+            if action.tool == "sandbox_command":
+                if action.service is not None or action.endpoint is not None:
+                    return self._deny(
+                        plan,
+                        "sandbox_command cannot request runtime network scope directly",
+                        rules,
+                    )
+                error = _sandbox_command_error(action.parameters)
+                if error is not None:
+                    return self._deny(plan, error, rules)
+                continue
 
             if action.endpoint is not None and action.service is None:
                 return self._deny(plan, "Endpoint reference requires a service", rules)
@@ -140,3 +152,19 @@ class DynamicPlanValidator:
             reason=reason,
             rules=[*rules, "dynamic_plan_scope_denied"],
         )
+
+
+def _sandbox_command_error(parameters: dict) -> str | None:
+    if set(parameters) != {"argv", "cwd"}:
+        return "sandbox_command requires exactly argv and cwd parameters"
+    argv = parameters.get("argv")
+    cwd = parameters.get("cwd")
+    if not isinstance(argv, list) or not argv or len(argv) > 32:
+        return "sandbox_command argv must contain 1-32 items"
+    if any(not isinstance(item, str) or not item or "\x00" in item for item in argv):
+        return "sandbox_command argv items must be non-empty strings without NUL bytes"
+    if any(len(item) > 1024 for item in argv) or sum(len(item) for item in argv) > 8192:
+        return "sandbox_command argv exceeds the bounded command size"
+    if cwd not in {"/target", "/workspace"}:
+        return "sandbox_command cwd must stay inside /target or /workspace"
+    return None

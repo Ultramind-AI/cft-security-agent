@@ -247,6 +247,35 @@ class PolicyValidator:
                     "parameter_values_denied",
                 )
 
+        list_parameters = set(contract.get("string_list_parameters", []))
+        max_list_lengths = contract.get("max_list_lengths", {})
+        max_list_item_lengths = contract.get("max_list_item_lengths", {})
+        for name in list_parameters:
+            if name not in action.parameters:
+                continue
+            value = action.parameters[name]
+            if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
+                return (
+                    f"Parameter '{name}' must be a list of strings",
+                    "parameter_values_denied",
+                )
+            if len(value) > int(max_list_lengths.get(name, len(value))):
+                return (
+                    f"Parameter '{name}' exceeds maximum item count",
+                    "parameter_values_denied",
+                )
+            item_limit = int(max_list_item_lengths.get(name, 0))
+            if item_limit and any(len(item) > item_limit for item in value):
+                return (
+                    f"Parameter '{name}' contains an item that exceeds maximum length",
+                    "parameter_values_denied",
+                )
+            if any(not item or "\x00" in item for item in value):
+                return (
+                    f"Parameter '{name}' contains an invalid string item",
+                    "parameter_values_denied",
+                )
+
         return None
 
     def _validate_registered_artifacts(

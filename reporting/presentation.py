@@ -11,6 +11,7 @@ _STATUS_LABELS = {
 }
 
 _BASIS_LABELS = {
+    "agent_budget": "agent step/wall-clock budget",
     "capability_specific_evidence": "capability-specific Evidence",
     "validator_policy": "Validator policy",
     "iteration_limit": "iteration limit",
@@ -110,6 +111,17 @@ def render_final_report(report: FinalReport) -> str:
                 f"  {action.action_id}: {action.capability} → {action.target} "
                 f"[{action.execution_status or 'not executed'}]"
             )
+
+    lines.extend(["", f"Agent decisions ({len(report.agent_decisions)})"])
+    if not report.agent_decisions:
+        lines.append("  No adaptive decision recorded.")
+    else:
+        for decision_item in report.agent_decisions:
+            suffix = f" ({decision_item.stop_reason})" if decision_item.stop_reason else ""
+            lines.append(
+                f"  Step {decision_item.step}: {decision_item.outcome.upper()}{suffix}"
+            )
+            lines.append(f"    {decision_item.reason}")
 
     lines.extend(["", f"Policy decisions ({len(report.policy_decisions)})"])
     if not report.policy_decisions:

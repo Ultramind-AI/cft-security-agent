@@ -230,3 +230,31 @@ def test_persistent_docker_runtime_decodes_utf8_and_handles_empty_output(monkeyp
     runtime.close()
     assert result.stdout == ""
     assert result.stderr == ""
+
+
+def test_runner_rejects_sandbox_command_runtime_scope() -> None:
+    action = _action(
+        "sandbox-network-scope",
+        tool="sandbox_command",
+        parameters={"argv": ["python", "-V"], "cwd": "/target"},
+        service="api",
+        endpoint="/health/",
+    )
+    registry = ToolRegistry()
+    registry.register("sandbox_command", object())
+    called = False
+
+    def execute(*_args) -> ExecutionResult:
+        nonlocal called
+        called = True
+        raise AssertionError("sandbox command must be denied before execution")
+
+    result = SandboxRunner(
+        approvals=_approved(action),
+        registry=registry,
+        execute_one=execute,
+    ).run([action], runtime_services=_runtime_map())
+
+    assert result.status == "denied"
+    assert "cannot request runtime network scope" in result.results[0].stderr
+    assert called is False

@@ -25,6 +25,24 @@ export class ApiError extends Error {
   }
 }
 
+function validationDetail(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object" || !("detail" in payload)) return null;
+  const detail = (payload as { detail?: unknown }).detail;
+  if (typeof detail === "string") return detail;
+  if (!Array.isArray(detail)) return null;
+
+  const messages = detail.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const record = item as { loc?: unknown; msg?: unknown };
+    if (typeof record.msg !== "string") return [];
+    const location = Array.isArray(record.loc)
+      ? record.loc.filter((part) => part !== "body").join(".")
+      : "";
+    return [location ? `${location}: ${record.msg}` : record.msg];
+  });
+  return messages.length > 0 ? messages.join("; ") : null;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${BASE_URL}${path}`, {
     headers:
@@ -37,7 +55,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     let detail = `${response.status} ${response.statusText}`;
     try {
       const payload = await response.json();
-      if (typeof payload.detail === "string") detail = payload.detail;
+      detail = validationDetail(payload) ?? detail;
     } catch {
       // keep default detail
     }

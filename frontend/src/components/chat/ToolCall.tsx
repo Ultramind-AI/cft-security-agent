@@ -23,7 +23,7 @@ export function ToolCall({ tool }: { tool: TimelineTool }) {
         <code>{command ?? toolLabel(tool.capability)}</code>
         <span className="tool-result">
           {failed ? <WarningCircle size={15} /> : <CheckCircle size={15} />}
-          {tool.exitCode !== null ? `exit ${tool.exitCode}` : tool.status ?? "recorded"}
+          {tool.exitCode !== null ? `код ${tool.exitCode}` : toolStatus(tool.status)}
           {tool.durationMs !== null ? ` · ${formatMs(tool.durationMs)}` : ""}
         </span>
       </summary>
@@ -31,14 +31,14 @@ export function ToolCall({ tool }: { tool: TimelineTool }) {
       <div className="tool-details">
         {tool.purpose ? (
           <div className="tool-purpose">
-            <span>Purpose</span>
+            <span>Цель</span>
             <p>{tool.purpose}</p>
           </div>
         ) : null}
 
         {command ? (
           <div className="terminal-block">
-            <div className="terminal-title">command</div>
+            <div className="terminal-title">команда</div>
             <pre>$ {command}</pre>
           </div>
         ) : null}
@@ -57,35 +57,35 @@ export function ToolCall({ tool }: { tool: TimelineTool }) {
 
         <dl className="compact-metadata">
           <div>
-            <dt>Capability</dt>
+            <dt>Возможность</dt>
             <dd>{tool.capability}</dd>
           </div>
           {tool.cwd ? (
             <div>
-              <dt>Working directory</dt>
+              <dt>Рабочая папка</dt>
               <dd>{tool.cwd}</dd>
             </div>
           ) : null}
           {tool.target ? (
             <div>
-              <dt>Target</dt>
+              <dt>Цель</dt>
               <dd>{tool.target}</dd>
             </div>
           ) : null}
           {tool.environment ? (
             <div>
-              <dt>Environment</dt>
+              <dt>Окружение</dt>
               <dd>{tool.environment}</dd>
             </div>
           ) : null}
           {tool.sandboxSessionId ? (
             <div>
-              <dt>Sandbox session</dt>
+              <dt>Сессия песочницы</dt>
               <dd>{tool.sandboxSessionId}</dd>
             </div>
           ) : null}
           <div>
-            <dt>Action</dt>
+            <dt>Действие</dt>
             <dd>{tool.actionId}</dd>
           </div>
         </dl>
@@ -95,12 +95,22 @@ export function ToolCall({ tool }: { tool: TimelineTool }) {
 }
 
 function toolVerb(capability: string, command: string | null): string {
-  if (command) return "Ran";
-  if (capability.startsWith("inspect_")) return "Read";
+  if (command) return "Выполнено";
+  if (capability.startsWith("inspect_")) return "Проверено";
   if (capability.startsWith("observe_") || capability.startsWith("check_")) {
-    return "Checked";
+    return "Проверено";
   }
-  return "Called";
+  return "Вызвано";
+}
+
+function toolStatus(status: string | null): string {
+  switch (status) {
+    case "completed": return "завершено";
+    case "failed": return "ошибка";
+    case "denied": return "отклонено";
+    case "running": return "выполняется";
+    default: return status ?? "записано";
+  }
 }
 
 function formatCommand(argv: string[]): string {

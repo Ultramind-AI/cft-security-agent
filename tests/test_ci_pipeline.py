@@ -309,3 +309,77 @@ def test_repository_level_finding_does_not_become_technical_failure(
             settings.target_repository_path,
             settings.agent_mode,
         ) = settings_snapshot
+
+
+def test_unmapped_specialized_finding_is_inconclusive_not_technical_failure(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "target"
+    source = target / "core" / "seed_demo.py"
+    source.parent.mkdir(parents=True)
+    source.write_text("user.password = 'redacted'\n", encoding="utf-8")
+    profile_path = _profile(tmp_path, target)
+    findings = tmp_path / "findings.json"
+    findings.write_text(
+        json.dumps(
+            [
+                {
+                    "id": "unvalidated-password:core/seed_demo.py:1",
+                    "source": "semgrep",
+                    "rule_id": (
+                        "python.django.security.audit.unvalidated-password."
+                        "unvalidated-password"
+                    ),
+                    "title": "Password validation is bypassed",
+                    "description": "Controlled verification requires a trusted artifact.",
+                    "file": "core/seed_demo.py",
+                    "line_start": 1,
+                    "line_end": 1,
+                    "severity": "WARNING",
+                    "service": "backend",
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    args = argparse.Namespace(
+        profile=str(profile_path),
+        target=str(target),
+        architecture=None,
+        architecture_overrides=None,
+        sast_config="auto",
+        output_dir=str(tmp_path / "pipeline-artifacts"),
+        findings=str(findings),
+        agent_mode="stub",
+        max_iterations=1,
+        full_reports=False,
+        base_ref=None,
+        head_ref="HEAD",
+        base_findings=None,
+        base_architecture=None,
+    )
+
+    settings_snapshot = (
+        settings.target_file,
+        settings.target_repository_path,
+        settings.agent_mode,
+    )
+    try:
+        assert run_pipeline(args) == 0
+        gate = json.loads(
+            (tmp_path / "pipeline-artifacts" / "gate.json").read_text(encoding="utf-8")
+        )
+        report_path = next((tmp_path / "pipeline-artifacts" / "reports").glob("*.json"))
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+
+        assert gate["decision"] == "warn"
+        assert gate["technical_errors"] == 0
+        assert gate["inconclusive"] == 1
+        assert "artifact:core/seed_demo.py" in report["explanation"]
+        assert "not bypassed" in report["explanation"]
+    finally:
+        (
+            settings.target_file,
+            settings.target_repository_path,
+            settings.agent_mode,
+        ) = settings_snapshot

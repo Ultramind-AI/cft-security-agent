@@ -15,7 +15,7 @@ import { GateBlock } from "../components/chat/GateBlock";
 import { StageBlock } from "../components/chat/TimelineEvent";
 import { ToolCall } from "../components/chat/ToolCall";
 import { useSse } from "../hooks/useSse";
-import { formatDateTime, formatDuration, shortId } from "../lib/format";
+import { formatDateTime, formatDuration, runStatusLabel, shortId } from "../lib/format";
 
 export function RunPage() {
   const { runId } = useParams();
@@ -56,19 +56,19 @@ export function RunPage() {
     enabled: Boolean(runId) && !active,
   });
 
-  if (!run) return <div className="workspace-state">Loading run…</div>;
+  if (!run) return <div className="workspace-state">Загрузка прогона…</div>;
   const reports = reportsQuery.data ?? [];
 
   return (
     <div className="full-report-page">
       <header className="full-report-header">
         <div>
-          <Link to="/debug/runs" className="back-link"><ArrowLeft size={15} /> Runs / Debug</Link>
-          <h1>Security analysis</h1>
+          <Link to="/debug/runs" className="back-link"><ArrowLeft size={15} /> Прогоны и диагностика</Link>
+          <h1>Анализ безопасности</h1>
           <p>{run.target_id} · <code>{shortId(run.id)}</code></p>
         </div>
         <div className="run-facts">
-          <span>{run.status}</span>
+          <span>{runStatusLabel(run.status)}</span>
           <span>{formatDateTime(run.started_at ?? run.created_at)}</span>
           <span>{formatDuration(run.started_at, run.finished_at)}</span>
         </div>
@@ -77,7 +77,7 @@ export function RunPage() {
       <main className="full-report-content">
         {active ? (
           <section className="report-live">
-            <div className="report-live-title"><CircleNotch size={17} className="spin" /> Analysis in progress</div>
+            <div className="report-live-title"><CircleNotch size={17} className="spin" /> Анализ выполняется</div>
             {(progressQuery.data?.stages ?? []).map((stage, index) => (
               <StageBlock key={`${stage.stage}-${stage.status}-${index}`} stage={stage} />
             ))}
@@ -86,7 +86,7 @@ export function RunPage() {
 
         {run.error ? (
           <div className="inline-notice technical">
-            <strong>Technical failure</strong>
+            <strong>Техническая ошибка</strong>
             <span>{run.error.message}</span>
           </div>
         ) : null}

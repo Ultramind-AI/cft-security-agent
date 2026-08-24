@@ -48,7 +48,7 @@ export function Sidebar({
       await onDeleteChat(pendingDelete.id);
       setPendingDelete(null);
     } catch (error) {
-      setDeleteError(error instanceof Error ? error.message : "Could not delete chat");
+      setDeleteError(error instanceof Error ? error.message : "Не удалось удалить чат");
     } finally {
       setDeleting(false);
     }
@@ -61,7 +61,7 @@ export function Sidebar({
         </span>
         <span>
           <strong>CFT Security</strong>
-          <small>Agent workspace</small>
+          <small>Рабочее пространство агента</small>
         </span>
         <button
           type="button"
@@ -76,18 +76,18 @@ export function Sidebar({
       <div className="sidebar-actions">
         <button type="button" className="sidebar-primary" onClick={onNewChat}>
           <Plus size={16} weight="bold" />
-          New chat
+          Новый чат
         </button>
         <button type="button" className="sidebar-action" onClick={onOpenProject}>
           <FolderOpen size={16} />
-          Open project
+          Открыть проект
         </button>
       </div>
 
-      <nav className="sidebar-scroll" aria-label="Workspace navigation">
-        <SidebarSection title="Projects">
+      <nav className="sidebar-scroll" aria-label="Навигация по рабочему пространству">
+        <SidebarSection title="Проекты">
           {projects.length === 0 ? (
-            <p className="sidebar-empty">No projects</p>
+            <p className="sidebar-empty">Нет проектов</p>
           ) : (
             projects.map((project) => (
               <button
@@ -105,9 +105,9 @@ export function Sidebar({
           )}
         </SidebarSection>
 
-        <SidebarSection title="Recent chats">
+        <SidebarSection title="Недавние чаты">
           {sessions.length === 0 ? (
-            <p className="sidebar-empty">No conversations yet</p>
+            <p className="sidebar-empty">Чатов пока нет</p>
           ) : (
             sessions.map((session) => (
               <div className="chat-row-shell" key={session.id}>
@@ -125,7 +125,7 @@ export function Sidebar({
                 <button
                   type="button"
                   className="chat-delete-button"
-                  aria-label={`Delete chat ${session.title}`}
+                  aria-label={`Удалить чат ${session.title}`}
                   onClick={() => {
                     setDeleteError(null);
                     setPendingDelete(session);
@@ -142,21 +142,21 @@ export function Sidebar({
       <div className="sidebar-footer">
         <NavLink to="/debug/runs" onClick={onCloseMobile}>
           <Bug size={15} />
-          Runs / Debug
+          Прогоны и диагностика
         </NavLink>
       </div>
 
       {pendingDelete ? (
         <div className="confirm-backdrop" role="presentation">
           <div className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-chat-title">
-            <span className="eyebrow">Conversation</span>
-            <h2 id="delete-chat-title">Delete this chat?</h2>
-            <p>“{pendingDelete.title}” will disappear from the sidebar. Analysis runs and Evidence stay available in Debug.</p>
+            <span className="eyebrow">Чат</span>
+            <h2 id="delete-chat-title">Удалить этот чат?</h2>
+            <p>«{pendingDelete.title}» исчезнет из боковой панели. Прогоны анализа и доказательства останутся в разделе диагностики.</p>
             {deleteError ? <div className="confirm-error" role="alert">{deleteError}</div> : null}
             <div className="confirm-actions">
-              <button type="button" onClick={() => setPendingDelete(null)} disabled={deleting}>Cancel</button>
+              <button type="button" onClick={() => setPendingDelete(null)} disabled={deleting}>Отмена</button>
               <button type="button" className="danger-action" onClick={() => void confirmDelete()} disabled={deleting}>
-                {deleting ? "Deleting…" : "Delete chat"}
+                {deleting ? "Удаление…" : "Удалить чат"}
               </button>
             </div>
           </div>

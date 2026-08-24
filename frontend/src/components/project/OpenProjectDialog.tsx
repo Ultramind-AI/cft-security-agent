@@ -60,8 +60,8 @@ export function OpenProjectDialog({
       >
         <header className="dialog-header">
           <div>
-            <p className="eyebrow">Project context</p>
-            <h2 id="open-project-title">Open project</h2>
+            <p className="eyebrow">Контекст проекта</p>
+            <h2 id="open-project-title">Открыть проект</h2>
           </div>
           <button
             type="button"
@@ -76,13 +76,13 @@ export function OpenProjectDialog({
 
         <div className="dialog-tabs" role="tablist" aria-label="Источник проекта">
           <Tab active={mode === "folder"} onClick={() => setMode("folder")}>
-            Folder
+            Папка
           </Tab>
           <Tab active={mode === "zip"} onClick={() => setMode("zip")}>
             ZIP
           </Tab>
           <Tab active={mode === "existing"} onClick={() => setMode("existing")}>
-            Existing
+            Импортированные
           </Tab>
         </div>
 
@@ -92,17 +92,17 @@ export function OpenProjectDialog({
           ) : mode === "folder" ? (
             <ProjectSource
               icon={<FolderOpen size={28} weight="duotone" />}
-              title="Open a repository folder"
-              description="The browser sends a filtered relative file tree. Absolute host paths never leave your machine."
-              action="Choose folder"
+              title="Открыть папку репозитория"
+              description="Браузер передаёт отфильтрованное дерево относительных путей. Абсолютные пути вашего компьютера не отправляются."
+              action="Выбрать папку"
               onClick={() => folderInputRef.current?.click()}
             />
           ) : mode === "zip" ? (
             <ProjectSource
               icon={<FileZip size={28} weight="duotone" />}
-              title="Upload a project ZIP"
-              description="The server rejects traversal, symlinks and oversized archives before Discovery starts."
-              action="Choose ZIP"
+              title="Загрузить ZIP проекта"
+              description="До начала исследования сервер отклоняет выход за границы архива, символические ссылки и слишком большие файлы."
+              action="Выбрать ZIP"
               onClick={() => zipInputRef.current?.click()}
             />
           ) : (
@@ -111,8 +111,8 @@ export function OpenProjectDialog({
 
           {(error || progress.phase === "error") && (
             <div className="inline-notice technical" role="alert">
-              <strong>Project import failed</strong>
-              <span>{error ?? progress.message ?? "Unknown import error"}</span>
+              <strong>Не удалось импортировать проект</strong>
+              <span>{error ?? progress.message ?? "Неизвестная ошибка импорта"}</span>
             </div>
           )}
         </div>
@@ -201,7 +201,7 @@ function ExistingProjects({
   onOpen: (targetId: string) => void;
 }) {
   if (projects.length === 0) {
-    return <p className="dialog-empty">No imported projects yet.</p>;
+    return <p className="dialog-empty">Импортированных проектов пока нет.</p>;
   }
   return (
     <div className="existing-projects">
@@ -222,7 +222,7 @@ function ExistingProjects({
             </small>
           </span>
           <span className={`project-availability ${project.repository_available ? "ready" : "missing"}`}>
-            {project.repository_available ? "Ready" : "Missing checkout"}
+            {project.repository_available ? "Готов" : "Репозиторий недоступен"}
           </span>
         </button>
       ))}
@@ -240,13 +240,13 @@ function ImportState({ progress }: { progress: ImportProgress }) {
         <CircleNotch size={30} className="spin" />
       )}
       <div>
-        <strong>{done ? "Project ready" : "Discovering project…"}</strong>
+        <strong>{done ? "Проект готов" : "Исследуем проект…"}</strong>
         <span>
           {progress.phase === "collecting"
-            ? `${progress.collected} source files collected`
+            ? `Собрано исходных файлов: ${progress.collected}`
             : done
-              ? "Opening a new security chat"
-              : "Uploading the relative file tree and building TargetProfile"}
+              ? "Открываем новый чат безопасности"
+              : "Загружаем дерево файлов и создаём профиль цели"}
         </span>
       </div>
     </div>

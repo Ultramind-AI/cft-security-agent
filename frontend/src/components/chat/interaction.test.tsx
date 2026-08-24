@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 import type { ApiProject } from "../../api/types";
+import { AssistantMessage } from "./AssistantMessage";
 import { Composer } from "./Composer";
 import { EvidenceBlock } from "./EvidenceBlock";
 import { FindingBlock } from "./FindingBlock";
@@ -58,17 +59,17 @@ describe("chat interactions", () => {
 
     expect(screen.getAllByText("Unsafe config").length).toBeGreaterThan(0);
     expect(screen.getByText("No USER directive")).toBeTruthy();
-    expect(screen.getByText("FAIL")).toBeTruthy();
+    expect(screen.getByText("НЕ ПРОЙДЕН")).toBeTruthy();
   });
 
   it("starts a new chat from a suggested action", async () => {
     const select = vi.fn();
     render(<SuggestedActions onSelect={select} />);
 
-    await userEvent.click(screen.getByRole("button", { name: "Authentication and sessions" }));
+    await userEvent.click(screen.getByRole("button", { name: "Аутентификация и сессии" }));
 
     expect(select).toHaveBeenCalledWith(
-      "Проверь authentication, authorization и управление сессиями",
+      "Проверь аутентификацию, авторизацию и управление сессиями",
     );
   });
 
@@ -82,8 +83,28 @@ describe("chat interactions", () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByText("Analysis stopped")).toBeTruthy();
-    expect(screen.getByText("TECHNICAL ERROR")).toBeTruthy();
+    expect(screen.getByText("Анализ остановлен")).toBeTruthy();
+    expect(screen.getByText("ТЕХНИЧЕСКАЯ ОШИБКА")).toBeTruthy();
     expect(screen.queryByLabelText("Finding counts")).toBeNull();
+  });
+
+  it("renders assistant Markdown as semantic content", () => {
+    render(
+      <AssistantMessage
+        message={{
+          id: "m1",
+          session_id: "chat-1",
+          role: "assistant",
+          kind: "summary",
+          content: "**Итог:**\n\n- Первый пункт\n- `код`",
+          run_id: "run-1",
+          created_at: "2026-08-24T10:00:00Z",
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Итог:").tagName).toBe("STRONG");
+    expect(screen.getByText("Первый пункт").tagName).toBe("LI");
+    expect(screen.getByText("код").tagName).toBe("CODE");
   });
 });

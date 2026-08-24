@@ -83,13 +83,13 @@ export function Conversation({
           {runActive && streamState === "error" ? (
             <div className="stream-status">
               <WifiSlash size={15} />
-              Live connection interrupted. Reconnecting…
+              Соединение прервано. Переподключаемся…
             </div>
           ) : null}
 
           {transientError ? (
             <div className="inline-notice technical" role="alert">
-              <strong>Message was not sent</strong>
+              <strong>Сообщение не отправлено</strong>
               <span>{transientError}</span>
             </div>
           ) : null}
@@ -100,7 +100,7 @@ export function Conversation({
       {unread ? (
         <button type="button" className="jump-latest" onClick={jumpToLatest}>
           <ArrowDown size={15} />
-          New activity
+          Новые события
         </button>
       ) : null}
     </div>

@@ -1,7 +1,7 @@
 import { ArrowSquareOut, ShieldCheck } from "@phosphor-icons/react";
 import { Link } from "react-router-dom";
 import type { ApiRun, FinalReport, GateResult } from "../../api/types";
-import { severityTone } from "../../lib/format";
+import { findingTitle, gateLabel, severityLabel, severityTone } from "../../lib/format";
 
 export function GateBlock({
   gate,
@@ -25,30 +25,30 @@ export function GateBlock({
           <ShieldCheck size={19} weight="duotone" />
         </span>
         <div>
-          <span>{technicalFailure ? "Analysis stopped" : "Analysis complete"}</span>
-          <strong>{technicalFailure ? "TECHNICAL ERROR" : gate.decision.toUpperCase()}</strong>
+          <span>{technicalFailure ? "Анализ остановлен" : "Анализ завершён"}</span>
+          <strong>{technicalFailure ? "ТЕХНИЧЕСКАЯ ОШИБКА" : gateLabel(gate.decision)}</strong>
         </div>
       </div>
 
       {!technicalFailure ? <div className="summary-counts" aria-label="Finding counts">
-        <span><strong>{gate.confirmed}</strong> confirmed</span>
-        <span><strong>{gate.rejected}</strong> rejected</span>
-        <span><strong>{gate.inconclusive}</strong> inconclusive</span>
+        <span><strong>{gate.confirmed}</strong> подтверждено</span>
+        <span><strong>{gate.rejected}</strong> опровергнуто</span>
+        <span><strong>{gate.inconclusive}</strong> недостаточно данных</span>
         {gate.policy_blocked > 0 ? (
-          <span><strong>{gate.policy_blocked}</strong> policy blocked</span>
+          <span><strong>{gate.policy_blocked}</strong> заблокировано политикой</span>
         ) : null}
       </div> : null}
 
       {top.length > 0 ? (
         <div className="top-findings">
-          <span>Top findings</span>
+          <span>Главные находки</span>
           <ol>
             {top.map((report) => (
               <li key={report.finding_id}>
                 <span className={`severity ${severityTone(report.finding.severity)}`}>
-                  {report.finding.severity?.toUpperCase() ?? "UNKNOWN"}
+                  {severityLabel(report.finding.severity)}
                 </span>
-                <span>{report.finding.title}</span>
+                <span>{findingTitle(report.finding.rule_id, report.finding.title)}</span>
               </li>
             ))}
           </ol>
@@ -56,7 +56,7 @@ export function GateBlock({
       ) : null}
 
       <Link className="summary-link" to={`/runs/${run.id}`}>
-        Open full report
+        Открыть полный отчёт
         <ArrowSquareOut size={15} />
       </Link>
     </article>

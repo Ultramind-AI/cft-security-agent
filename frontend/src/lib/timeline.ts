@@ -90,6 +90,7 @@ export function buildConversationTimeline(
   snapshot: ChatSnapshot,
 ): ConversationTimelineItem[] {
   const snapshots = runSnapshots(snapshot);
+  const runsById = new Map(snapshots.map(({ run }) => [run.id, run]));
   const technicalRunIds = new Set(
     snapshots
       .filter(({ run }) => run.status === "technical_failure")
@@ -101,15 +102,22 @@ export function buildConversationTimeline(
       message.run_id === null ||
       !technicalRunIds.has(message.run_id),
   );
-  const items: ConversationTimelineItem[] = messages.map((message) => ({
-    kind: "message",
-    id: `message:${message.id}`,
-    runId: message.run_id,
-    at: message.created_at,
-    sortTime: timeOf(message.created_at, 0),
-    sortRank: KIND_RANK.message,
-    message,
-  }));
+  const items: ConversationTimelineItem[] = messages.map((message) => {
+    const run = message.run_id ? runsById.get(message.run_id) : undefined;
+    const messageTime = timeOf(message.created_at, 0);
+    const isFinalSummary = message.kind === "summary" && run?.finished_at;
+    return {
+      kind: "message",
+      id: `message:${message.id}`,
+      runId: message.run_id,
+      at: message.created_at,
+      sortTime: isFinalSummary
+        ? Math.max(messageTime, timeOf(run.finished_at, messageTime) + 3)
+        : messageTime,
+      sortRank: isFinalSummary ? 100 : KIND_RANK.message,
+      message,
+    };
+  });
 
   for (const runSnapshot of snapshots) {
     appendRun(items, runSnapshot);
@@ -218,7 +226,10 @@ function appendRun(
       id: `run:${run.id}:gate`,
       runId: run.id,
       at,
-      sortTime: timeOf(run.finished_at, startedMs + 100_000),
+      // The Gate is the deterministic conclusion of all finding reports, so it
+      // must render after every report card even when static reports inherit
+      // the same run completion timestamp.
+      sortTime: timeOf(run.finished_at, startedMs + 100_000) + 2,
       sortRank: KIND_RANK.gate,
       gate,
       reports,

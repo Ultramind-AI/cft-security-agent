@@ -6,7 +6,12 @@ import {
   XCircle,
 } from "@phosphor-icons/react";
 import type { FinalReport } from "../../api/types";
-import { findingStatusLabel, severityTone } from "../../lib/format";
+import {
+  findingStatusLabel,
+  findingTitle,
+  severityLabel,
+  severityTone,
+} from "../../lib/format";
 
 export function FindingBlock({ report }: { report: FinalReport }) {
   const location = [
@@ -23,14 +28,14 @@ export function FindingBlock({ report }: { report: FinalReport }) {
         <span className="finding-status-icon">{statusIcon(report.status)}</span>
         <span className="finding-main">
           <span className="finding-kicker">{findingStatusLabel(report.status)}</span>
-          <strong>{report.finding.title}</strong>
+          <strong>{findingTitle(report.finding.rule_id, report.finding.title)}</strong>
           <small>
-            {report.evidence.length} evidence item{report.evidence.length === 1 ? "" : "s"}
+            Доказательств: {report.evidence.length}
             {location ? ` · ${location}` : ""}
           </small>
         </span>
         <span className={`severity ${severityTone(report.finding.severity)}`}>
-          {report.finding.severity?.toUpperCase() ?? "UNKNOWN"}
+          {severityLabel(report.finding.severity)}
         </span>
       </summary>
 
@@ -38,17 +43,17 @@ export function FindingBlock({ report }: { report: FinalReport }) {
         {report.analysis_summary ? <p>{report.analysis_summary}</p> : null}
         {report.hypothesis ? (
           <section>
-            <span>Hypothesis</span>
+            <span>Гипотеза</span>
             <p>{report.hypothesis}</p>
           </section>
         ) : null}
         <section>
-          <span>Evidence-based conclusion</span>
+          <span>Вывод на основе доказательств</span>
           <p>{report.explanation}</p>
         </section>
         {report.limitations.length > 0 ? (
           <section>
-            <span>Limitations</span>
+              <span>Ограничения</span>
             <ul>
               {report.limitations.map((limitation) => (
                 <li key={limitation}>{limitation}</li>
@@ -57,7 +62,7 @@ export function FindingBlock({ report }: { report: FinalReport }) {
           </section>
         ) : null}
         <section>
-          <span>Next step</span>
+          <span>Следующий шаг</span>
           <p>{report.next_step}</p>
         </section>
       </div>

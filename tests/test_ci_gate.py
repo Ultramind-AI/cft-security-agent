@@ -1,7 +1,7 @@
 import json
 import subprocess
 
-from executor.sandbox_session import SessionTimeoutError
+from executor.sandbox_session import SandboxSessionError, SessionTimeoutError
 from pipeline.errors import error_from_exception
 from pipeline.gate import evaluate_gate
 from schemas.errors import ErrorDetail
@@ -208,6 +208,23 @@ def test_sandbox_readiness_timeout_is_retryable_timeout() -> None:
 
     assert error.code == "TIMEOUT"
     assert error.retryable is True
+
+
+def test_sandbox_port_conflict_has_safe_actionable_error() -> None:
+    error = error_from_exception(
+        SandboxSessionError(
+            "Docker Compose command failed: Bind for 0.0.0.0:8000 failed: "
+            "port is already allocated"
+        ),
+        layer="pipeline",
+        public_message="Managed CI pipeline failed",
+    )
+
+    assert error.code == "DEPENDENCY_UNAVAILABLE"
+    assert error.retryable is True
+    assert error.message == (
+        "Sandbox could not start because a required host port is already allocated"
+    )
 
 
 def test_structured_pipeline_error_redacts_public_secret() -> None:

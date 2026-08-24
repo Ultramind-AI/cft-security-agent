@@ -107,6 +107,29 @@ def test_lifecycle_order_state_and_idempotent_teardown(tmp_path: Path) -> None:
     assert all(isinstance(command, list) for command in fake.commands)
 
 
+def test_compose_session_resets_all_host_ports_with_server_owned_override(
+    tmp_path: Path,
+) -> None:
+    fake = FakeCompose()
+    session = SandboxSession(
+        _target(tmp_path),
+        runner=fake,
+        health_probe=lambda url, timeout: True,
+    )
+
+    session.prepare()
+
+    override = session.info.working_directory / "compose.sandbox.override.yml"
+    assert override.read_text(encoding="utf-8") == (
+        'services:\n  "app":\n    ports: !reset []\n'
+    )
+    config_commands = [command for command in fake.commands if command[-1] == "config"]
+    assert len(config_commands) == 2
+    assert str(override) not in config_commands[0]
+    assert str(override) in config_commands[1]
+    session.teardown()
+
+
 def test_normalize_compose_ps_supports_array_object_and_json_lines() -> None:
     record = {
         "Service": "backend",

@@ -16,13 +16,18 @@ import type {
   RunFindingProgressEvent,
   RunStageEvent,
 } from "../../api/types";
-import { stageLabel } from "../../lib/format";
+import {
+  findingStatusLabel,
+  findingTitle,
+  stageDetailLabel,
+  stageLabel,
+} from "../../lib/format";
 
 export function RunStartBlock({ run }: { run: ApiRun }) {
   return (
     <div className="timeline-row run-start-row">
       <GitBranch size={15} />
-      <span>Analysis run started</span>
+      <span>Анализ запущен</span>
       {run.analysis_request ? <small>{run.analysis_request}</small> : null}
     </div>
   );
@@ -41,19 +46,19 @@ export function StageBlock({ stage }: { stage: RunStageEvent }) {
         <CheckCircle size={15} />
       )}
       <span>{stageLabel(stage.stage)}</span>
-      <small>{stage.detail ?? stage.status}</small>
+      <small>{stageDetailLabel(stage.detail, stage.status)}</small>
     </div>
   );
 }
 
 export function DiscoveryBlock({ discovery }: { discovery: RunDiscoveryView }) {
-  const stack = discovery.technologies.join(" · ") || "Technology stack unavailable";
+  const stack = discovery.technologies.join(" · ") || "Стек технологий не определён";
   return (
     <details className="timeline-disclosure discovery-block">
       <summary>
         <CaretRight size={14} className="details-caret" />
         <Compass size={16} weight="duotone" />
-        <span>Discovery completed</span>
+        <span>Исследование завершено</span>
         <strong>{stack}</strong>
       </summary>
       <div className="discovery-details">
@@ -84,9 +89,15 @@ export function FindingProgressBlock({ event }: { event: RunFindingProgressEvent
         <ListChecks size={15} />
       )}
       <span>
-        {event.status === "started" ? "Investigating finding" : "Finding verification finished"}
+        {event.status === "started" ? "Исследование находки" : "Проверка находки завершена"}
       </span>
-      <small>{event.title ?? event.result ?? event.finding_id}</small>
+      <small>
+        {event.status === "finished" && event.result
+          ? findingResultLabel(event.result)
+          : event.rule_id
+            ? findingTitle(event.rule_id, event.title ?? event.finding_id)
+            : event.title ?? event.finding_id}
+      </small>
     </div>
   );
 }
@@ -101,15 +112,44 @@ export function AgentDecisionBlock({
   return (
     <article className="agent-decision">
       <div className="message-label">
-        <span>Agent decision</span>
-        <small>{report.finding.title}</small>
+        <span>Решение агента</span>
+        <small>{findingTitle(report.finding.rule_id, report.finding.title)}</small>
       </div>
-      <p>{decision.reason}</p>
+      <p>{decisionReason(decision.reason)}</p>
       {decision.outcome === "stop" && decision.stop_reason ? (
-        <code>{decision.stop_reason.replaceAll("_", " ")}</code>
+        <code>{stopReason(decision.stop_reason)}</code>
       ) : null}
     </article>
   );
+}
+
+function decisionReason(reason: string): string {
+  const verdict = reason.match(
+    /^Capability-specific structured Evidence established the finding verdict: (confirmed|rejected)\.$/,
+  );
+  if (verdict) {
+    return verdict[1] === "confirmed"
+      ? "Структурированные доказательства подтвердили находку."
+      : "Структурированные доказательства опровергли находку.";
+  }
+  return reason;
+}
+
+function stopReason(reason: string): string {
+  const labels: Record<string, string> = {
+    terminal_evidence: "достаточно доказательств",
+    policy_blocked: "заблокировано политикой",
+    plan_rejected: "план отклонён",
+    iteration_limit: "достигнут предел итераций",
+  };
+  return labels[reason] ?? reason.replaceAll("_", " ");
+}
+
+function findingResultLabel(result: string): string {
+  if (["confirmed", "rejected", "inconclusive", "policy_blocked"].includes(result)) {
+    return findingStatusLabel(result as FinalReport["status"]);
+  }
+  return result === "error" ? "Ошибка" : result;
 }
 
 export function TechnicalErrorBlock({
@@ -123,13 +163,13 @@ export function TechnicalErrorBlock({
     <article className="inline-error-block technical">
       <WarningCircle size={18} weight="duotone" />
       <div>
-        <span>Technical failure</span>
-        <strong>{run.error?.message ?? "The analysis pipeline stopped unexpectedly."}</strong>
+        <span>Техническая ошибка</span>
+        <strong>{run.error?.message ?? "Пайплайн анализа неожиданно остановился."}</strong>
         <small>{run.error ? `${run.error.layer} · ${run.error.code}` : "pipeline"}</small>
       </div>
       <button type="button" onClick={onRetry}>
         <ArrowClockwise size={15} />
-        Retry
+        Повторить
       </button>
     </article>
   );

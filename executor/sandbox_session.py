@@ -174,6 +174,7 @@ class SandboxSession:
             compose_file=compose_file,
             working_directory=workdir,
         )
+        self._compose_override_file = workdir / "compose.sandbox.override.yml"
         self._torn_down = False
 
     @property
@@ -188,8 +189,22 @@ class SandboxSession:
     def status(self) -> SessionStatus:
         return self.info.status
 
+    def _base_compose(self, *arguments: str) -> list[str]:
+        return [
+            "docker",
+            "compose",
+            "--project-name",
+            self.compose_project,
+            "--file",
+            str(self.info.compose_file),
+            *arguments,
+        ]
+
     def _compose(self, *arguments: str) -> list[str]:
-        return ["docker", "compose", "--project-name", self.compose_project, "--file", str(self.info.compose_file), *arguments]
+        command = self._base_compose()
+        if self._compose_override_file.is_file():
+            command.extend(["--file", str(self._compose_override_file)])
+        return [*command, *arguments]
 
     def _command(
         self,
@@ -218,24 +233,56 @@ class SandboxSession:
             raise SandboxSessionError(f"Trusted target directory does not exist: {self.info.target_path}")
         if not self.info.compose_file.is_file():
             raise SandboxSessionError(f"Trusted Compose file does not exist: {self.info.compose_file}")
-        config = self._command(self._compose("config"))
-        self._validate_compose_config(config.stdout)
+        source_config = self._command(self._base_compose("config"))
+        document = self._validate_compose_config(source_config.stdout)
+        self._write_compose_override(document)
+        effective_config = self._command(self._compose("config"))
+        self._validate_compose_config(effective_config.stdout, reject_host_ports=True)
 
     @staticmethod
-    def _validate_compose_config(config: str) -> None:
+    def _validate_compose_config(
+        config: str,
+        *,
+        reject_host_ports: bool = False,
+    ) -> dict[str, object]:
         try:
             document = yaml.safe_load(config) or {}
         except yaml.YAMLError as exc:
             raise SandboxSessionError("docker compose config returned invalid YAML") from exc
+        if not isinstance(document, dict):
+            raise SandboxSessionError("docker compose config must be a mapping")
         # Внешние ресурсы и bind-mount нельзя надёжно привязать к session_id и удалить.
         for kind in ("networks", "volumes"):
             for name, definition in (document.get(kind, {}) or {}).items():
                 if isinstance(definition, dict) and definition.get("external"):
                     raise SandboxSessionError(f"Unsafe external Compose {kind[:-1]}: {name}")
         for service, definition in (document.get("services", {}) or {}).items():
+            if not isinstance(definition, dict):
+                raise SandboxSessionError(f"Invalid Compose service definition: {service}")
+            if definition.get("network_mode") == "host":
+                raise SandboxSessionError(f"Unsafe host network mode in service: {service}")
+            if reject_host_ports and definition.get("ports"):
+                raise SandboxSessionError(f"Host port publishing is disabled in sandbox: {service}")
             for volume in (definition or {}).get("volumes", []) or []:
                 if isinstance(volume, dict) and volume.get("type") == "bind":
                     raise SandboxSessionError(f"Unsafe host bind mount in service: {service}")
+        return document
+
+    def _write_compose_override(self, document: dict[str, object]) -> None:
+        services = document.get("services", {}) or {}
+        if not isinstance(services, dict) or not services:
+            raise SandboxSessionError("Docker Compose target has no services")
+        if len(services) > 64:
+            raise SandboxSessionError("Docker Compose target has too many services")
+        lines = ["services:"]
+        for service in sorted(str(name) for name in services):
+            lines.extend(
+                (
+                    f"  {json.dumps(service)}:",
+                    "    ports: !reset []",
+                )
+            )
+        self._compose_override_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
     def start(self) -> SandboxSession:
         try:

@@ -48,6 +48,23 @@ describe("buildConversationTimeline", () => {
     expect(tools[0].kind === "tool" && tools[0].tool.command).toEqual(["rg", "USER", "/target/Dockerfile"]);
   });
 
+  it("places the final assistant summary after the Gate and detailed results", () => {
+    const completed = structuredClone(snapshot);
+    completed.messages.push({
+      id: "m-summary",
+      session_id: "chat-1",
+      role: "assistant",
+      kind: "summary",
+      content: "**Итог анализа**",
+      run_id: "run-1",
+      created_at: "2026-08-24T10:01:59Z",
+    });
+
+    const kinds = buildConversationTimeline(completed).map((item) => item.kind);
+    expect(kinds.at(-2)).toBe("gate");
+    expect(kinds.at(-1)).toBe("message");
+  });
+
   it("shows a technical failure without a duplicate security gate", () => {
     const failed = structuredClone(snapshot);
     failed.runs[0].run.status = "technical_failure";

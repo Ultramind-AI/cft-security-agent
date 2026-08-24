@@ -509,8 +509,9 @@ class RunOrchestrator:
                 role="assistant",
                 kind="status",
                 content=(
-                    "Принял. Запускаю Discovery → SAST → sandbox-анализ → Evidence → Gate. "
-                    "Буду показывать реальные действия и Evidence по мере появления."
+                    "Принял. Запускаю исследование проекта → статический анализ → "
+                    "проверку в песочнице → сбор доказательств → итоговое решение. "
+                    "Буду показывать реальные действия и доказательства по мере появления."
                 ),
             )
             self.create_run(
@@ -546,11 +547,44 @@ class RunOrchestrator:
             findings = context.get("findings") or []
             decision = gate.get("decision", "unknown") if isinstance(gate, dict) else "unknown"
             return (
-                f"По последнему запуску Gate: {decision}. "
-                f"В отчёте {len(findings)} findings. "
-                "Свободный ответ LLM сейчас недоступен, но фактические Evidence и отчёты "
+                f"Решение последнего запуска: {decision}. "
+                f"В отчёте находок: {len(findings)}. "
+                "Свободный ответ языковой модели сейчас недоступен, но доказательства и отчёты "
                 "остаются доступны в этом чате."
             )
+
+    def _render_run_summary(
+        self,
+        request: CreateRunRequest,
+        gate: GateResult,
+        reports: list[FinalReport],
+        *,
+        technical_failure: bool,
+    ) -> str:
+        fallback = _run_summary(
+            gate,
+            reports,
+            technical_failure=technical_failure,
+        )
+        if request.agent_mode != "llm":
+            return fallback
+        try:
+            answer = self.chat_answerer(
+                (
+                    "Кратко и естественно объясни пользователю итог security-анализа "
+                    "на русском языке. Опирайся только на переданные Gate, findings и "
+                    "Evidence. Если это техническая ошибка, прямо скажи, что security-"
+                    "вердикт не сформирован, и назови доступную причину. Используй русские "
+                    "термины везде, где это не имя технологии, файла, правила или идентификатор: "
+                    "пиши «решение», «находка», «доказательство», «подтверждено», "
+                    "«недостаточно данных» вместо Gate, finding, Evidence, confirmed и "
+                    "inconclusive. Возвращай корректный Markdown без HTML."
+                ),
+                _summary_context(gate, reports),
+            ).strip()
+            return answer or fallback
+        except (LLMUnavailableError, RuntimeError, ValueError, TypeError):
+            return fallback
 
     def _execute_run(
         self,
@@ -586,7 +620,8 @@ class RunOrchestrator:
                         session_id=chat_session_id,
                         role="assistant",
                         kind="summary",
-                        content=_run_summary(
+                        content=self._render_run_summary(
+                            request,
                             gate,
                             [report for report, _ in reports],
                             technical_failure=exit_code == 2,
@@ -1092,13 +1127,14 @@ def _run_summary(
         detail = error.message if error is not None else "неизвестная ошибка pipeline"
         return (
             f"Анализ остановлен из-за технической ошибки: {detail}. "
-            "Security-результат не сформирован; findings и Evidence не оценивались. "
+            "Результат анализа безопасности не сформирован; находки и доказательства не оценивались. "
             "Можно повторить запуск после устранения причины."
         )
     counts: dict[str, int] = {}
     for report in reports:
         counts[report.status] = counts.get(report.status, 0) + 1
-    parts = [f"Анализ завершён. Gate: {gate.decision.upper()}."]
+    decision_labels = {"pass": "пройден", "warn": "с предупреждениями", "fail": "не пройден"}
+    parts = [f"Анализ завершён. Решение: {decision_labels.get(gate.decision, gate.decision)}."]
     if reports:
         parts.append(
             "Findings: "
@@ -1119,7 +1155,7 @@ def _run_summary(
             )
             + "."
         )
-    parts.append("Можешь задавать вопросы по findings, Evidence и решению Gate прямо здесь.")
+    parts.append("Можешь задавать вопросы по находкам, доказательствам и итоговому решению прямо здесь.")
     return " ".join(parts)
 
 
@@ -1177,6 +1213,37 @@ def _chat_context(run: ApiRun, artifact_dir: Path) -> dict[str, object]:
     }
 
 
+def _summary_context(
+    gate: GateResult,
+    reports: list[FinalReport],
+) -> dict[str, object]:
+    public_gate = _public_gate(gate)
+    return {
+        "gate": public_gate.model_dump(mode="json") if public_gate is not None else None,
+        "findings": [
+            {
+                "finding_id": report.finding_id,
+                "title": report.finding.title,
+                "severity": report.finding.severity,
+                "status": report.status,
+                "analysis_summary": report.analysis_summary,
+                "explanation": report.explanation,
+                "next_step": report.next_step,
+                "evidence": [
+                    {
+                        "type": item.type,
+                        "summary": item.summary,
+                        "verdict": item.verdict,
+                        "reliability": item.reliability,
+                    }
+                    for item in report.evidence[:8]
+                ],
+            }
+            for report in reports[:30]
+        ],
+    }
+
+
 def _default_chat_answerer(question: str, context: dict[str, object]) -> str:
     client = ProviderFailoverClient(
         routes=parse_route_specs(settings.llm_routes),
@@ -1189,7 +1256,8 @@ def _default_chat_answerer(question: str, context: dict[str, object]) -> str:
         output_model=ChatLLMAnswer,
         system_prompt=(
             "You are the conversational interface of a defensive security analysis system. "
-            "Answer in the same language as the user. Use only the supplied completed-run data. "
+            "Answer in the same language as the user. Use only the supplied trusted event or "
+            "run data. "
             "Clearly distinguish deterministic Evidence from interpretation. Never invent a "
             "finding, action, file, verdict, or Gate decision. If the data does not answer the "
             "question, say that directly. Keep the answer useful and concise."

@@ -242,7 +242,9 @@ class ImportedProjectFile(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     path: str = Field(min_length=1, max_length=1024)
-    content_base64: str = Field(min_length=1, max_length=200_000_000)
+    # Empty source files (for example Python package __init__.py files) encode
+    # to an empty Base64 string and are valid project artifacts.
+    content_base64: str = Field(max_length=200_000_000)
 
 
 class ImportProjectFilesRequest(BaseModel):

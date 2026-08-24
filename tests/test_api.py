@@ -344,7 +344,7 @@ def test_chat_describes_technical_failure_without_security_verdict(tmp_path: Pat
         )
 
     assert "технической ошибки" in summary
-    assert "Security-результат не сформирован" in summary
+    assert "Результат анализа безопасности не сформирован" in summary
     assert "Анализ завершён" not in summary
 
 
@@ -428,7 +428,7 @@ def test_chat_starts_analysis_streams_persisted_result_and_answers_followup(
             f"/chat/sessions/{session_id}/messages",
             json={
                 "content": "Проведи полный анализ и обрати внимание на auth",
-                "agent_mode": "stub",
+                "agent_mode": "llm",
                 "max_iterations": 3,
             },
         )
@@ -443,7 +443,10 @@ def test_chat_starts_analysis_streams_persisted_result_and_answers_followup(
         assert [item["run"]["id"] for item in snapshot["runs"]] == [run_id]
         assert snapshot["reports"][0]["finding_id"] == "finding-1"
         assert snapshot["gate"]["decision"] == "fail"
-        assert any(message["kind"] == "summary" for message in snapshot["messages"])
+        summary = next(
+            message for message in snapshot["messages"] if message["kind"] == "summary"
+        )
+        assert "Ответ по Evidence" in summary["content"]
 
         followup = client.post(
             f"/chat/sessions/{session_id}/messages",
@@ -575,6 +578,7 @@ def _folder_manifest() -> dict:
         "manage.py": "print('manage')\n",
         "requirements.txt": "Django==5.0\n",
         "backend/requirements.txt": "Django==5.0\n",
+        "backend/app/__init__.py": "",
         "backend/app/views.py": "password = ''\n",
         "Dockerfile": "FROM python:3.11-slim\n",
         "docker-compose.yml": (
@@ -607,6 +611,7 @@ def test_api_imports_folder_manifest_with_nested_paths(tmp_path: Path) -> None:
         assert repository is not None
         # Directory structure must survive the import.
         assert (repository / "backend" / "app" / "views.py").is_file()
+        assert (repository / "backend" / "app" / "__init__.py").read_bytes() == b""
 
 
 def test_api_rejects_unsafe_folder_manifest_paths(tmp_path: Path) -> None:

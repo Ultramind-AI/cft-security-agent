@@ -5,6 +5,7 @@ import {
 } from "@phosphor-icons/react";
 import type { ApiProject, ChatSnapshot } from "../../api/types";
 import type { SseState } from "../../hooks/useSse";
+import { gateLabel } from "../../lib/format";
 
 export function ProjectHeader({
   project,
@@ -31,27 +32,27 @@ export function ProjectHeader({
         <SidebarSimple size={19} />
       </button>
       <div className="project-heading">
-        <strong>{project?.name ?? "Security Agent"}</strong>
+        <strong>{project?.name ?? "Агент безопасности"}</strong>
         <span>
           {project
             ? [project.environment, ...project.services.slice(0, 3)].join(" · ")
-            : "Open a project to begin"}
+            : "Откройте проект, чтобы начать"}
         </span>
       </div>
       <div className="project-status">
         {active ? (
           <span className="run-state live">
             <CircleNotch size={14} className="spin" />
-            {streamState === "error" ? "Reconnecting" : "Agent working"}
+            {streamState === "error" ? "Переподключение" : "Агент работает"}
           </span>
         ) : run?.status === "technical_failure" ? (
           <span className="run-state technical">
             <WarningCircle size={14} />
-            Technical failure
+            Техническая ошибка
           </span>
         ) : snapshot?.gate ? (
           <span className={`gate-word ${snapshot.gate.decision}`}>
-            {snapshot.gate.decision.toUpperCase()}
+            {gateLabel(snapshot.gate.decision)}
           </span>
         ) : null}
       </div>

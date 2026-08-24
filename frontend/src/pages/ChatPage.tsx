@@ -34,10 +34,10 @@ export function ChatPage() {
         />
         <div className="empty-project-state">
           <FolderOpen size={30} weight="duotone" />
-          <h1>Open a project</h1>
-          <p>Select a folder, upload a ZIP, or continue with an imported project.</p>
+          <h1>Откройте проект</h1>
+          <p>Выберите папку, загрузите ZIP или продолжите работу с импортированным проектом.</p>
           <button type="button" className="primary-action" onClick={shell.openProjectDialog}>
-            Open project
+            Открыть проект
           </button>
         </div>
         <Composer
@@ -60,13 +60,13 @@ export function ChatPage() {
       />
 
       {chat.loading ? (
-        <div className="workspace-state">Loading conversation…</div>
+        <div className="workspace-state">Загрузка чата…</div>
       ) : loadError ? (
         <div className="workspace-state error">
-          <strong>Could not load this conversation</strong>
+          <strong>Не удалось загрузить чат</strong>
           <span>{loadError}</span>
           <button type="button" onClick={() => void chat.refetch()}>
-            Retry
+            Повторить
           </button>
         </div>
       ) : (

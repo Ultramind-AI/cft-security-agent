@@ -254,7 +254,14 @@ def run_pipeline(
             if not service:
                 # Репозиторные файлы (.github, корневые конфиги) не принадлежат
                 # runtime-сервису, поэтому для них нельзя выдумывать dynamic-проверку.
-                report = _build_repository_finding_report(finding, target)
+                report = _build_static_finding_report(
+                    finding,
+                    target,
+                    reason=(
+                        "The finding belongs to the repository rather than a discovered "
+                        "runtime service, so no sandbox action was selected."
+                    ),
+                )
                 report_path = reports_dir / f"{index:03d}-{_safe_name(finding.id)}.json"
                 report_path.write_text(
                     report.model_dump_json(indent=2) + "\n",
@@ -267,6 +274,27 @@ def run_pipeline(
                     status=report.status,
                 )
                 print("  status=inconclusive capability=none context=repository")
+                continue
+
+            unsupported_reason = _unsupported_verification_reason(profile, finding)
+            if unsupported_reason is not None:
+                report = _build_static_finding_report(
+                    finding,
+                    target,
+                    reason=unsupported_reason,
+                )
+                report_path = reports_dir / f"{index:03d}-{_safe_name(finding.id)}.json"
+                report_path.write_text(
+                    report.model_dump_json(indent=2) + "\n",
+                    encoding="utf-8",
+                )
+                reports.append(report)
+                report_paths[report.finding_id] = str(report_path)
+                progress.finding_finished(
+                    finding_id=finding.id,
+                    status=report.status,
+                )
+                print("  status=inconclusive capability=none context=unmapped")
                 continue
 
             state = build_real_initial_state(
@@ -323,8 +351,13 @@ def run_pipeline(
     return gate.exit_code
 
 
-def _build_repository_finding_report(finding, target: Path) -> FinalReport:
-    """Create an auditable report for a static finding without a runtime service."""
+def _build_static_finding_report(
+    finding,
+    target: Path,
+    *,
+    reason: str,
+) -> FinalReport:
+    """Create an auditable report when no trusted active verification is available."""
 
     code = LocalCodeReader(target).read_code(
         finding.file,
@@ -351,7 +384,7 @@ def _build_repository_finding_report(finding, target: Path) -> FinalReport:
             title=finding.title,
             description=finding.description,
             severity=finding.severity,
-            service=None,
+            service=finding.service,
             file=finding.file,
             line_start=finding.line_start,
             line_end=finding.line_end,
@@ -359,8 +392,8 @@ def _build_repository_finding_report(finding, target: Path) -> FinalReport:
         ),
         status="inconclusive",
         analysis_summary=(
-            "SAST recorded a repository-level finding. It is preserved as a static "
-            "observation and was not converted into a runtime claim."
+            "SAST recorded a source finding. It is preserved as a static observation "
+            "and was not converted into an unsupported runtime claim."
         ),
         code_context=code.content,
         verification=VerificationSummary(
@@ -373,17 +406,64 @@ def _build_repository_finding_report(finding, target: Path) -> FinalReport:
             category=gate.category,
             reason=gate.reason,
         ),
-        explanation=(
-            "The finding belongs to the repository rather than a discovered runtime "
-            "service, so no sandbox action was selected."
-        ),
+        explanation=reason,
         limitations=[
             "The static SAST observation was not confirmed by a runtime capability."
         ],
         next_step=(
-            "Review the repository-level configuration and rerun SAST after remediation."
+            "Add the required trusted artifact mapping or review the source finding, "
+            "then rerun the analysis."
         ),
         iterations=0,
+    )
+
+
+def _unsupported_verification_reason(profile: TargetProfile, finding) -> str | None:
+    """Return why a specialized capability cannot be bound to trusted profile data."""
+
+    rule_id = finding.rule_id.lower()
+    required_paths: list[tuple[str, str | None]] = []
+    required_roles: list[str] = []
+    required_metadata: list[str] = []
+
+    if rule_id.startswith("dockerfile.security.missing-user"):
+        required_paths.append((finding.file, "dockerfile"))
+    elif "unvalidated-password" in rule_id:
+        required_paths.append((finding.file, "python"))
+    elif "react-dangerouslysetinnerhtml" in rule_id:
+        required_paths.append((finding.file, None))
+        required_roles.extend(
+            [
+                "react_html_flow.model",
+                "react_html_flow.serializer",
+                "react_html_flow.view",
+            ]
+        )
+        required_metadata.append("react_html_flow.field")
+    else:
+        return None
+
+    missing: list[str] = []
+    for path, kind in required_paths:
+        try:
+            profile.artifact_id_for_path(path, kind=kind)
+        except ValueError:
+            missing.append(f"artifact:{path}")
+    for role in required_roles:
+        try:
+            profile.artifact_id_for_role(role)
+        except ValueError:
+            missing.append(f"role:{role}")
+    for key in required_metadata:
+        if not profile.metadata.get(key):
+            missing.append(f"metadata:{key}")
+
+    if not missing:
+        return None
+    return (
+        "The target profile does not map the trusted inputs required by this "
+        f"specialized verification capability ({', '.join(missing)}). The SAST "
+        "finding remains inconclusive; Validator and Executor were not bypassed."
     )
 
 

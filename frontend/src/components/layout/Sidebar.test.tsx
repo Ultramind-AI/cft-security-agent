@@ -32,10 +32,10 @@ describe("Sidebar", () => {
       </MemoryRouter>,
     );
 
-    await userEvent.click(screen.getByRole("button", { name: "Delete chat Demo security chat" }));
+    await userEvent.click(screen.getByRole("button", { name: "Удалить чат Demo security chat" }));
     expect(remove).not.toHaveBeenCalled();
 
-    await userEvent.click(screen.getByRole("button", { name: "Delete chat" }));
+    await userEvent.click(screen.getByRole("button", { name: "Удалить чат" }));
     expect(remove).toHaveBeenCalledWith("chat-1");
   });
 });

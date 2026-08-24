@@ -51,8 +51,8 @@ export function Composer({
           aria-label="Сообщение Security Agent"
           placeholder={
             project
-              ? "Ask Security Agent…"
-              : "Open a project to start a security conversation"
+              ? "Задайте вопрос агенту безопасности…"
+              : "Откройте проект, чтобы начать анализ"
           }
           disabled={!project || disabled}
           onChange={(event) => setText(event.target.value)}
@@ -72,7 +72,7 @@ export function Composer({
             aria-label={project ? "Сменить проект" : "Открыть проект"}
           >
             <Paperclip size={16} weight="regular" />
-            <span>{project?.name ?? "Open project"}</span>
+            <span>{project?.name ?? "Открыть проект"}</span>
           </button>
 
           <button
@@ -91,7 +91,7 @@ export function Composer({
         </div>
       </div>
       <p className="composer-note">
-        Enter to send · Shift+Enter for a new line · Project scope stays enforced by policy
+        Enter — отправить · Shift+Enter — новая строка · Границы проекта защищены политикой
       </p>
     </div>
   );

@@ -16,8 +16,15 @@ from discovery.service import ProjectDiscovery
 from evidence.telemetry import JsonRuntimeTelemetryStore
 from executor.runtime_service_map import RuntimeServiceMapBuilder
 from executor.sandbox_manager import SandboxManager
+from pipeline.cancellation import (
+    CancellationToken,
+    RunCancelled,
+    cancellation_scope,
+    check_cancelled,
+)
 from pipeline.errors import error_from_exception
 from pipeline.gate import evaluate_gate
+from pipeline.subprocess_runner import run_cancellable_process
 from schemas.pipeline import GateResult
 from schemas.target import TargetProfile
 
@@ -57,10 +64,6 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--findings", help="Existing normalized findings JSON")
     parser.add_argument("--output-dir", default="artifacts/security-pipeline")
     parser.add_argument("--agent-mode", choices=("stub", "llm"), default=None)
-    parser.add_argument(
-        "--analysis-request",
-        help="Optional user request that focuses the agent inside the registered target",
-    )
     parser.add_argument("--max-iterations", type=int, default=1)
     parser.add_argument("--full-reports", action="store_true")
     parser.add_argument("--base-ref")
@@ -94,17 +97,11 @@ def _target_runner(environment: Mapping[str, str]):
         timeout: float,
     ) -> subprocess.CompletedProcess[str]:
         # Compose получает только очищенное окружение, а не все секреты GitHub job.
-        return subprocess.run(
+        return run_cancellable_process(
             argv,
             cwd=cwd,
-            env=dict(environment),
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
+            environment=environment,
             timeout=timeout,
-            shell=False,
-            check=False,
         )
 
     return run
@@ -120,6 +117,26 @@ def run_ci_pipeline(
 ) -> int:
     """Execute the complete CI flow and keep technical failures on exit code 2."""
 
+    token: CancellationToken | None = getattr(args, "cancellation_token", None)
+    with cancellation_scope(token):
+        return _run_ci_pipeline_inner(
+            args,
+            discovery_service=discovery_service,
+            sandbox_manager=sandbox_manager,
+            runtime_builder=runtime_builder,
+            pipeline_runner=pipeline_runner,
+        )
+
+
+def _run_ci_pipeline_inner(
+    args: argparse.Namespace,
+    *,
+    discovery_service: ProjectDiscovery | None,
+    sandbox_manager: SandboxManager | None,
+    runtime_builder: RuntimeServiceMapBuilder | None,
+    pipeline_runner: Callable[..., int],
+) -> int:
+
     output_dir = Path(args.output_dir).expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     settings_snapshot = {
@@ -132,6 +149,7 @@ def run_ci_pipeline(
     }
 
     try:
+        check_cancelled()
         target = Path(args.target).expanduser().resolve(strict=True)
         if not target.is_dir():
             raise ValueError("--target must be a repository directory")
@@ -146,7 +164,9 @@ def run_ci_pipeline(
         )
         _validate_allowed_repository(base_profile, args.target_repository)
         discovery_api = discovery_service or ProjectDiscovery()
+        check_cancelled()
         discovery = discovery_api.discover(target)
+        check_cancelled()
         profile = discovery_api.build_profile(
             discovery,
             base_profile=base_profile,
@@ -165,9 +185,11 @@ def run_ci_pipeline(
             readiness_timeout=90.0,
         )
         builder = runtime_builder or RuntimeServiceMapBuilder()
+        check_cancelled()
         session = manager.open(profile)
 
         with session:
+            check_cancelled()
             runtime_services = builder.build(profile, session)
             _write_json(
                 output_dir / "runtime-service-map.json",
@@ -184,11 +206,13 @@ def run_ci_pipeline(
                 )
 
             pipeline_args = _pipeline_args(args, profile_path=profile_path)
+            check_cancelled()
             exit_code = pipeline_runner(
                 pipeline_args,
                 profile_override=profile,
                 runtime_services=runtime_services,
             )
+            check_cancelled()
 
             timeline = session.collect_telemetry(run_id=runtime_services.session_id)
             telemetry_ref, telemetry_path = JsonRuntimeTelemetryStore(
@@ -214,6 +238,8 @@ def run_ci_pipeline(
             },
         )
         return exit_code
+    except RunCancelled:
+        raise
     except Exception as exc:  # noqa: BLE001 - CI boundary converts failures into Gate
         return _write_technical_failure(output_dir, exc)
     finally:
@@ -236,12 +262,12 @@ def _pipeline_args(
         findings=args.findings,
         agent_mode=args.agent_mode,
         max_iterations=args.max_iterations,
-        analysis_request=getattr(args, "analysis_request", None),
         full_reports=args.full_reports,
         base_ref=args.base_ref,
         head_ref=args.head_ref,
         base_findings=args.base_findings,
         base_architecture=args.base_architecture,
+        cancellation_token=getattr(args, "cancellation_token", None),
     )
 
 

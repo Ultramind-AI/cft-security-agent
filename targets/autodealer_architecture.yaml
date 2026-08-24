@@ -1,0 +1,15 @@
+services:
+  autodealer:
+    type: django_monolith
+    public: true
+    criticality: high
+    trust_zone: application
+    connects_to:
+      - sqlite
+
+  sqlite:
+    type: database
+    public: false
+    criticality: high
+    trust_zone: data
+    connects_to: []

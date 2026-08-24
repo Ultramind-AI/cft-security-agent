@@ -12,6 +12,7 @@ from typing import Protocol
 from urllib.error import HTTPError, URLError
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
+from pipeline.cancellation import check_cancelled
 from schemas.runtime import RuntimeService, RuntimeServiceDiagnostic, RuntimeServiceMap
 from schemas.target import TargetProfile, TargetService
 from security.error_redaction import redact_error_message
@@ -139,6 +140,7 @@ class RuntimeServiceMapBuilder:
 
         compose_readiness = _compose_readiness_by_service(state)
         for service in profile.services.values():
+            check_cancelled()
             try:
                 address = _sandbox_address(service)
                 endpoints = _allowed_endpoints(service)

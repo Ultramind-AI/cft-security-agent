@@ -11,6 +11,7 @@ from agent.graph import build_graph
 from app.config import settings
 from app.e2e_inputs import build_real_initial_state
 from architecture.service import ArchitectureService
+from pipeline.cancellation import RunCancelled, check_cancelled
 from pipeline.errors import error_from_exception
 from pipeline.gate import evaluate_gate
 from pipeline.policy import classify_finding_gate
@@ -67,10 +68,6 @@ def _parse_args() -> argparse.Namespace:
         help="Override CFT_AGENT_MODE for this run",
     )
     parser.add_argument(
-        "--analysis-request",
-        help="Optional user request that focuses the agent without expanding target scope",
-    )
-    parser.add_argument(
         "--max-iterations",
         type=int,
         default=1,
@@ -116,6 +113,7 @@ def run_pipeline(
     if args.max_iterations < 1:
         raise SystemExit("--max-iterations must be at least 1")
 
+    check_cancelled(getattr(args, "cancellation_token", None))
     profile_path = Path(args.profile).expanduser()
     profile = profile_override or TargetProfile.from_yaml(
         profile_path,
@@ -154,6 +152,7 @@ def run_pipeline(
     pipeline_errors: list[ErrorDetail] = []
     # Без списка финдингов дальше проверять нечего, сразу возвращаем фейл гейт
     try:
+        check_cancelled()
         findings_path = _resolve_findings(
             existing_findings=args.findings,
             target=target,
@@ -161,6 +160,9 @@ def run_pipeline(
             output_dir=output_dir / "sast",
             service_resolver=profile.resolve_service,
         )
+        check_cancelled()
+    except RunCancelled:
+        raise
     except (SemgrepError, OSError, ValueError, TypeError) as exc:
         pipeline_errors.append(
             error_from_exception(
@@ -229,6 +231,7 @@ def run_pipeline(
     graph = build_graph()
 
     for index, finding in enumerate(findings):
+        check_cancelled()
         print()
         location = f"{finding.file}:{finding.line_start or '?'}"
         print(f"[{index + 1}/{len(findings)}] {finding.rule_id} | {location}")
@@ -256,7 +259,6 @@ def run_pipeline(
                 architecture_overrides_path=architecture_overrides,
                 finding_id=finding.id,
                 max_iterations=args.max_iterations,
-                user_request=getattr(args, "analysis_request", None),
             )
             if runtime_services is not None:
                 # Все действия одного CI-запуска используют уже поднятую sandbox-сессию.
@@ -265,6 +267,7 @@ def run_pipeline(
             # additive pipeline concern and is attached without rewriting that artifact.
             state["finding"] = finding
             result = graph.invoke(state)
+            check_cancelled()
             report = result["final_report"]
             report_path = reports_dir / f"{index:03d}-{_safe_name(finding.id)}.json"
             report_path.write_text(report.model_dump_json(indent=2) + "\n", encoding="utf-8")
@@ -281,6 +284,8 @@ def run_pipeline(
                 print()
                 print(render_final_report(report))
         # Падение одного финдинга не прячет остальные, но гейт это обязательно увидит
+        except RunCancelled:
+            raise
         except Exception as exc:  # noqa: BLE001 - граница этапа должна стать ошибкой гейта
             error = error_from_exception(
                 exc,
@@ -290,6 +295,7 @@ def run_pipeline(
             pipeline_errors.append(error)
             print(f"  ERROR [{error.code}/{error.layer}]: {error.message}")
 
+    check_cancelled()
     gate = evaluate_gate(reports, errors=pipeline_errors, report_paths=report_paths)
     _write_index(output_dir, reports, report_paths)
     _write_gate(output_dir, gate)

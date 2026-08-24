@@ -16,6 +16,7 @@ from evidence.runtime import build_http_surface_evidence
 from evidence.store import JsonExecutionEvidenceStore
 from executor.approvals import InMemoryApprovalStore
 from executor.executor import SafeExecutor
+from pipeline.cancellation import check_cancelled
 from reporting.builder import build_final_report
 from schemas.agent_loop import AgentActionRecord, AgentDecisionRecord
 from schemas.agent_outputs import ReevaluationResult
@@ -28,6 +29,7 @@ from validator.validator import PolicyValidator
 
 
 def load_context(state: AgentState) -> dict:
+    check_cancelled()
     finding = state["finding"]
     target_profile = state.get("target_profile")
     if target_profile is None:
@@ -76,6 +78,7 @@ def load_context(state: AgentState) -> dict:
 
 
 def score_finding(state: AgentState) -> dict:
+    check_cancelled()
     cvss, context_priority = ScoringService().score(
         state["finding"],
         state["architecture_context"],
@@ -88,6 +91,7 @@ def score_finding(state: AgentState) -> dict:
 
 
 def guard_agent_budget(state: AgentState) -> dict:
+    check_cancelled()
     reason = budget_stop_reason(state)
     if reason is None:
         return {"status": "budget_ok"}
@@ -119,6 +123,7 @@ def guard_agent_budget(state: AgentState) -> dict:
 
 
 def analyse(state: AgentState) -> dict:
+    check_cancelled()
     model = get_agent_model()
     analysis = model.analyse(state)
 
@@ -129,6 +134,7 @@ def analyse(state: AgentState) -> dict:
 
 
 def form_hypothesis(state: AgentState) -> dict:
+    check_cancelled()
     model = get_agent_model()
     hypothesis = model.form_hypothesis(
         state,
@@ -142,6 +148,7 @@ def form_hypothesis(state: AgentState) -> dict:
 
 
 def propose_action(state: AgentState) -> dict:
+    check_cancelled()
     model = get_agent_model()
 
     plan = model.build_plan(
@@ -163,6 +170,7 @@ def propose_action(state: AgentState) -> dict:
 
 
 def validate_action(state: AgentState) -> dict:
+    check_cancelled()
     plan_validation = state.get("plan_validation")
     if plan_validation is not None and not plan_validation.approved:
         validation = ValidationResult(
@@ -211,6 +219,7 @@ def validate_action(state: AgentState) -> dict:
 
 
 def execute_action(state: AgentState) -> dict:
+    check_cancelled()
     action = state["proposed_action"]
     validation = state["validation"]
 
@@ -252,6 +261,7 @@ def execute_action(state: AgentState) -> dict:
 
 
 def collect_evidence(state: AgentState) -> dict:
+    check_cancelled()
     execution = state["execution"]
     action = state["proposed_action"]
     hypothesis = state.get("hypothesis")
@@ -353,6 +363,7 @@ def collect_evidence(state: AgentState) -> dict:
 
 
 def reevaluate(state: AgentState) -> dict:
+    check_cancelled()
     terminal = terminal_evidence_status(state)
     if terminal is None and wall_clock_exhausted(state):
         result = ReevaluationResult(
@@ -374,6 +385,7 @@ def reevaluate(state: AgentState) -> dict:
 
 
 def build_report(state: AgentState) -> dict:
+    check_cancelled()
     report = build_final_report(state)
 
     return {

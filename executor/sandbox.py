@@ -17,6 +17,7 @@ from typing import ClassVar, Literal, Protocol, Self
 
 from executor.sandbox_policy import SandboxLimits, SandboxPolicy
 from executor.sandbox_runtime import DockerRuntimeBuilder
+from pipeline.cancellation import RunCancelled, current_token, suspend_cancellation
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +76,7 @@ def _communicate_bounded(
     stdout_state = [0, False]  # [bytes_collected, was_truncated]
     stderr_state = [0, False]
     timed_out = False
+    cancelled = False
 
     def feed_stdin():
         try:
@@ -118,12 +120,16 @@ def _communicate_bounded(
     while True:
         if proc.poll() is not None:
             break
+        token = current_token()
+        if token is not None and token.is_cancelled():
+            cancelled = True
+            break
         if time.monotonic() - start > timeout_s:
             timed_out = True
             break
         time.sleep(0.02)
 
-    if timed_out:
+    if timed_out or cancelled:
         if os.name == "posix" and hasattr(os, "killpg"):
             try:
                 os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
@@ -132,11 +138,21 @@ def _communicate_bounded(
         else:
             proc.kill()
 
+        # kill() только отправляет сигнал, поэтому дожидаемся завершения процесса.
+        try:
+            proc.wait(timeout=2.0)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait(timeout=2.0)
+
     t_stdout.join(timeout=1.0)
     t_stderr.join(timeout=1.0)
 
     raw_stdout = b"".join(stdout_chunks)
     raw_stderr = b"".join(stderr_chunks)
+
+    if cancelled:
+        raise RunCancelled("Analysis run was cancelled during sandbox execution")
 
     return raw_stdout, stdout_state[1], raw_stderr, stderr_state[1], timed_out
 
@@ -311,6 +327,8 @@ class ProcessSandbox:
             stdout_str = _format_bounded_output(raw_stdout, stdout_trunc)
             stderr_str = _format_bounded_output(raw_stderr, stderr_trunc)
 
+        except RunCancelled:
+            raise
         except Exception as exc:  # noqa: BLE001 -- sandbox errors become structured results
             stdout_str = ""
             stderr_str = f"Process sandbox execution failed: {type(exc).__name__}: {exc}"
@@ -402,6 +420,8 @@ class DockerSandbox:
             stdout_str = _format_bounded_output(raw_stdout, stdout_trunc)
             stderr_str = _format_bounded_output(raw_stderr, stderr_trunc)
 
+        except RunCancelled:
+            raise
         except Exception as exc:  # noqa: BLE001 -- sandbox errors become structured results
             stdout_str = ""
             stderr_str = f"Docker container launch failed: {type(exc).__name__}: {exc}"
@@ -465,7 +485,8 @@ class DockerSequenceRuntime:
         if self._closed or not self.runtime_instance_id:
             return
         self._closed = True
-        subprocess.run(["docker", "rm", "--force", self._container_name], capture_output=True, text=True, timeout=20, shell=False, check=False)
+        with suspend_cancellation():
+            subprocess.run(["docker", "rm", "--force", self._container_name], capture_output=True, text=True, timeout=20, shell=False, check=False)
 
     def __enter__(self) -> Self:
         return self.start()

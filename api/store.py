@@ -4,22 +4,24 @@ import json
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from uuid import uuid4
 
-from schemas.api import (
-    ApiEvidence,
-    ApiFinding,
-    ApiProject,
-    ApiRun,
-    ChatMessage,
-    ChatSession,
-)
+from schemas.api import ApiEvidence, ApiFinding, ApiProject, ApiRun
 from schemas.errors import ErrorDetail
 from schemas.evidence import Evidence
 from schemas.report import FinalReport
 from schemas.target import TargetProfile
+
+
+@dataclass(frozen=True)
+class StoredRunJob:
+    run_id: str
+    target_id: str
+    agent_mode: str | None
+    max_iterations: int
+    artifact_dir: Path
 
 
 class ApiStore:
@@ -63,13 +65,13 @@ class ApiStore:
                     status TEXT NOT NULL,
                     agent_mode TEXT,
                     max_iterations INTEGER NOT NULL,
-                    analysis_request TEXT,
                     artifact_dir TEXT NOT NULL,
                     created_at TEXT NOT NULL,
                     started_at TEXT,
                     finished_at TEXT,
                     exit_code INTEGER,
                     gate_decision TEXT,
+                    cancellation_reason TEXT,
                     error_json TEXT,
                     FOREIGN KEY(target_id) REFERENCES projects(target_id)
                 );
@@ -105,39 +107,16 @@ class ApiStore:
 
                 CREATE INDEX IF NOT EXISTS idx_evidence_run_finding
                     ON evidence(run_id, finding_id);
-
-                CREATE TABLE IF NOT EXISTS chat_sessions (
-                    session_id TEXT PRIMARY KEY,
-                    target_id TEXT NOT NULL,
-                    title TEXT NOT NULL,
-                    active_run_id TEXT,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL,
-                    FOREIGN KEY(target_id) REFERENCES projects(target_id),
-                    FOREIGN KEY(active_run_id) REFERENCES runs(run_id)
-                );
-
-                CREATE INDEX IF NOT EXISTS idx_chat_sessions_updated
-                    ON chat_sessions(updated_at DESC);
-
-                CREATE TABLE IF NOT EXISTS chat_messages (
-                    message_id TEXT PRIMARY KEY,
-                    session_id TEXT NOT NULL,
-                    role TEXT NOT NULL,
-                    kind TEXT NOT NULL,
-                    content TEXT NOT NULL,
-                    run_id TEXT,
-                    created_at TEXT NOT NULL,
-                    FOREIGN KEY(session_id) REFERENCES chat_sessions(session_id) ON DELETE CASCADE,
-                    FOREIGN KEY(run_id) REFERENCES runs(run_id)
-                );
-
-                CREATE INDEX IF NOT EXISTS idx_chat_messages_session_created
-                    ON chat_messages(session_id, created_at);
                 """
             )
-            # Existing T23 databases predate the chat prompt column.
-            _ensure_column(connection, "runs", "analysis_request", "TEXT")
+            columns = {
+                row["name"]
+                for row in connection.execute("PRAGMA table_info(runs)").fetchall()
+            }
+            if "cancellation_reason" not in columns:
+                connection.execute(
+                    "ALTER TABLE runs ADD COLUMN cancellation_reason TEXT"
+                )
 
     def upsert_project(self, *, profile_path: Path, profile: TargetProfile) -> None:
         repository = str(profile.repository_path) if profile.repository_path is not None else None
@@ -167,22 +146,24 @@ class ApiStore:
                 ),
             )
 
-    def get_project(self, target_id: str) -> ApiProject:
-        with self._connection() as connection:
-            row = connection.execute(
-                "SELECT * FROM projects WHERE target_id = ?",
-                (target_id,),
-            ).fetchone()
-        if row is None:
-            raise KeyError(target_id)
-        return _project_from_row(row)
-
     def list_projects(self) -> list[ApiProject]:
         with self._connection() as connection:
             rows = connection.execute(
                 "SELECT * FROM projects ORDER BY target_id"
             ).fetchall()
-        return [_project_from_row(row) for row in rows]
+        return [
+            ApiProject(
+                id=row["target_id"],
+                name=row["name"],
+                environment=row["environment"],
+                services=json.loads(row["services_json"]),
+                repository_available=(
+                    bool(row["repository_path"])
+                    and Path(row["repository_path"]).expanduser().is_dir()
+                ),
+            )
+            for row in rows
+        ]
 
     def create_run(
         self,
@@ -191,7 +172,6 @@ class ApiStore:
         target_id: str,
         agent_mode: str | None,
         max_iterations: int,
-        analysis_request: str | None,
         artifact_dir: Path,
     ) -> ApiRun:
         created_at = _now_iso()
@@ -200,33 +180,31 @@ class ApiStore:
                 """
                 INSERT INTO runs (
                     run_id, target_id, status, agent_mode, max_iterations,
-                    analysis_request, artifact_dir, created_at
-                ) VALUES (?, ?, 'queued', ?, ?, ?, ?, ?)
+                    artifact_dir, created_at
+                ) VALUES (?, ?, 'queued', ?, ?, ?, ?)
                 """,
                 (
                     run_id,
                     target_id,
                     agent_mode,
                     max_iterations,
-                    analysis_request,
                     str(artifact_dir.resolve()),
                     created_at,
                 ),
             )
         return self.get_run(run_id)
 
-    def mark_running(self, run_id: str) -> None:
+    def mark_running(self, run_id: str) -> bool:
         with self._connection() as connection:
             updated = connection.execute(
                 """
                 UPDATE runs
                 SET status = 'running', started_at = ?, error_json = NULL
-                WHERE run_id = ?
+                WHERE run_id = ? AND status = 'queued'
                 """,
                 (_now_iso(), run_id),
             )
-            if updated.rowcount != 1:
-                raise KeyError(run_id)
+        return updated.rowcount == 1
 
     def mark_finished(
         self,
@@ -235,7 +213,7 @@ class ApiStore:
         exit_code: int,
         gate_decision: str | None,
         error: ErrorDetail | None = None,
-    ) -> None:
+    ) -> bool:
         status = "technical_failure" if exit_code == 2 else "completed"
         error_json = error.model_dump_json() if error is not None else None
         with self._connection() as connection:
@@ -244,7 +222,7 @@ class ApiStore:
                 UPDATE runs
                 SET status = ?, finished_at = ?, exit_code = ?,
                     gate_decision = ?, error_json = ?
-                WHERE run_id = ?
+                WHERE run_id = ? AND status = 'running'
                 """,
                 (
                     status,
@@ -255,16 +233,98 @@ class ApiStore:
                     run_id,
                 ),
             )
-            if updated.rowcount != 1:
-                raise KeyError(run_id)
+        return updated.rowcount == 1
 
     def mark_failed(self, run_id: str, error: ErrorDetail) -> None:
-        self.mark_finished(
-            run_id,
-            exit_code=2,
-            gate_decision="fail",
-            error=error,
+        with self._connection() as connection:
+            connection.execute(
+                """
+                UPDATE runs
+                SET status = 'technical_failure', finished_at = ?, exit_code = 2,
+                    gate_decision = 'fail', error_json = ?
+                WHERE run_id = ? AND status IN ('queued', 'running', 'cancelling')
+                """,
+                (_now_iso(), error.model_dump_json(), run_id),
+            )
+
+    def request_cancel(self, run_id: str, reason: str) -> ApiRun:
+        """Atomically cancel a queued run or signal an active run."""
+        with self._connection() as connection:
+            row = connection.execute(
+                "SELECT status FROM runs WHERE run_id = ?",
+                (run_id,),
+            ).fetchone()
+            if row is None:
+                raise KeyError(run_id)
+            if row["status"] == "queued":
+                connection.execute(
+                    """
+                    UPDATE runs
+                    SET status = 'cancelled', finished_at = ?, exit_code = 130,
+                        cancellation_reason = ?
+                    WHERE run_id = ? AND status = 'queued'
+                    """,
+                    (_now_iso(), reason, run_id),
+                )
+            elif row["status"] == "running":
+                connection.execute(
+                    """
+                    UPDATE runs
+                    SET status = 'cancelling', cancellation_reason = ?
+                    WHERE run_id = ? AND status = 'running'
+                    """,
+                    (reason, run_id),
+                )
+        return self.get_run(run_id)
+
+    def mark_cancelled(self, run_id: str) -> bool:
+        with self._connection() as connection:
+            updated = connection.execute(
+                """
+                UPDATE runs
+                SET status = 'cancelled', finished_at = ?, exit_code = 130,
+                    gate_decision = NULL
+                WHERE run_id = ? AND status = 'cancelling'
+                """,
+                (_now_iso(), run_id),
+            )
+        return updated.rowcount == 1
+
+    def queued_jobs(self) -> list[StoredRunJob]:
+        with self._connection() as connection:
+            rows = connection.execute(
+                "SELECT * FROM runs WHERE status = 'queued' ORDER BY created_at, run_id"
+            ).fetchall()
+        return [
+            StoredRunJob(
+                run_id=row["run_id"],
+                target_id=row["target_id"],
+                agent_mode=row["agent_mode"],
+                max_iterations=row["max_iterations"],
+                artifact_dir=Path(row["artifact_dir"]).resolve(),
+            )
+            for row in rows
+        ]
+
+    def recover_abandoned(self) -> int:
+        """A new process cannot safely resume a previously active sandbox."""
+        error = ErrorDetail(
+            code="INTERNAL_ERROR",
+            layer="pipeline",
+            message="Analysis was interrupted by an API service restart",
+            retryable=True,
         )
+        with self._connection() as connection:
+            updated = connection.execute(
+                """
+                UPDATE runs
+                SET status = 'technical_failure', finished_at = ?, exit_code = 2,
+                    gate_decision = 'fail', error_json = ?
+                WHERE status IN ('running', 'cancelling')
+                """,
+                (_now_iso(), error.model_dump_json()),
+            )
+        return updated.rowcount
 
     def get_run(self, run_id: str) -> ApiRun:
         with self._connection() as connection:
@@ -407,117 +467,6 @@ class ApiStore:
             for row in rows
         ]
 
-    def create_chat_session(self, *, target_id: str, title: str) -> ChatSession:
-        self.get_project(target_id)
-        session_id = f"chat-{uuid4().hex}"
-        now = _now_iso()
-        with self._connection() as connection:
-            connection.execute(
-                """
-                INSERT INTO chat_sessions (
-                    session_id, target_id, title, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?)
-                """,
-                (session_id, target_id, title, now, now),
-            )
-        return self.get_chat_session(session_id)
-
-    def get_chat_session(self, session_id: str) -> ChatSession:
-        with self._connection() as connection:
-            row = connection.execute(
-                "SELECT * FROM chat_sessions WHERE session_id = ?",
-                (session_id,),
-            ).fetchone()
-        if row is None:
-            raise KeyError(session_id)
-        return _chat_session_from_row(row)
-
-    def list_chat_sessions(self, *, limit: int = 100) -> list[ChatSession]:
-        bounded = max(1, min(limit, 500))
-        with self._connection() as connection:
-            rows = connection.execute(
-                "SELECT * FROM chat_sessions ORDER BY updated_at DESC LIMIT ?",
-                (bounded,),
-            ).fetchall()
-        return [_chat_session_from_row(row) for row in rows]
-
-    def set_chat_run(self, session_id: str, run_id: str) -> None:
-        self.get_run(run_id)
-        with self._connection() as connection:
-            updated = connection.execute(
-                """
-                UPDATE chat_sessions
-                SET active_run_id = ?, updated_at = ?
-                WHERE session_id = ?
-                """,
-                (run_id, _now_iso(), session_id),
-            )
-            if updated.rowcount != 1:
-                raise KeyError(session_id)
-
-    def append_chat_message(
-        self,
-        *,
-        session_id: str,
-        role: str,
-        content: str,
-        kind: str = "text",
-        run_id: str | None = None,
-    ) -> ChatMessage:
-        self.get_chat_session(session_id)
-        if run_id is not None:
-            self.get_run(run_id)
-        message_id = f"msg-{uuid4().hex}"
-        now = _now_iso()
-        with self._connection() as connection:
-            connection.execute(
-                """
-                INSERT INTO chat_messages (
-                    message_id, session_id, role, kind, content, run_id, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
-                (message_id, session_id, role, kind, content, run_id, now),
-            )
-            connection.execute(
-                "UPDATE chat_sessions SET updated_at = ? WHERE session_id = ?",
-                (now, session_id),
-            )
-        return self.get_chat_message(message_id)
-
-    def get_chat_message(self, message_id: str) -> ChatMessage:
-        with self._connection() as connection:
-            row = connection.execute(
-                "SELECT * FROM chat_messages WHERE message_id = ?",
-                (message_id,),
-            ).fetchone()
-        if row is None:
-            raise KeyError(message_id)
-        return _chat_message_from_row(row)
-
-    def list_chat_messages(self, session_id: str) -> list[ChatMessage]:
-        self.get_chat_session(session_id)
-        with self._connection() as connection:
-            rows = connection.execute(
-                """
-                SELECT * FROM chat_messages
-                WHERE session_id = ?
-                ORDER BY created_at, message_id
-                """,
-                (session_id,),
-            ).fetchall()
-        return [_chat_message_from_row(row) for row in rows]
-
-
-def _project_from_row(row: sqlite3.Row) -> ApiProject:
-    repository = row["repository_path"]
-    return ApiProject(
-        id=row["target_id"],
-        name=row["name"],
-        environment=row["environment"],
-        services=json.loads(row["services_json"]),
-        repository_available=bool(repository) and Path(repository).expanduser().is_dir(),
-    )
-
 
 def _run_from_row(row: sqlite3.Row) -> ApiRun:
     error = ErrorDetail.model_validate_json(row["error_json"]) if row["error_json"] else None
@@ -527,12 +476,12 @@ def _run_from_row(row: sqlite3.Row) -> ApiRun:
         status=row["status"],
         agent_mode=row["agent_mode"],
         max_iterations=row["max_iterations"],
-        analysis_request=row["analysis_request"],
         created_at=datetime.fromisoformat(row["created_at"]),
         started_at=datetime.fromisoformat(row["started_at"]) if row["started_at"] else None,
         finished_at=datetime.fromisoformat(row["finished_at"]) if row["finished_at"] else None,
         exit_code=row["exit_code"],
         gate_decision=row["gate_decision"],
+        cancellation_reason=row["cancellation_reason"],
         error=error,
     )
 
@@ -551,43 +500,6 @@ def _finding_from_row(row: sqlite3.Row) -> ApiFinding:
         line_start=row["line_start"],
         report_available=Path(row["report_path"]).is_file(),
     )
-
-
-def _chat_session_from_row(row: sqlite3.Row) -> ChatSession:
-    return ChatSession(
-        id=row["session_id"],
-        target_id=row["target_id"],
-        title=row["title"],
-        active_run_id=row["active_run_id"],
-        created_at=datetime.fromisoformat(row["created_at"]),
-        updated_at=datetime.fromisoformat(row["updated_at"]),
-    )
-
-
-def _chat_message_from_row(row: sqlite3.Row) -> ChatMessage:
-    return ChatMessage(
-        id=row["message_id"],
-        session_id=row["session_id"],
-        role=row["role"],
-        kind=row["kind"],
-        content=row["content"],
-        run_id=row["run_id"],
-        created_at=datetime.fromisoformat(row["created_at"]),
-    )
-
-
-def _ensure_column(
-    connection: sqlite3.Connection,
-    table: str,
-    column: str,
-    definition: str,
-) -> None:
-    columns = {
-        row["name"]
-        for row in connection.execute(f"PRAGMA table_info({table})").fetchall()
-    }
-    if column not in columns:
-        connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
 
 def _ensure_inside(path: Path, root: Path) -> None:

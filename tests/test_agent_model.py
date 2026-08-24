@@ -90,7 +90,9 @@ def test_successful_non_stub_execution_is_not_a_verdict() -> None:
     state["max_iterations"] = 1
     state["proposed_action"] = ActionProposal(
         id="action-real-capability",
-        tool="check_sberlab_health",
+        tool="observe_http_surface",
+        service="backend",
+        endpoint="/health/",
         target="sberlab-local",
         purpose="Controlled capability semantics test.",
         expected_evidence="Structured result.",

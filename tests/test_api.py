@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import argparse
-import io
 import time
-import zipfile
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -13,7 +11,7 @@ from api.registry import ApiTargetRegistry
 from api.service import RunOrchestrator
 from api.store import ApiStore
 from schemas.agent_loop import AgentDecisionRecord
-from schemas.api import CreateChatSessionRequest, CreateRunRequest
+from schemas.api import CreateRunRequest
 from schemas.errors import ErrorDetail
 from schemas.evidence import (
     Evidence,
@@ -192,19 +190,12 @@ def _technical_failure_pipeline(args: argparse.Namespace) -> int:
     return 2
 
 
-def _orchestrator(
-    tmp_path: Path,
-    pipeline_runner=_fake_pipeline,
-    *,
-    chat_answerer=None,
-) -> RunOrchestrator:
+def _orchestrator(tmp_path: Path, pipeline_runner=_fake_pipeline) -> RunOrchestrator:
     return RunOrchestrator(
         registry=_target_registry(tmp_path),
         store=ApiStore(tmp_path / "api.sqlite3"),
         artifact_root=tmp_path / "artifacts",
-        project_root=tmp_path / "uploaded-projects",
         pipeline_runner=pipeline_runner,
-        chat_answerer=chat_answerer,
     )
 
 
@@ -267,20 +258,6 @@ def test_api_runs_the_canonical_pipeline_and_serves_persisted_results(tmp_path: 
         assert gate.json()["decision"] == "fail"
 
 
-def test_api_streams_run_status_until_completion(tmp_path: Path) -> None:
-    orchestrator = _orchestrator(tmp_path)
-    with TestClient(create_app(orchestrator)) as client:
-        response = client.post("/runs", json={"target_id": "demo-target"})
-        run_id = response.json()["id"]
-        events = client.get(f"/runs/{run_id}/events")
-
-    assert events.status_code == 200
-    assert events.headers["content-type"].startswith("text/event-stream")
-    assert "event: run" in events.text
-    assert '"status":"completed"' in events.text
-    assert "event: done" in events.text
-
-
 def test_api_rejects_unregistered_target(tmp_path: Path) -> None:
     orchestrator = _orchestrator(tmp_path)
     with TestClient(create_app(orchestrator)) as client:
@@ -318,147 +295,3 @@ def test_api_keeps_technical_failure_separate_from_security_gate_failure(tmp_pat
     assert completed["exit_code"] == 2
     assert completed["gate_decision"] == "fail"
     assert completed["error"]["code"] == "DEPENDENCY_UNAVAILABLE"
-
-
-
-def _uploaded_project_zip(*, traversal: bool = False) -> bytes:
-    buffer = io.BytesIO()
-    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
-        if traversal:
-            archive.writestr("../escape.txt", "nope")
-        else:
-            archive.writestr("demo/manage.py", "print('manage')\n")
-            archive.writestr("demo/requirements.txt", "Django==5.0\n")
-            archive.writestr("demo/Dockerfile", "FROM python:3.11-slim\n")
-            archive.writestr(
-                "demo/docker-compose.yml",
-                "services:\n  app:\n    build: .\n    ports:\n      - '8000:8000'\n",
-            )
-    return buffer.getvalue()
-
-
-def test_api_imports_zip_with_discovery_and_registers_project(tmp_path: Path) -> None:
-    orchestrator = _orchestrator(tmp_path)
-    with TestClient(create_app(orchestrator)) as client:
-        response = client.post(
-            "/projects/import",
-            headers={"X-Project-Filename": "demo.zip", "Content-Type": "application/zip"},
-            content=_uploaded_project_zip(),
-        )
-        assert response.status_code == 201
-        project = response.json()
-        assert project["id"].startswith("upload-")
-        assert project["name"] == "demo"
-        assert project["repository_available"] is True
-        assert project["services"]
-
-        registered = orchestrator.registry.get(project["id"])
-        assert registered.profile.repository_path is not None
-        assert registered.profile.repository_path.is_dir()
-        assert registered.profile.architecture.file is not None
-        assert registered.profile.architecture.file.is_file()
-
-
-def test_api_rejects_zip_path_traversal(tmp_path: Path) -> None:
-    orchestrator = _orchestrator(tmp_path)
-    with TestClient(create_app(orchestrator)) as client:
-        response = client.post(
-            "/projects/import",
-            headers={"X-Project-Filename": "bad.zip", "Content-Type": "application/zip"},
-            content=_uploaded_project_zip(traversal=True),
-        )
-
-    assert response.status_code == 422
-    assert "escapes" in response.json()["detail"]
-
-
-def test_chat_starts_analysis_streams_persisted_result_and_answers_followup(
-    tmp_path: Path,
-) -> None:
-    captured_requests: list[str | None] = []
-
-    def pipeline(args: argparse.Namespace) -> int:
-        captured_requests.append(args.analysis_request)
-        return _fake_pipeline(args)
-
-    orchestrator = _orchestrator(
-        tmp_path,
-        pipeline_runner=pipeline,
-        chat_answerer=lambda question, context: (
-            f"Ответ по Evidence: {question}; gate={context['gate']['decision']}"
-        ),
-    )
-    with TestClient(create_app(orchestrator)) as client:
-        session_response = client.post(
-            "/chat/sessions",
-            json={"target_id": "demo-target", "title": "Demo chat"},
-        )
-        assert session_response.status_code == 201
-        session_id = session_response.json()["id"]
-
-        first = client.post(
-            f"/chat/sessions/{session_id}/messages",
-            json={
-                "content": "Проведи полный анализ и обрати внимание на auth",
-                "agent_mode": "stub",
-                "max_iterations": 3,
-            },
-        )
-        assert first.status_code == 200
-        run_id = first.json()["session"]["active_run_id"]
-        completed = _wait_for_completion(client, run_id)
-        assert completed["analysis_request"] == "Проведи полный анализ и обрати внимание на auth"
-        assert captured_requests == ["Проведи полный анализ и обрати внимание на auth"]
-
-        snapshot = client.get(f"/chat/sessions/{session_id}").json()
-        assert snapshot["run"]["status"] == "completed"
-        assert snapshot["reports"][0]["finding_id"] == "finding-1"
-        assert snapshot["gate"]["decision"] == "fail"
-        assert any(message["kind"] == "summary" for message in snapshot["messages"])
-
-        followup = client.post(
-            f"/chat/sessions/{session_id}/messages",
-            json={"content": "Что именно подтверждено?", "agent_mode": "stub"},
-        )
-        assert followup.status_code == 200
-        messages = followup.json()["messages"]
-        assert messages[-1]["role"] == "assistant"
-        assert "Ответ по Evidence" in messages[-1]["content"]
-        assert followup.json()["session"]["active_run_id"] == run_id
-
-
-
-def test_generated_upload_profile_is_reloaded_after_service_restart(tmp_path: Path) -> None:
-    store = ApiStore(tmp_path / "api.sqlite3")
-    project_root = tmp_path / "uploaded-projects"
-    first = RunOrchestrator(
-        registry=_target_registry(tmp_path),
-        store=store,
-        artifact_root=tmp_path / "artifacts",
-        project_root=project_root,
-        pipeline_runner=_fake_pipeline,
-    )
-    project = first.import_project_zip(filename="restart-demo.zip", content=_uploaded_project_zip())
-    first.close()
-
-    second_registry = ApiTargetRegistry.from_profile_paths(
-        [tmp_path / "targets" / "demo.yaml"],
-        trusted_root=tmp_path / "targets",
-    )
-    second = RunOrchestrator(
-        registry=second_registry,
-        store=store,
-        artifact_root=tmp_path / "artifacts-2",
-        project_root=project_root,
-        pipeline_runner=_fake_pipeline,
-    )
-    try:
-        registered = second.registry.get(project.id)
-        assert registered.profile.repository_path is not None
-        assert registered.profile.repository_path.is_dir()
-        session = second.create_chat_session(
-            CreateChatSessionRequest(target_id=project.id)
-        )
-        assert session.target_id == project.id
-    finally:
-        second.close()

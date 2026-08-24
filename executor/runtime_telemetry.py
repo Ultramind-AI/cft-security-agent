@@ -11,6 +11,7 @@ from typing import Protocol
 
 from executor.sandbox import _communicate_bounded
 from executor.sandbox_manager import SandboxLog
+from pipeline.cancellation import RunCancelled, check_cancelled
 from schemas.runtime_telemetry import RuntimeTelemetryEvent, RuntimeTelemetryTimeline
 from schemas.target import TargetProfile
 from security.error_redaction import redact_error_message
@@ -78,6 +79,8 @@ class RuntimeTelemetryCollector:
         events: list[RuntimeTelemetryEvent] = []
         try:
             state = self.session.collect_state()
+        except RunCancelled:
+            raise
         except Exception:  # noqa: BLE001 -- telemetry gap becomes a structured event
             state = {}
             events.append(self._error("collect_session_state", run_id))
@@ -114,6 +117,7 @@ class RuntimeTelemetryCollector:
         return "cft.session_id", self.session.session_id
 
     def _call(self, argv: list[str]) -> subprocess.CompletedProcess[str] | None:
+        check_cancelled()
         try:
             return self.runner(argv, self.cwd, self.command_timeout)
         except (OSError, subprocess.TimeoutExpired):

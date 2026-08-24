@@ -114,7 +114,7 @@ def test_validator_denies_oversized_message() -> None:
 def test_validator_denies_http_tool_parameters() -> None:
     result = _validator().validate(
         _proposal(
-            tool="check_sberlab_health",
+            tool="observe_http_surface",
             parameters={"url": "http://example.invalid"},
         )
     )

@@ -8,12 +8,16 @@ from pydantic import BaseModel, ConfigDict, Field
 from schemas.agent_loop import AgentDecisionRecord
 from schemas.errors import ErrorDetail
 from schemas.evidence import Evidence
-from schemas.pipeline import GateResult
-from schemas.report import FinalReport, SandboxActionSummary
+from schemas.report import SandboxActionSummary
 
-ApiRunStatus = Literal["queued", "running", "completed", "technical_failure"]
-ChatRole = Literal["user", "assistant", "system"]
-ChatMessageKind = Literal["text", "status", "summary", "error"]
+ApiRunStatus = Literal[
+    "queued",
+    "running",
+    "cancelling",
+    "cancelled",
+    "completed",
+    "technical_failure",
+]
 
 
 class ApiProject(BaseModel):
@@ -32,7 +36,6 @@ class CreateRunRequest(BaseModel):
     target_id: str = Field(min_length=1, max_length=128)
     agent_mode: Literal["stub", "llm"] | None = None
     max_iterations: int = Field(default=3, ge=1, le=8)
-    analysis_request: str | None = Field(default=None, max_length=4000)
 
 
 class ApiRun(BaseModel):
@@ -43,12 +46,12 @@ class ApiRun(BaseModel):
     status: ApiRunStatus
     agent_mode: Literal["stub", "llm"] | None = None
     max_iterations: int = Field(ge=1, le=8)
-    analysis_request: str | None = None
     created_at: datetime
     started_at: datetime | None = None
     finished_at: datetime | None = None
-    exit_code: int | None = Field(default=None, ge=0, le=2)
+    exit_code: int | None = Field(default=None, ge=0, le=255)
     gate_decision: Literal["pass", "warn", "fail"] | None = None
+    cancellation_reason: str | None = None
     error: ErrorDetail | None = None
 
 
@@ -89,57 +92,3 @@ class RunTimeline(BaseModel):
 
     run_id: str
     findings: list[FindingTimeline] = Field(default_factory=list)
-
-
-class CreateChatSessionRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    target_id: str = Field(min_length=1, max_length=128)
-    title: str | None = Field(default=None, max_length=160)
-
-
-class SendChatMessageRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    content: str = Field(min_length=1, max_length=4000)
-    agent_mode: Literal["stub", "llm"] = "llm"
-    max_iterations: int = Field(default=5, ge=1, le=8)
-
-
-class ChatSession(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    id: str
-    target_id: str
-    title: str
-    active_run_id: str | None = None
-    created_at: datetime
-    updated_at: datetime
-
-
-class ChatMessage(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    id: str
-    session_id: str
-    role: ChatRole
-    kind: ChatMessageKind = "text"
-    content: str
-    run_id: str | None = None
-    created_at: datetime
-
-
-class ChatSnapshot(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    session: ChatSession
-    messages: list[ChatMessage] = Field(default_factory=list)
-    run: ApiRun | None = None
-    reports: list[FinalReport] = Field(default_factory=list)
-    gate: GateResult | None = None
-
-
-class ChatLLMAnswer(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    answer: str = Field(min_length=1, max_length=8000)

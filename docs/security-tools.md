@@ -136,12 +136,12 @@ These remain available for runtime/demo support but are not substitutes for vuln
 Evidence:
 
 ```text
-check_sberlab_health
-get_sberlab_public_projects
+observe_http_surface
 safe_noop
 ```
 
-`safe_noop` remains a deterministic test fixture only.
+`observe_http_surface` can use only a ready service and endpoint from the
+`RuntimeServiceMap`. `safe_noop` remains a deterministic test fixture only.
 
 ## Security invariant
 

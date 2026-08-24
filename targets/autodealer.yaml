@@ -1,0 +1,47 @@
+id: autodealer-local
+name: AutoDealer reproducible target
+environment: local
+
+architecture:
+  file: targets/autodealer_architecture.yaml
+
+sast:
+  adapter: semgrep
+
+runtime:
+  type: docker_compose
+  compose_file: docker-compose.yml
+
+services:
+  autodealer:
+    type: django
+    root: .
+    dependency_files:
+      - requirements.txt
+    dockerfile: Dockerfile
+    compose_service: autodealer
+    internal_port: 8000
+    healthcheck:
+      path: /health/
+    runtime_endpoints:
+      - /health/
+
+constraints:
+  external_network: false
+  host_filesystem: false
+  docker_socket: false
+  ci_secrets: false
+
+metadata:
+  ci.repository: stavrmoris/autodealer
+
+artifacts:
+  dockerfile:
+    kind: dockerfile
+    path: Dockerfile
+  settings:
+    kind: python
+    path: autodealer/settings.py
+  news_template:
+    kind: html
+    path: news/templates/news/news_detail.html

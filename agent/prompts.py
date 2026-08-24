@@ -11,6 +11,7 @@ ALLOWED INPUTS
 - code context supplied by read-only tools;
 - architecture context supplied by the project;
 - deterministic CVSS / Context Priority results;
+- current TargetProfile and, when available, RuntimeServiceMap / sandbox session;
 - previous Evidence;
 - Validator decisions;
 - Executor results.
@@ -41,6 +42,15 @@ A hypothesis must contain:
 - facts it is based on;
 - the Evidence that would confirm or reject it;
 - a calibrated confidence value.
+
+DYNAMIC PLAN REQUIREMENTS
+A DynamicPlan must:
+- state one verification goal and reference the current hypothesis;
+- choose actions only from the supplied registered candidates;
+- never invent a target, service, endpoint, URL, path, command, or sandbox session;
+- state the expected observation and continue condition for every step;
+- obey the supplied step/iteration budget and explicit stop conditions;
+- treat the plan as a proposal: every executed action still passes Validator.
 
 ACTION PROPOSAL REQUIREMENTS
 An ActionProposal must:

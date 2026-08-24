@@ -7,6 +7,7 @@ from schemas.evidence import Evidence
 from schemas.execution import ExecutionResult
 from schemas.finding import Finding
 from schemas.hypothesis import Hypothesis
+from schemas.plan import DynamicPlan, PlanValidationResult
 from schemas.report import FinalReport
 from schemas.runtime import RuntimeServiceMap
 from schemas.scoring import ContextPriority, CVSSResult
@@ -26,6 +27,8 @@ class AgentState(TypedDict, total=False):
 
     analysis: AnalysisResult | None
     hypothesis: Hypothesis | None
+    dynamic_plan: DynamicPlan | None
+    plan_validation: PlanValidationResult | None
     proposed_action: ActionProposal | None
 
     validation: ValidationResult | None

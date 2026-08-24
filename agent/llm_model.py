@@ -10,10 +10,12 @@ from schemas.agent_outputs import AnalysisResult, ReevaluationResult
 from schemas.hypothesis import Hypothesis
 from schemas.llm import (
     LLMDockerfileUserActionChoice,
+    LLMDynamicPlanChoice,
     LLMGeneralActionChoice,
     LLMPythonPasswordActionChoice,
     LLMReactHtmlFlowActionChoice,
 )
+from schemas.plan import DynamicPlan, PlannedAction
 from schemas.state import AgentState
 
 
@@ -112,6 +114,89 @@ class FallbackLLMAgentModel:
             expected_evidence=choice.expected_evidence,
         )
 
+    def build_plan(
+        self,
+        state: AgentState,
+        analysis: AnalysisResult,
+        hypothesis: Hypothesis,
+    ) -> DynamicPlan:
+        candidates = _allowed_plan_candidates(state)
+        if not candidates:
+            raise ValueError("No registered action candidates are available for DynamicPlan")
+
+        choice = self.client.complete_model(
+            output_model=LLMDynamicPlanChoice,
+            system_prompt=SYSTEM_PROMPT,
+            user_payload={
+                "task": (
+                    "Build a bounded multi-step verification plan. Choose actions only "
+                    "by candidate_id from allowed_candidates. Do not invent targets, "
+                    "services, endpoints, URLs, paths, commands or sandbox sessions."
+                ),
+                "state": _reasoning_context(state),
+                "analysis": analysis.model_dump(mode="json"),
+                "hypothesis": hypothesis.model_dump(mode="json"),
+                "allowed_candidates": [
+                    _public_candidate(candidate) for candidate in candidates
+                ],
+            },
+            operation="build_dynamic_plan",
+        )
+
+        if len(choice.steps) > choice.max_steps:
+            raise ValueError("LLM DynamicPlan contains more steps than max_steps")
+
+        by_id = {str(candidate["candidate_id"]): candidate for candidate in candidates}
+        selected_ids = [step.candidate_id for step in choice.steps]
+        if len(set(selected_ids)) != len(selected_ids):
+            raise ValueError("LLM DynamicPlan cannot repeat the same action candidate")
+
+        profile = _target_profile(state)
+        runtime_services = state.get("runtime_services")
+        first_iteration = int(state.get("iteration_count", 0)) + 1
+        planned_steps: list[PlannedAction] = []
+        for index, step in enumerate(choice.steps, start=1):
+            candidate = by_id.get(step.candidate_id)
+            if candidate is None:
+                raise ValueError(
+                    f"LLM selected unknown DynamicPlan candidate: {step.candidate_id!r}"
+                )
+            action = ActionProposal(
+                id=_build_action_id(state["finding"].id, first_iteration + index - 1),
+                tool=str(candidate["tool"]),
+                target=profile.id,
+                environment=profile.environment,
+                iteration=first_iteration + index - 1,
+                parameters=dict(candidate.get("parameters", {})),
+                purpose=str(candidate["purpose"]),
+                expected_evidence=step.expected_observation,
+                service=_optional_string(candidate.get("service")),
+                endpoint=_optional_string(candidate.get("endpoint")),
+            )
+            planned_steps.append(
+                PlannedAction(
+                    index=index,
+                    action=action,
+                    expected_observation=step.expected_observation,
+                    continue_if=step.continue_if,
+                )
+            )
+
+        return DynamicPlan(
+            id=_build_plan_id(state["finding"].id, first_iteration),
+            target=profile.id,
+            environment=profile.environment,
+            hypothesis_id=hypothesis.id,
+            goal=choice.goal,
+            max_steps=choice.max_steps,
+            sandbox_session_id=(
+                runtime_services.session_id if runtime_services is not None else None
+            ),
+            continuation_reason=choice.continuation_reason,
+            stop_conditions=choice.stop_conditions,
+            steps=planned_steps,
+        )
+
     def reevaluate(self, state: AgentState) -> ReevaluationResult:
         deterministic = _evidence_guard(state)
         if deterministic is not None:
@@ -160,12 +245,30 @@ class FallbackLLMAgentModel:
 
 def _reasoning_context(state: AgentState) -> dict[str, Any]:
     finding = state["finding"]
+    profile = _target_profile(state)
+    runtime_services = state.get("runtime_services")
     return {
         "finding": finding.model_dump(mode="json"),
         "code_context": state.get("code_context"),
         "architecture_context": _dump_model(state.get("architecture_context")),
         "cvss": _dump_model(state.get("cvss")),
         "context_priority": _dump_model(state.get("context_priority")),
+        "target_profile": {
+            "id": profile.id,
+            "environment": profile.environment,
+            "services": {
+                service_id: {
+                    "type": service.type,
+                    "runtime_endpoints": list(service.runtime_endpoints),
+                }
+                for service_id, service in profile.services.items()
+            },
+            "constraints": profile.constraints.model_dump(mode="json"),
+        },
+        "runtime_services": _dump_model(runtime_services),
+        "sandbox_session_id": (
+            runtime_services.session_id if runtime_services is not None else None
+        ),
         "evidence": [item.model_dump(mode="json") for item in state.get("evidence", [])],
         "iteration_count": int(state.get("iteration_count", 0)),
         "max_iterations": int(state.get("max_iterations", 2)),
@@ -226,6 +329,83 @@ def _allowed_execution_tools(state: AgentState) -> list[dict[str, Any]]:
             "purpose": "Fixed GET /api/projects/ against the configured local SberLab target.",
         },
     ]
+
+
+def _allowed_plan_candidates(state: AgentState) -> list[dict[str, Any]]:
+    if (
+        _is_missing_user_finding(state)
+        or _is_unvalidated_password_finding(state)
+        or _is_react_dangerous_html_finding(state)
+    ):
+        return [
+            {
+                "candidate_id": item["name"],
+                "tool": item["name"],
+                "parameters": dict(item.get("parameters", {})),
+                "service": None,
+                "endpoint": None,
+                "purpose": item["purpose"],
+            }
+            for item in _allowed_execution_tools(state)
+        ]
+
+    runtime_services = state.get("runtime_services")
+    profile = _target_profile(state)
+    if runtime_services is not None:
+        candidates: list[dict[str, Any]] = []
+        for service_id in sorted(runtime_services.services):
+            runtime_service = runtime_services.services[service_id]
+            if service_id not in profile.services or not runtime_service.ready:
+                continue
+            for endpoint in sorted(set(runtime_service.allowed_endpoints)):
+                candidates.append(
+                    {
+                        "candidate_id": f"runtime:{service_id}:{endpoint}",
+                        "tool": "observe_http_surface",
+                        "parameters": {},
+                        "service": service_id,
+                        "endpoint": endpoint,
+                        "purpose": (
+                            f"Observe the allowlisted endpoint {endpoint} for service "
+                            f"{service_id} inside the current sandbox session."
+                        ),
+                    }
+                )
+        if candidates:
+            return candidates
+
+    candidates = []
+    for service_id in sorted(profile.services):
+        service = profile.services[service_id]
+        for endpoint in sorted(set(service.runtime_endpoints)):
+            candidates.append(
+                {
+                    "candidate_id": f"profile:{service_id}:{endpoint}",
+                    "tool": "observe_http_surface",
+                    "parameters": {},
+                    "service": service_id,
+                    "endpoint": endpoint,
+                    "purpose": (
+                        f"Observe the configured endpoint {endpoint} for service "
+                        f"{service_id} once a trusted sandbox session is available."
+                    ),
+                }
+            )
+    return candidates
+
+
+def _public_candidate(candidate: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "candidate_id": candidate["candidate_id"],
+        "tool": candidate["tool"],
+        "service": candidate.get("service"),
+        "endpoint": candidate.get("endpoint"),
+        "purpose": candidate["purpose"],
+    }
+
+
+def _optional_string(value: object) -> str | None:
+    return value if isinstance(value, str) else None
 
 
 def _is_missing_user_finding(state: AgentState) -> bool:
@@ -324,6 +504,12 @@ def _evidence_guard(state: AgentState) -> ReevaluationResult | None:
 
 def _dump_model(value: Any) -> Any:
     return value.model_dump(mode="json") if value is not None else None
+
+
+def _build_plan_id(finding_id: str, iteration: int) -> str:
+    from agent.model import _build_plan_id as build_plan_id
+
+    return build_plan_id(finding_id, iteration)
 
 
 def _build_action_id(finding_id: str, iteration: int) -> str:

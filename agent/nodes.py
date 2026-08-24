@@ -1,6 +1,7 @@
 import json
 
 from agent.model import get_agent_model
+from agent.planning import DynamicPlanValidator
 from app.config import settings
 from evidence.interpreter import build_evidence
 from evidence.runtime import build_http_surface_evidence
@@ -11,6 +12,7 @@ from reporting.builder import build_final_report
 from schemas.architecture import ArchitectureContext
 from schemas.state import AgentState
 from schemas.target import TargetProfile
+from schemas.validation import ValidationResult
 from scoring.service import ScoringService
 from validator.validator import PolicyValidator
 
@@ -84,20 +86,37 @@ def form_hypothesis(state: AgentState) -> dict:
 def propose_action(state: AgentState) -> dict:
     model = get_agent_model()
 
-    proposal = model.propose_action(
+    plan = model.build_plan(
         state,
         state["analysis"],
         state["hypothesis"],
     )
+    plan_validation = DynamicPlanValidator().validate(plan, state)
+    proposal = plan.steps[0].action
 
     return {
+        "dynamic_plan": plan,
+        "plan_validation": plan_validation,
         "proposed_action": proposal,
-        "iteration_count": int(state.get("iteration_count", 0)) + 1,
+        "iteration_count": proposal.iteration,
         "status": "action_proposed",
     }
 
 
 def validate_action(state: AgentState) -> dict:
+    plan_validation = state.get("plan_validation")
+    if plan_validation is not None and not plan_validation.approved:
+        validation = ValidationResult(
+            approved=False,
+            action_id=state["proposed_action"].id,
+            reason=plan_validation.reason,
+            policy_rules=plan_validation.rules,
+        )
+        return {
+            "validation": validation,
+            "status": "policy_blocked",
+        }
+
     validator = PolicyValidator.from_yaml(
         settings.policy_file,
         target_profile=state["target_profile"],

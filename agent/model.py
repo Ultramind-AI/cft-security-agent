@@ -5,6 +5,7 @@ from app.config import settings
 from schemas.action import ActionProposal
 from schemas.agent_outputs import AnalysisResult, ReevaluationResult
 from schemas.hypothesis import Hypothesis
+from schemas.plan import DynamicPlan, PlannedAction
 from schemas.state import AgentState
 from schemas.target import TargetProfile
 
@@ -31,6 +32,13 @@ class AgentReasoningModel(Protocol):
         analysis: AnalysisResult,
         hypothesis: Hypothesis,
     ) -> ActionProposal: ...
+
+    def build_plan(
+        self,
+        state: AgentState,
+        analysis: AnalysisResult,
+        hypothesis: Hypothesis,
+    ) -> DynamicPlan: ...
 
     def reevaluate(self, state: AgentState) -> ReevaluationResult: ...
 
@@ -166,6 +174,44 @@ class DeterministicAgentModel:
             expected_evidence=expected_evidence,
         )
 
+    def build_plan(
+        self,
+        state: AgentState,
+        analysis: AnalysisResult,
+        hypothesis: Hypothesis,
+    ) -> DynamicPlan:
+        action = self.propose_action(state, analysis, hypothesis)
+        runtime_services = state.get("runtime_services")
+        return DynamicPlan(
+            id=_build_plan_id(state["finding"].id, action.iteration),
+            target=action.target,
+            environment=action.environment,
+            hypothesis_id=hypothesis.id,
+            goal=f"Collect controlled Evidence for: {hypothesis.statement}",
+            max_steps=1,
+            sandbox_session_id=(
+                runtime_services.session_id if runtime_services is not None else None
+            ),
+            continuation_reason=(
+                "Continue only when the approved observation is insufficient to reach "
+                "a terminal Evidence-backed verdict."
+            ),
+            stop_conditions=[
+                "confirmed_by_evidence",
+                "rejected_by_evidence",
+                "policy_blocked",
+                "step_limit_reached",
+            ],
+            steps=[
+                PlannedAction(
+                    index=1,
+                    action=action,
+                    expected_observation=action.expected_evidence,
+                    continue_if="The observation is insufficient for a terminal verdict.",
+                )
+            ],
+        )
+
     def reevaluate(self, state: AgentState) -> ReevaluationResult:
         execution = state["execution"]
         iteration_count = int(state.get("iteration_count", 0))
@@ -266,6 +312,11 @@ def get_agent_model() -> AgentReasoningModel:
         return FallbackLLMAgentModel.from_settings(settings)
 
     raise RuntimeError(f"Unsupported agent mode: {settings.agent_mode}")
+
+
+def _build_plan_id(finding_id: str, iteration: int) -> str:
+    normalized = re.sub(r"[^A-Za-z0-9._:-]+", "-", finding_id).strip("-") or "finding"
+    return f"plan-{normalized[:100]}-{iteration}"[:128]
 
 
 def _build_action_id(finding_id: str, iteration: int) -> str:

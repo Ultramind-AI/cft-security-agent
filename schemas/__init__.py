@@ -39,6 +39,7 @@ from schemas.fix import (
 )
 from schemas.hypothesis import Hypothesis
 from schemas.pipeline import GateResult, PipelineFindingResult
+from schemas.plan import DynamicPlan, PlannedAction, PlanValidationResult
 from schemas.pr import PRAnalysisSummary, PRFindingContext
 from schemas.report import (
     CIGateImpact,
@@ -75,6 +76,7 @@ __all__ = [
     "DiscoveryCommandCandidate",
     "DiscoverySignal",
     "DockerfileUserCheckResult",
+    "DynamicPlan",
     "ErrorDetail",
     "EvaluationDataset",
     "EvaluationTarget",
@@ -99,6 +101,8 @@ __all__ = [
     "PRFindingContext",
     "PatchApplicationResult",
     "PipelineFindingResult",
+    "PlanValidationResult",
+    "PlannedAction",
     "PolicyDecisionSummary",
     "ProjectDescription",
     "ProjectDiscoveryResult",

@@ -34,6 +34,7 @@ POST /projects/import
 
 GET  /chat/sessions
 POST /chat/sessions
+DELETE /chat/sessions/{session_id}
 GET  /chat/sessions/{session_id}
 POST /chat/sessions/{session_id}/messages
 GET  /chat/sessions/{session_id}/events

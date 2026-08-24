@@ -476,6 +476,27 @@ class ApiStore:
             ).fetchall()
         return [_chat_session_from_row(row) for row in rows]
 
+    def delete_chat_session(self, session_id: str) -> None:
+        """Delete only chat metadata, preserving linked runs and their artifacts."""
+        with self._connection() as connection:
+            row = connection.execute(
+                """
+                SELECT sessions.session_id, runs.status AS active_run_status
+                FROM chat_sessions AS sessions
+                LEFT JOIN runs ON runs.run_id = sessions.active_run_id
+                WHERE sessions.session_id = ?
+                """,
+                (session_id,),
+            ).fetchone()
+            if row is None:
+                raise KeyError(session_id)
+            if row["active_run_status"] in {"queued", "running"}:
+                raise RuntimeError("Cannot delete a chat while its analysis is active")
+            connection.execute(
+                "DELETE FROM chat_sessions WHERE session_id = ?",
+                (session_id,),
+            )
+
     def set_chat_run(self, session_id: str, run_id: str) -> None:
         self.get_run(run_id)
         with self._connection() as connection:

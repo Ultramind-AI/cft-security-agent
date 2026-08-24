@@ -477,6 +477,51 @@ def test_chat_snapshot_retains_multiple_analysis_runs(tmp_path: Path) -> None:
         assert all(item["gate"]["decision"] == "fail" for item in snapshot["runs"])
 
 
+def test_delete_chat_removes_conversation_but_preserves_completed_run(tmp_path: Path) -> None:
+    orchestrator = _orchestrator(tmp_path)
+    with TestClient(create_app(orchestrator)) as client:
+        session = client.post(
+            "/chat/sessions", json={"target_id": "demo-target"}
+        ).json()
+        started = client.post(
+            f"/chat/sessions/{session['id']}/messages",
+            json={"content": "Проведи полный анализ", "agent_mode": "stub"},
+        ).json()
+        run_id = started["session"]["active_run_id"]
+        _wait_for_completion(client, run_id)
+
+        response = client.delete(f"/chat/sessions/{session['id']}")
+
+        assert response.status_code == 204
+        assert client.get(f"/chat/sessions/{session['id']}").status_code == 404
+        assert client.get(f"/runs/{run_id}").status_code == 200
+        assert all(item["id"] != session["id"] for item in client.get("/chat/sessions").json())
+
+
+def test_delete_chat_rejects_active_analysis(tmp_path: Path) -> None:
+    orchestrator = _orchestrator(tmp_path)
+    session = orchestrator.create_chat_session(
+        CreateChatSessionRequest(target_id="demo-target")
+    )
+    run_id = "run-active-delete-test"
+    orchestrator.store.create_run(
+        run_id=run_id,
+        target_id="demo-target",
+        agent_mode="stub",
+        max_iterations=1,
+        analysis_request="test",
+        artifact_dir=tmp_path / "artifacts" / run_id,
+    )
+    orchestrator.store.set_chat_run(session.id, run_id)
+
+    with TestClient(create_app(orchestrator)) as client:
+        response = client.delete(f"/chat/sessions/{session.id}")
+
+        assert response.status_code == 409
+        assert "analysis is active" in response.json()["detail"]
+        assert client.get(f"/chat/sessions/{session.id}").status_code == 200
+
+
 
 def test_generated_upload_profile_is_reloaded_after_service_restart(tmp_path: Path) -> None:
     store = ApiStore(tmp_path / "api.sqlite3")

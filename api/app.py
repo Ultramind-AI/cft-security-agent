@@ -7,7 +7,7 @@ from pathlib import Path
 
 import uvicorn
 from fastapi import FastAPI, Header, HTTPException, Query, Request, status
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 
 from api.registry import ApiTargetRegistry
 from api.service import ProjectImportError, RunNotReadyError, RunOrchestrator
@@ -150,6 +150,16 @@ def create_app(orchestrator: RunOrchestrator | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail="Unknown registered target") from exc
         except (ProjectImportError, ValueError) as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.delete("/chat/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
+    def delete_chat_session(session_id: str) -> Response:
+        try:
+            service.delete_chat_session(session_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Chat session not found") from exc
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     @app.get("/chat/sessions/{session_id}", response_model=ChatSnapshot)
     def get_chat_snapshot(session_id: str) -> ChatSnapshot:

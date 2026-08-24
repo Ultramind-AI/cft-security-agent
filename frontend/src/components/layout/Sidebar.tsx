@@ -5,9 +5,10 @@ import {
   FolderSimple,
   Plus,
   ShieldCheck,
+  Trash,
   X,
 } from "@phosphor-icons/react";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { NavLink } from "react-router-dom";
 import type { ApiProject, ChatSession } from "../../api/types";
 import { formatDateTime } from "../../lib/format";
@@ -21,6 +22,7 @@ export interface SidebarProps {
   onNewChat: () => void;
   onOpenProject: () => void;
   onOpenExisting: (targetId: string) => void;
+  onDeleteChat: (sessionId: string) => Promise<void>;
 }
 
 export function Sidebar({
@@ -32,7 +34,25 @@ export function Sidebar({
   onNewChat,
   onOpenProject,
   onOpenExisting,
+  onDeleteChat,
 }: SidebarProps) {
+  const [pendingDelete, setPendingDelete] = useState<ChatSession | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  const confirmDelete = async () => {
+    if (!pendingDelete) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await onDeleteChat(pendingDelete.id);
+      setPendingDelete(null);
+    } catch (error) {
+      setDeleteError(error instanceof Error ? error.message : "Could not delete chat");
+    } finally {
+      setDeleting(false);
+    }
+  };
   return (
     <aside className={`sidebar ${mobileOpen ? "mobile-open" : ""}`}>
       <div className="sidebar-brand">
@@ -90,18 +110,30 @@ export function Sidebar({
             <p className="sidebar-empty">No conversations yet</p>
           ) : (
             sessions.map((session) => (
-              <NavLink
-                key={session.id}
-                to={`/chats/${session.id}`}
-                className={`sidebar-row chat-row ${activeSessionId === session.id ? "active" : ""}`}
-                onClick={onCloseMobile}
-              >
-                <ChatCircle size={15} />
-                <span>
-                  <strong>{session.title}</strong>
-                  <small>{formatDateTime(session.updated_at)}</small>
-                </span>
-              </NavLink>
+              <div className="chat-row-shell" key={session.id}>
+                <NavLink
+                  to={`/chats/${session.id}`}
+                  className={`sidebar-row chat-row ${activeSessionId === session.id ? "active" : ""}`}
+                  onClick={onCloseMobile}
+                >
+                  <ChatCircle size={15} />
+                  <span>
+                    <strong>{session.title}</strong>
+                    <small>{formatDateTime(session.updated_at)}</small>
+                  </span>
+                </NavLink>
+                <button
+                  type="button"
+                  className="chat-delete-button"
+                  aria-label={`Delete chat ${session.title}`}
+                  onClick={() => {
+                    setDeleteError(null);
+                    setPendingDelete(session);
+                  }}
+                >
+                  <Trash size={14} />
+                </button>
+              </div>
             ))
           )}
         </SidebarSection>
@@ -113,6 +145,23 @@ export function Sidebar({
           Runs / Debug
         </NavLink>
       </div>
+
+      {pendingDelete ? (
+        <div className="confirm-backdrop" role="presentation">
+          <div className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-chat-title">
+            <span className="eyebrow">Conversation</span>
+            <h2 id="delete-chat-title">Delete this chat?</h2>
+            <p>“{pendingDelete.title}” will disappear from the sidebar. Analysis runs and Evidence stay available in Debug.</p>
+            {deleteError ? <div className="confirm-error" role="alert">{deleteError}</div> : null}
+            <div className="confirm-actions">
+              <button type="button" onClick={() => setPendingDelete(null)} disabled={deleting}>Cancel</button>
+              <button type="button" className="danger-action" onClick={() => void confirmDelete()} disabled={deleting}>
+                {deleting ? "Deleting…" : "Delete chat"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </aside>
   );
 }

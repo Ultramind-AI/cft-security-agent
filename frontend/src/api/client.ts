@@ -43,6 +43,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     }
     throw new ApiError(response.status, detail);
   }
+  if (response.status === 204) return undefined as T;
   return (await response.json()) as T;
 }
 
@@ -146,6 +147,10 @@ export function createChatSession(targetId: string, title?: string): Promise<Cha
     method: "POST",
     body: JSON.stringify({ target_id: targetId, title: title ?? null }),
   });
+}
+
+export function deleteChatSession(sessionId: string): Promise<void> {
+  return request(`/chat/sessions/${sessionId}`, { method: "DELETE" });
 }
 
 export function getChatSnapshot(sessionId: string): Promise<ChatSnapshot> {

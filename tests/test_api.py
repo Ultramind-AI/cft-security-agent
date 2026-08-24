@@ -337,6 +337,31 @@ def test_api_keeps_technical_failure_separate_from_security_gate_failure(tmp_pat
     assert completed["error"]["code"] == "DEPENDENCY_UNAVAILABLE"
 
 
+def test_chat_describes_technical_failure_without_security_verdict(tmp_path: Path) -> None:
+    orchestrator = _orchestrator(tmp_path, pipeline_runner=_technical_failure_pipeline)
+    with TestClient(create_app(orchestrator)) as client:
+        session = client.post(
+            "/chat/sessions", json={"target_id": "demo-target"}
+        ).json()
+        started = client.post(
+            f"/chat/sessions/{session['id']}/messages",
+            json={"content": "Проведи анализ", "agent_mode": "stub"},
+        ).json()
+        run_id = started["session"]["active_run_id"]
+        _wait_for_completion(client, run_id)
+
+        snapshot = client.get(f"/chat/sessions/{session['id']}").json()
+        summary = next(
+            message["content"]
+            for message in snapshot["messages"]
+            if message["kind"] == "summary"
+        )
+
+    assert "технической ошибки" in summary
+    assert "Security-результат не сформирован" in summary
+    assert "Анализ завершён" not in summary
+
+
 
 def _uploaded_project_zip(*, traversal: bool = False) -> bytes:
     buffer = io.BytesIO()

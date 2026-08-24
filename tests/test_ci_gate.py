@@ -1,6 +1,7 @@
 import json
 import subprocess
 
+from executor.sandbox_session import SessionTimeoutError
 from pipeline.errors import error_from_exception
 from pipeline.gate import evaluate_gate
 from schemas.errors import ErrorDetail
@@ -196,6 +197,17 @@ def test_pipeline_exception_normalizer_classifies_timeout_without_raw_text() -> 
     assert error.code == "TIMEOUT"
     assert error.retryable is True
     assert raw_secret not in error.message
+
+
+def test_sandbox_readiness_timeout_is_retryable_timeout() -> None:
+    error = error_from_exception(
+        SessionTimeoutError("target did not become ready"),
+        layer="pipeline",
+        public_message="Managed CI pipeline failed",
+    )
+
+    assert error.code == "TIMEOUT"
+    assert error.retryable is True
 
 
 def test_structured_pipeline_error_redacts_public_secret() -> None:

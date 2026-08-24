@@ -71,4 +71,19 @@ describe("chat interactions", () => {
       "Проверь authentication, authorization и управление сессиями",
     );
   });
+
+  it("does not present a technical pipeline error as a completed security analysis", () => {
+    const gate = { schema_version: "1", decision: "fail", exit_code: 2, decision_basis: "technical_pipeline_error", reports_total: 0, confirmed: 0, rejected: 0, inconclusive: 0, policy_blocked: 0, technical_errors: 1, reasons: [], findings: [] } as never;
+    const run = { id: "run-error", target_id: "demo", status: "technical_failure", created_at: "2026-08-24T10:00:00Z" } as never;
+
+    render(
+      <MemoryRouter>
+        <GateBlock gate={gate} reports={[]} run={run} />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText("Analysis stopped")).toBeTruthy();
+    expect(screen.getByText("TECHNICAL ERROR")).toBeTruthy();
+    expect(screen.queryByLabelText("Finding counts")).toBeNull();
+  });
 });

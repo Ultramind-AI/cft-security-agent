@@ -12,31 +12,32 @@ export function GateBlock({
   reports: FinalReport[];
   run: ApiRun;
 }) {
+  const technicalFailure = run.status === "technical_failure" || gate.exit_code === 2;
   const top = [...reports]
     .filter((report) => report.status === "confirmed")
     .sort((left, right) => severityRank(right.finding.severity) - severityRank(left.finding.severity))
     .slice(0, 3);
 
   return (
-    <article className={`analysis-summary gate-${gate.decision}`}>
+    <article className={`analysis-summary gate-${technicalFailure ? "error" : gate.decision}`}>
       <div className="analysis-summary-head">
         <span className="summary-icon">
           <ShieldCheck size={19} weight="duotone" />
         </span>
         <div>
-          <span>Analysis complete</span>
-          <strong>{gate.decision.toUpperCase()}</strong>
+          <span>{technicalFailure ? "Analysis stopped" : "Analysis complete"}</span>
+          <strong>{technicalFailure ? "TECHNICAL ERROR" : gate.decision.toUpperCase()}</strong>
         </div>
       </div>
 
-      <div className="summary-counts" aria-label="Finding counts">
+      {!technicalFailure ? <div className="summary-counts" aria-label="Finding counts">
         <span><strong>{gate.confirmed}</strong> confirmed</span>
         <span><strong>{gate.rejected}</strong> rejected</span>
         <span><strong>{gate.inconclusive}</strong> inconclusive</span>
         {gate.policy_blocked > 0 ? (
           <span><strong>{gate.policy_blocked}</strong> policy blocked</span>
         ) : null}
-      </div>
+      </div> : null}
 
       {top.length > 0 ? (
         <div className="top-findings">

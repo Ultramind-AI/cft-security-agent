@@ -220,6 +220,7 @@ def _run_ci_pipeline_inner(
             )
 
             pipeline_args = _pipeline_args(args, profile_path=profile_path)
+            pipeline_args.discovery = discovery
             check_cancelled()
             exit_code = pipeline_runner(
                 pipeline_args,

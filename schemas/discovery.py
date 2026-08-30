@@ -161,6 +161,30 @@ class DiscoveredComponent(BaseModel):
         return _normalize_relative_path(value, allow_dot=True)
 
 
+class DiscoveryClaim(BaseModel):
+    """Интерпретация модели только с ссылками на deterministic inventory."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    claim: str = Field(min_length=1, max_length=1_000)
+    source_paths: list[str] = Field(min_length=1, max_length=16)
+    signal_values: list[str] = Field(default_factory=list, max_length=16)
+
+    @field_validator("source_paths")
+    @classmethod
+    def validate_source_paths(cls, values: list[str]) -> list[str]:
+        return [_normalize_relative_path(value, allow_dot=False) for value in values]
+
+
+class DiscoveryInterpretation(BaseModel):
+    """LLM-дополнение к inventory, не источник фактов о репозитории."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    summary: str = Field(min_length=1, max_length=2_000)
+    claims: list[DiscoveryClaim] = Field(default_factory=list, max_length=64)
+
+
 class ProjectDiscoveryResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -169,6 +193,7 @@ class ProjectDiscoveryResult(BaseModel):
     signals: list[DiscoverySignal] = Field(default_factory=list)
     project_files: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
+    interpretation: DiscoveryInterpretation | None = None
 
     @field_validator("repository_root")
     @classmethod

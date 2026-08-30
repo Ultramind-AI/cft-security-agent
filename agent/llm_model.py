@@ -29,10 +29,14 @@ class FallbackLLMAgentModel:
     def from_settings(cls, settings) -> FallbackLLMAgentModel:
         return cls(
             ProviderFailoverClient(
-                routes=parse_route_specs(settings.llm_routes),
+                routes=parse_route_specs(
+                    settings.llm_routes,
+                    allow_external_fallbacks=settings.llm_allow_external_fallbacks,
+                ),
                 credentials=settings.llm_provider_credentials(),
                 timeout_seconds=settings.llm_timeout_seconds,
                 max_output_tokens=settings.llm_max_output_tokens,
+                reasoning_effort=settings.llm_reasoning_effort,
                 trace=settings.llm_trace,
             )
         )

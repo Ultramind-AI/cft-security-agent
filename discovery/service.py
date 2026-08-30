@@ -1,13 +1,18 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Protocol
 
 from discovery.base import DiscoveryContext, ProjectDetector
 from discovery.detectors import default_detectors
 from discovery.profile import TargetProfileBuilder
 from discovery.resolver import DiscoveryResolver
-from schemas.discovery import ProjectDiscoveryResult
+from schemas.discovery import DiscoveryInterpretation, ProjectDiscoveryResult
 from schemas.target import TargetProfile
+
+
+class DiscoveryInterpreter(Protocol):
+    def interpret(self, inventory: ProjectDiscoveryResult) -> DiscoveryInterpretation: ...
 
 
 class ProjectDiscovery:
@@ -25,6 +30,35 @@ class ProjectDiscovery:
         for detector in self.detectors:
             signals.extend(detector.detect(context))
         return self.resolver.resolve(context.root, signals)
+
+    def interpret(
+        self,
+        discovery: ProjectDiscoveryResult,
+        interpreter: DiscoveryInterpreter,
+    ) -> ProjectDiscoveryResult:
+        """Evidence для discovery - inventory, поэтому модель не добавляет новые факты."""
+        interpretation = interpreter.interpret(discovery)
+        project_files = set(discovery.project_files)
+        signal_values = {
+            value
+            for signal in discovery.signals
+            for value in (signal.name, signal.value)
+            if value
+        }
+        for claim in interpretation.claims:
+            missing_paths = sorted(set(claim.source_paths) - project_files)
+            if missing_paths:
+                raise ValueError(
+                    "Discovery interpretation references files outside inventory: "
+                    + ", ".join(missing_paths)
+                )
+            missing_signals = sorted(set(claim.signal_values) - signal_values)
+            if missing_signals:
+                raise ValueError(
+                    "Discovery interpretation references unknown signals: "
+                    + ", ".join(missing_signals)
+                )
+        return discovery.model_copy(update={"interpretation": interpretation})
 
     def build_profile(
         self,

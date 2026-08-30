@@ -16,6 +16,12 @@ repository -> detectors -> DiscoverySignal[] -> resolver -> ProjectDiscoveryResu
 - `ProjectDiscoveryResult` описывает то, что нашли, а `TargetProfile` — что pipeline выбрал использовать;
 - discovery читает файлы, но ничего из target не запускает.
 
+## Autonomy v2: interpretation после inventory
+
+LLM может объяснить inventory, но не заменить его. Каждый claim несет `source_paths`
+из `project_files` и, если использует signal, его значение должно быть в
+детерминированном списке signals. Несовпадение отклоняется до ProfileBuilder.
+
 ## Первый набор detectors
 
 Текущий набор нужен для проверки механизма на наших первых targets, а не задаёт список поддерживаемых архитектур:

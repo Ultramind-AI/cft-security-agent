@@ -18,6 +18,8 @@ TModel = TypeVar("TModel", bound=BaseModel)
 
 
 DEFAULT_ROUTE_SPECS: tuple[str, ...] = (
+    "nsu:deepseek-ai/DeepSeek-V4-Flash",
+    "nsu:Qwen3.8-27B",
     "groq:openai/gpt-oss-120b",
     "mistral:mistral-large-latest",
     "openrouter:nvidia/nemotron-3-super-120b-a12b:free",
@@ -37,6 +39,7 @@ DEFAULT_ROUTE_SPECS: tuple[str, ...] = (
 
 
 PROVIDER_KEY_ENV = {
+    "nsu": "NSU_OPENWEBUI_KEY",
     "groq": "GROQ_API_KEY",
     "zai": "ZAI_API_KEY",
     "mistral": "MISTRAL_API_KEY",
@@ -47,6 +50,7 @@ PROVIDER_KEY_ENV = {
 }
 
 OPENAI_BASE_URLS = {
+    "nsu": "https://deepcode.ci.nsu.ru/api",
     "groq": "https://api.groq.com/openai/v1",
     "zai": "https://api.z.ai/api/paas/v4",
     "mistral": "https://api.mistral.ai/v1",
@@ -80,11 +84,11 @@ class LLMAttempt:
     error: str = ""
 
 
-def parse_route_specs(specs: str | None) -> tuple[LLMRoute, ...]:
+def parse_route_specs(specs: str | None, *, allow_external_fallbacks: bool = False) -> tuple[LLMRoute, ...]:
     raw_specs = (
         tuple(item.strip() for item in specs.split(",") if item.strip())
         if specs and specs.strip()
-        else DEFAULT_ROUTE_SPECS
+        else (DEFAULT_ROUTE_SPECS if allow_external_fallbacks else DEFAULT_ROUTE_SPECS[:2])
     )
 
     routes: list[LLMRoute] = []
@@ -128,6 +132,7 @@ class ProviderFailoverClient:
         credentials: Mapping[str, str] | None = None,
         timeout_seconds: float = 25.0,
         max_output_tokens: int = 1200,
+        reasoning_effort: str = "high",
         trace: bool = False,
     ) -> None:
         self.routes = routes
@@ -138,6 +143,9 @@ class ProviderFailoverClient:
         }
         self.timeout_seconds = timeout_seconds
         self.max_output_tokens = max_output_tokens
+        if reasoning_effort not in {"low", "high", "max"}:
+            raise ValueError("reasoning_effort must be low, high or max")
+        self.reasoning_effort = reasoning_effort
         self.trace = trace
         self.last_attempts: list[LLMAttempt] = []
         self.last_selected_route: LLMRoute | None = None
@@ -237,6 +245,8 @@ class ProviderFailoverClient:
             "stream": False,
             "response_format": {"type": "json_object"},
         }
+        if route.provider == "nsu":
+            payload["reasoning_effort"] = self.reasoning_effort
         result = _post_json(url, payload, headers=headers, timeout=self.timeout_seconds)
         choices = result.get("choices") or []
         if not choices:

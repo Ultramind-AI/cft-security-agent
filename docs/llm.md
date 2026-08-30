@@ -16,17 +16,14 @@ Finding + bounded context + scoring
 
 ## Default route order
 
-The built-in order is operational, not a universal benchmark ranking. It is based
-on the latest project probe and deliberately mixes providers so one provider-wide
-quota incident does not consume the whole fallback chain.
+По умолчанию маршрут остается внутри NSU DeepCode. Внешние провайдеры доступны
+только при явном `CFT_LLM_ALLOW_EXTERNAL_FALLBACKS=true`.
 
-1. Groq / `openai/gpt-oss-120b`
-2. Mistral / `mistral-large-latest`
-3. OpenRouter / `nvidia/nemotron-3-super-120b-a12b:free`
-4. Cloudflare / `@cf/openai/gpt-oss-120b`
-5. NVIDIA / `openai/gpt-oss-120b`
-6. additional confirmed fallback models
-7. Z.AI and Gemini late fallbacks when their free quota is available
+1. NSU / `deepseek-ai/DeepSeek-V4-Flash`
+2. NSU / `Qwen3.8-27B`
+
+`NSU_OPENWEBUI_KEY` хранит ключ, а `CFT_LLM_REASONING_EFFORT=low|high|max`
+управляет reasoning effort, по умолчанию `high`.
 
 Override the chain with `CFT_LLM_ROUTES`, for example:
 

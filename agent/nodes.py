@@ -1,6 +1,7 @@
 import json
 from datetime import UTC, datetime
 
+from agent.lab import active_executor
 from agent.loop import (
     apply_budget_to_reevaluation,
     budget_stop_reason,
@@ -223,19 +224,24 @@ def execute_action(state: AgentState) -> dict:
     action = state["proposed_action"]
     validation = state["validation"]
 
-    approvals = InMemoryApprovalStore()
-    approvals.record(action, validation)
-    executor = SafeExecutor.from_config(
-        approvals=approvals,
-        policy_file=settings.policy_file,
-        target_profile=state["target_profile"],
-        evidence_directory=settings.evidence_dir,
-        audit_log_path=settings.executor_audit_log,
-        workspace_directory=settings.executor_work_dir,
-        target_base_url=settings.target_base_url,
-        target_repository_path=settings.target_repository_path,
-        backend_override=("docker" if action.tool == "sandbox_command" else None),
-    )
+    executor = active_executor()
+    if executor is None:
+        approvals = InMemoryApprovalStore()
+        approvals.record(action, validation)
+        executor = SafeExecutor.from_config(
+            approvals=approvals,
+            policy_file=settings.policy_file,
+            target_profile=state["target_profile"],
+            evidence_directory=settings.evidence_dir,
+            audit_log_path=settings.executor_audit_log,
+            workspace_directory=settings.executor_work_dir,
+            target_base_url=settings.target_base_url,
+            target_repository_path=settings.target_repository_path,
+            backend_override=("docker" if action.tool == "sandbox_command" else None),
+        )
+    else:
+        # Approval все еще привязан к конкретному proposal, lab не дает обход policy.
+        executor.record_approval(action, validation)
 
     runtime_services = state.get("runtime_services")
     if runtime_services is None:

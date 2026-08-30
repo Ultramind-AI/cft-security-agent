@@ -48,7 +48,14 @@ class Settings(BaseSettings):
     llm_routes: str = ""
     llm_timeout_seconds: float = 25.0
     llm_max_output_tokens: int = 1200
+    llm_reasoning_effort: Literal["low", "high", "max"] = "high"
+    llm_allow_external_fallbacks: bool = False
     llm_trace: bool = False
+
+    nsu_openwebui_key: SecretStr | None = Field(
+        default=None,
+        validation_alias="NSU_OPENWEBUI_KEY",
+    )
 
     groq_api_key: SecretStr | None = Field(
         default=None,
@@ -92,6 +99,7 @@ class Settings(BaseSettings):
     def llm_provider_credentials(self) -> dict[str, str]:
         """Вернуть только настроенные учетные данные провайдеров для транспорта LLM."""
         secret_values = {
+            "NSU_OPENWEBUI_KEY": self.nsu_openwebui_key,
             "GROQ_API_KEY": self.groq_api_key,
             "ZAI_API_KEY": self.zai_api_key,
             "MISTRAL_API_KEY": self.mistral_api_key,

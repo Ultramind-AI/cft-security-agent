@@ -15,6 +15,7 @@ from executor.approvals import InMemoryApprovalStore
 from executor.runtime_service_map import RuntimeServiceMapBuilder
 from executor.sandbox import (
     DockerSandbox,
+    DockerSequenceRuntime,
     ProcessSandbox,
     RunLimiter,
     Sandbox,
@@ -164,6 +165,7 @@ class SafeExecutor:
         self._registry.register("sandbox_command", self._sandbox_command_parameters)
         self._registry.register("observe_http_surface", self._no_parameters)
         self._active_runtime_services: RuntimeServiceMap | None = None
+        self._managed_lab: DockerSequenceRuntime | None = None
         self._registry.register("inspect_dockerfile_user", self._artifact_id_parameter)
         self._registry.register("inspect_python_password_assignment", self._artifact_id_parameter)
         self._registry.register("inspect_react_dangerous_html_flow", self._react_html_flow_parameters)
@@ -176,6 +178,40 @@ class SafeExecutor:
 
     def registered_tools(self) -> tuple[str, ...]:
         return self._registry.names()
+
+    def open_managed_lab(
+        self,
+        runtime_services: RuntimeServiceMap,
+        target: TargetProfile,
+    ) -> str:
+        """Поднять одну lab для всей проверки и вернуть ее стабильный id."""
+        if self._managed_lab is not None:
+            return self._managed_lab.runtime_instance_id
+        if not isinstance(self._sandbox, DockerSandbox):
+            raise TypeError("Managed agent lab requires the Docker security boundary")
+        if runtime_services.network_name is None:
+            raise RuntimeError("RuntimeServiceMap has no trusted sandbox network")
+        if target.repository_path is None:
+            raise RuntimeError("Managed agent lab requires one trusted target repository")
+        self._managed_lab = self._sandbox.open_sequence(
+            network_name=runtime_services.network_name,
+            repository_path=str(target.repository_path),
+        )
+        self._managed_lab.start()
+        return self._managed_lab.runtime_instance_id
+
+    def close_managed_lab(self) -> None:
+        """Lab живет ровно до конца run, даже если граф упал посередине."""
+        if self._managed_lab is None:
+            return
+        try:
+            self._managed_lab.close()
+        finally:
+            self._managed_lab = None
+
+    def record_approval(self, action: ActionProposal, validation) -> None:
+        """Approval не переживает proposal и всегда проверяется runner-ом."""
+        self._approvals.record(action, validation)
 
     @classmethod
     def from_config(
@@ -394,14 +430,19 @@ class SafeExecutor:
             CAPABILITY_NETWORK_ACCESS.get(action.tool) == "target" for action in actions
         )
         has_sandbox_command = any(action.tool == "sandbox_command" for action in actions)
+        if self._managed_lab is not None:
+            if runtime_services is None:
+                raise RuntimeError("Managed agent lab requires RuntimeServiceMap")
+            self._active_runtime_services = runtime_services
+            original_sandbox = self._sandbox
+            self._sandbox = self._managed_lab
+            try:
+                return self._runner.run(actions, runtime_services=runtime_services)
+            finally:
+                self._sandbox = original_sandbox
+                self._active_runtime_services = None
         if has_sandbox_command and not isinstance(self._sandbox, DockerSandbox):
             return self._runner.run(actions, runtime_services=runtime_services)
-        # Generic commands are deliberately networkless. They must never inherit the
-        # target Compose network just because a RuntimeServiceMap exists for the run.
-        if has_sandbox_command and requires_target_network:
-            raise ValueError(
-                "sandbox_command cannot share one execution sequence with target-network capabilities"
-            )
         # Existing HTTP observation capability remains Docker-only.
         if any(action.tool == "observe_http_surface" for action in actions) and not isinstance(
             self._sandbox, DockerSandbox

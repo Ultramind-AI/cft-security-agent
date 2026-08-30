@@ -9,7 +9,9 @@ from schemas.architecture import (
 )
 from schemas.discovery import (
     DiscoveredComponent,
+    DiscoveryClaim,
     DiscoveryCommandCandidate,
+    DiscoveryInterpretation,
     DiscoverySignal,
     ProjectDiscoveryResult,
 )
@@ -55,6 +57,7 @@ from schemas.runtime_observations import HttpCookieObservation, HttpSurfaceObser
 from schemas.runtime_telemetry import RuntimeTelemetryEvent, RuntimeTelemetryTimeline
 from schemas.sandbox_runner import SandboxActionResult, SandboxRunResult
 from schemas.scoring import ContextPriority, CVSSResult
+from schemas.scout import CandidateFinding
 from schemas.security_tools import (
     DockerfileUserCheckResult,
     PythonPasswordAssignmentCheckResult,
@@ -75,9 +78,12 @@ __all__ = [
     "BenchmarkReport",
     "CIGateImpact",
     "CVSSResult",
+    "CandidateFinding",
     "ContextPriority",
     "DiscoveredComponent",
+    "DiscoveryClaim",
     "DiscoveryCommandCandidate",
+    "DiscoveryInterpretation",
     "DiscoverySignal",
     "DockerfileUserCheckResult",
     "DynamicPlan",

@@ -23,6 +23,31 @@ def test_route_parser_preserves_model_suffixes() -> None:
     assert route.model == "openai/gpt-oss-20b:free"
 
 
+def test_default_routes_stay_inside_nsu_until_external_fallback_is_enabled() -> None:
+    assert [route.provider for route in parse_route_specs(None)] == ["nsu", "nsu"]
+    assert len(parse_route_specs(None, allow_external_fallbacks=True)) > 2
+
+
+def test_nsu_request_carries_configured_reasoning_effort(monkeypatch) -> None:
+    client = ProviderFailoverClient(
+        routes=parse_route_specs("nsu:deepseek-ai/DeepSeek-V4-Flash"),
+        credentials={"NSU_OPENWEBUI_KEY": "test-key"},
+        reasoning_effort="max",
+    )
+    captured = {}
+
+    def fake_post(url, payload, **_kwargs):
+        captured["url"] = url
+        captured["payload"] = payload
+        return {"choices": [{"message": {"content": "{}"}}]}
+
+    monkeypatch.setattr("agent.llm._post_json", fake_post)
+    client._request_openai(client.routes[0], "system", "user")
+
+    assert captured["url"] == "https://deepcode.ci.nsu.ru/api/chat/completions"
+    assert captured["payload"]["reasoning_effort"] == "max"
+
+
 def test_router_falls_back_after_invalid_structured_output(monkeypatch) -> None:
     client = _client(
         monkeypatch,

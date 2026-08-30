@@ -50,7 +50,8 @@ A DynamicPlan must:
 - otherwise sandbox_command may contain an argv chosen by the model for repository inspection,
   local test execution or other bounded lab work;
 - never invent target identity or sandbox session ids;
-- never use sandbox_command as a way to reach external targets: it has no arbitrary network;
+- sandbox_command may inspect the registered target runtime only from managed lab;
+- never use sandbox_command to reach an external target or arbitrary network;
 - use registered RuntimeServiceMap candidates for target HTTP observations;
 - state the expected observation and continue condition for every step;
 - obey step and wall-clock budgets and explicit stop conditions;

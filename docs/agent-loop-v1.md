@@ -47,6 +47,13 @@ T15 keeps serializable run memory:
 
 No provider SDK objects or live runtime handles are stored in LangGraph state.
 
+## Managed lab
+
+Во время одной investigation live Docker container держится рядом с graph, а не в
+`AgentState`. `/workspace` переживает несколько action, `/target` всегда read-only.
+При завершении graph container удаляется даже при exception. Validator, Executor,
+Evidence Guard и Gate остаются теми же границами.
+
 ## Budgets and stop reasons
 
 The loop is bounded by both step count and wall-clock time. Supported stop reasons are:

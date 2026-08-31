@@ -223,6 +223,7 @@ def execute_action(state: AgentState) -> dict:
     check_cancelled()
     action = state["proposed_action"]
     validation = state["validation"]
+    runtime_services = state.get("runtime_services")
 
     executor = active_executor()
     if executor is None:
@@ -242,8 +243,9 @@ def execute_action(state: AgentState) -> dict:
     else:
         # Approval все еще привязан к конкретному proposal, lab не дает обход policy.
         executor.record_approval(action, validation)
+        if action.tool == "sandbox_command" and runtime_services is not None:
+            executor.open_managed_lab(runtime_services, state["target_profile"])
 
-    runtime_services = state.get("runtime_services")
     if runtime_services is None:
         execution = executor.execute(action)
     else:

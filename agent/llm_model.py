@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import sys
+from collections.abc import Callable
 from typing import Any
 
-from agent.llm import ProviderFailoverClient, parse_route_specs
+from agent.llm import LLMUnavailableError, ProviderFailoverClient, parse_route_specs
+from agent.model import DeterministicAgentModel
 from agent.prompts import SYSTEM_PROMPT
 from schemas.action import ActionProposal
 from schemas.agent_outputs import AnalysisResult, ReevaluationResult
@@ -42,14 +44,18 @@ class FallbackLLMAgentModel:
         )
 
     def analyse(self, state: AgentState) -> AnalysisResult:
-        return self.client.complete_model(
-            output_model=AnalysisResult,
-            system_prompt=SYSTEM_PROMPT,
-            user_payload={
-                "task": "Analyse the finding. Separate facts from assumptions.",
-                "state": _reasoning_context(state),
-            },
-            operation="analyse",
+        return self._with_deterministic_fallback(
+            "analyse",
+            lambda: self.client.complete_model(
+                output_model=AnalysisResult,
+                system_prompt=SYSTEM_PROMPT,
+                user_payload={
+                    "task": "Analyse the finding. Separate facts from assumptions.",
+                    "state": _reasoning_context(state),
+                },
+                operation="analyse",
+            ),
+            lambda: DeterministicAgentModel().analyse(state),
         )
 
     def form_hypothesis(
@@ -57,15 +63,19 @@ class FallbackLLMAgentModel:
         state: AgentState,
         analysis: AnalysisResult,
     ) -> Hypothesis:
-        return self.client.complete_model(
-            output_model=Hypothesis,
-            system_prompt=SYSTEM_PROMPT,
-            user_payload={
-                "task": "Form one testable defensive verification hypothesis.",
-                "state": _reasoning_context(state),
-                "analysis": analysis.model_dump(mode="json"),
-            },
-            operation="form_hypothesis",
+        return self._with_deterministic_fallback(
+            "form_hypothesis",
+            lambda: self.client.complete_model(
+                output_model=Hypothesis,
+                system_prompt=SYSTEM_PROMPT,
+                user_payload={
+                    "task": "Form one testable defensive verification hypothesis.",
+                    "state": _reasoning_context(state),
+                    "analysis": analysis.model_dump(mode="json"),
+                },
+                operation="form_hypothesis",
+            ),
+            lambda: DeterministicAgentModel().form_hypothesis(state, analysis),
         )
 
     def propose_action(
@@ -83,42 +93,53 @@ class FallbackLLMAgentModel:
             choice_model = LLMReactHtmlFlowActionChoice
         else:
             choice_model = LLMGeneralActionChoice
-        choice = self.client.complete_model(
-            output_model=choice_model,
-            system_prompt=SYSTEM_PROMPT,
-            user_payload={
-                "task": (
-                    "Choose exactly one registered verification capability. "
-                    "Do not invent tools, paths, URLs, shell commands or target scope."
-                ),
-                "state": _reasoning_context(state),
-                "analysis": analysis.model_dump(mode="json"),
-                "hypothesis": hypothesis.model_dump(mode="json"),
-                "allowed_tools": allowed_tools,
-            },
-            operation="propose_action",
-        )
-
-        allowed_names = {item["name"] for item in allowed_tools}
-        if choice.tool not in allowed_names:
-            raise ValueError(
-                f"LLM selected tool {choice.tool!r}, which is not allowed for this finding"
+        def build_action() -> ActionProposal:
+            choice = self.client.complete_model(
+                output_model=choice_model,
+                system_prompt=SYSTEM_PROMPT,
+                user_payload={
+                    "task": (
+                        "Choose exactly one registered verification capability. "
+                        "Do not invent tools, paths, URLs, shell commands or target scope."
+                    ),
+                    "state": _reasoning_context(state),
+                    "analysis": analysis.model_dump(mode="json"),
+                    "hypothesis": hypothesis.model_dump(mode="json"),
+                    "allowed_tools": allowed_tools,
+                },
+                operation="propose_action",
             )
 
-        finding = state["finding"]
-        next_iteration = int(state.get("iteration_count", 0)) + 1
-        runtime_target = _runtime_action_target(state) if choice.tool == "observe_http_surface" else (None, None)
-        return ActionProposal(
-            id=_build_action_id(finding.id, next_iteration),
-            tool=choice.tool,
-            target=_target_profile(state).id,
-            environment=_target_profile(state).environment,
-            iteration=next_iteration,
-            parameters=_sanitize_action_parameters(choice, state),
-            purpose=choice.purpose,
-            expected_evidence=choice.expected_evidence,
-            service=runtime_target[0],
-            endpoint=runtime_target[1],
+            allowed_names = {item["name"] for item in allowed_tools}
+            if choice.tool not in allowed_names:
+                raise ValueError(
+                    f"LLM selected tool {choice.tool!r}, which is not allowed for this finding"
+                )
+
+            finding = state["finding"]
+            next_iteration = int(state.get("iteration_count", 0)) + 1
+            runtime_target = (
+                _runtime_action_target(state)
+                if choice.tool == "observe_http_surface"
+                else (None, None)
+            )
+            return ActionProposal(
+                id=_build_action_id(finding.id, next_iteration),
+                tool=choice.tool,
+                target=_target_profile(state).id,
+                environment=_target_profile(state).environment,
+                iteration=next_iteration,
+                parameters=_sanitize_action_parameters(choice, state),
+                purpose=choice.purpose,
+                expected_evidence=choice.expected_evidence,
+                service=runtime_target[0],
+                endpoint=runtime_target[1],
+            )
+
+        return self._with_deterministic_fallback(
+            "propose_action",
+            build_action,
+            lambda: DeterministicAgentModel().propose_action(state, analysis, hypothesis),
         )
 
     def build_plan(
@@ -128,105 +149,114 @@ class FallbackLLMAgentModel:
         hypothesis: Hypothesis,
     ) -> DynamicPlan:
         candidates = _allowed_plan_candidates(state)
-        choice = self.client.complete_model(
-            output_model=LLMDynamicPlanChoice,
-            system_prompt=SYSTEM_PROMPT,
-            user_payload={
-                "task": (
-                    "Build a bounded verification plan. You may either choose a deterministic "
-                    "registered candidate or propose a sandbox_command argv. sandbox_command runs "
-                    "only inside the disposable Docker lab with a read-only target mount, bounded "
-                    "resources and no arbitrary network. Use registered runtime candidates for "
-                    "network observations. Never invent target identity or sandbox session ids."
-                ),
-                "state": _reasoning_context(state),
-                "analysis": analysis.model_dump(mode="json"),
-                "hypothesis": hypothesis.model_dump(mode="json"),
-                "registered_candidates": [
-                    _public_candidate(candidate) for candidate in candidates
-                ],
-                "sandbox_command_contract": {
-                    "kind": "sandbox_command",
-                    "argv": "1-32 argv tokens; shell text is allowed only through an explicit argv such as sh -lc",
-                    "cwd": ["/target", "/workspace"],
-                    "network": "none; use registered runtime candidates for target HTTP",
-                    "target_mount": "read-only at /target",
-                    "workspace": "ephemeral writable /workspace",
+        try:
+            choice = self.client.complete_model(
+                output_model=LLMDynamicPlanChoice,
+                system_prompt=SYSTEM_PROMPT,
+                user_payload={
+                    "task": (
+                        "Build a bounded verification plan. You may either choose a deterministic "
+                        "registered candidate or propose a sandbox_command argv. sandbox_command runs "
+                        "only inside the disposable Docker lab with a read-only target mount, bounded "
+                        "resources and no arbitrary network. Use registered runtime candidates for "
+                        "network observations. Never invent target identity or sandbox session ids."
+                    ),
+                    "state": _reasoning_context(state),
+                    "analysis": analysis.model_dump(mode="json"),
+                    "hypothesis": hypothesis.model_dump(mode="json"),
+                    "registered_candidates": [
+                        _public_candidate(candidate) for candidate in candidates
+                    ],
+                    "sandbox_command_contract": {
+                        "kind": "sandbox_command",
+                        "argv": "1-32 argv tokens; shell text is allowed only through an explicit argv such as sh -lc",
+                        "cwd": ["/target", "/workspace"],
+                        "network": "none; use registered runtime candidates for target HTTP",
+                        "target_mount": "read-only at /target",
+                        "workspace": "ephemeral writable /workspace",
+                    },
                 },
-            },
-            operation="build_dynamic_plan",
-        )
-
-        if len(choice.steps) > choice.max_steps:
-            raise ValueError("LLM DynamicPlan contains more steps than max_steps")
-
-        by_id = {str(candidate["candidate_id"]): candidate for candidate in candidates}
-        selected_ids = [
-            step.candidate_id
-            for step in choice.steps
-            if step.kind == "candidate" and step.candidate_id is not None
-        ]
-        if len(set(selected_ids)) != len(selected_ids):
-            raise ValueError("LLM DynamicPlan cannot repeat the same registered candidate")
-
-        profile = _target_profile(state)
-        runtime_services = state.get("runtime_services")
-        first_iteration = int(state.get("iteration_count", 0)) + 1
-        planned_steps: list[PlannedAction] = []
-        for index, step in enumerate(choice.steps, start=1):
-            iteration = first_iteration + index - 1
-            if step.kind == "sandbox_command":
-                action = ActionProposal(
-                    id=_build_action_id(state["finding"].id, iteration),
-                    tool="sandbox_command",
-                    target=profile.id,
-                    environment=profile.environment,
-                    iteration=iteration,
-                    parameters={"argv": list(step.argv), "cwd": step.cwd},
-                    purpose=step.purpose or "Run a bounded command inside the disposable lab.",
-                    expected_evidence=step.expected_observation,
-                )
-            else:
-                candidate = by_id.get(str(step.candidate_id))
-                if candidate is None:
-                    raise ValueError(
-                        f"LLM selected unknown DynamicPlan candidate: {step.candidate_id!r}"
-                    )
-                action = ActionProposal(
-                    id=_build_action_id(state["finding"].id, iteration),
-                    tool=str(candidate["tool"]),
-                    target=profile.id,
-                    environment=profile.environment,
-                    iteration=iteration,
-                    parameters=dict(candidate.get("parameters", {})),
-                    purpose=str(candidate["purpose"]),
-                    expected_evidence=step.expected_observation,
-                    service=_optional_string(candidate.get("service")),
-                    endpoint=_optional_string(candidate.get("endpoint")),
-                )
-            planned_steps.append(
-                PlannedAction(
-                    index=index,
-                    action=action,
-                    expected_observation=step.expected_observation,
-                    continue_if=step.continue_if,
-                )
+                operation="build_dynamic_plan",
             )
 
-        return DynamicPlan(
-            id=_build_plan_id(state["finding"].id, first_iteration),
-            target=profile.id,
-            environment=profile.environment,
-            hypothesis_id=hypothesis.id,
-            goal=choice.goal,
-            max_steps=choice.max_steps,
-            sandbox_session_id=(
-                runtime_services.session_id if runtime_services is not None else None
-            ),
-            continuation_reason=choice.continuation_reason,
-            stop_conditions=choice.stop_conditions,
-            steps=planned_steps,
-        )
+            if len(choice.steps) > choice.max_steps:
+                raise ValueError("LLM DynamicPlan contains more steps than max_steps")
+
+            by_id = {str(candidate["candidate_id"]): candidate for candidate in candidates}
+            selected_ids = [
+                step.candidate_id
+                for step in choice.steps
+                if step.kind == "candidate" and step.candidate_id is not None
+            ]
+            if len(set(selected_ids)) != len(selected_ids):
+                raise ValueError("LLM DynamicPlan cannot repeat the same registered candidate")
+
+            profile = _target_profile(state)
+            runtime_services = state.get("runtime_services")
+            first_iteration = int(state.get("iteration_count", 0)) + 1
+            planned_steps: list[PlannedAction] = []
+            for index, step in enumerate(choice.steps, start=1):
+                iteration = first_iteration + index - 1
+                if step.kind == "sandbox_command":
+                    action = ActionProposal(
+                        id=_build_action_id(state["finding"].id, iteration),
+                        tool="sandbox_command",
+                        target=profile.id,
+                        environment=profile.environment,
+                        iteration=iteration,
+                        parameters={"argv": list(step.argv), "cwd": step.cwd},
+                        purpose=step.purpose or "Run a bounded command inside the disposable lab.",
+                        expected_evidence=step.expected_observation,
+                    )
+                else:
+                    candidate = by_id.get(str(step.candidate_id))
+                    if candidate is None:
+                        raise ValueError(
+                            f"LLM selected unknown DynamicPlan candidate: {step.candidate_id!r}"
+                        )
+                    action = ActionProposal(
+                        id=_build_action_id(state["finding"].id, iteration),
+                        tool=str(candidate["tool"]),
+                        target=profile.id,
+                        environment=profile.environment,
+                        iteration=iteration,
+                        parameters=dict(candidate.get("parameters", {})),
+                        purpose=str(candidate["purpose"]),
+                        expected_evidence=step.expected_observation,
+                        service=_optional_string(candidate.get("service")),
+                        endpoint=_optional_string(candidate.get("endpoint")),
+                    )
+                planned_steps.append(
+                    PlannedAction(
+                        index=index,
+                        action=action,
+                        expected_observation=step.expected_observation,
+                        continue_if=step.continue_if,
+                    )
+                )
+            return DynamicPlan(
+                id=_build_plan_id(state["finding"].id, first_iteration),
+                target=profile.id,
+                environment=profile.environment,
+                hypothesis_id=hypothesis.id,
+                goal=choice.goal,
+                max_steps=choice.max_steps,
+                sandbox_session_id=(
+                    runtime_services.session_id if runtime_services is not None else None
+                ),
+                continuation_reason=choice.continuation_reason,
+                stop_conditions=choice.stop_conditions,
+                steps=planned_steps,
+            )
+        except (LLMUnavailableError, ValueError):
+            return self._deterministic_result(
+                "build_dynamic_plan",
+                lambda: DeterministicAgentModel().build_plan(
+                    state,
+                    analysis,
+                    hypothesis,
+                ),
+            )
 
     def reevaluate(self, state: AgentState) -> ReevaluationResult:
         from evidence.guard import evaluate_evidence
@@ -244,17 +274,21 @@ class FallbackLLMAgentModel:
                 explanation=deterministic.explanation,
             )
 
-        result = self.client.complete_model(
-            output_model=ReevaluationResult,
-            system_prompt=SYSTEM_PROMPT,
-            user_payload={
-                "task": (
-                    "Re-evaluate the hypothesis using only supplied Evidence. "
-                    "Never infer confirmed or rejected from execution success alone."
-                ),
-                "state": _reasoning_context(state),
-            },
-            operation="reevaluate",
+        result = self._with_deterministic_fallback(
+            "reevaluate",
+            lambda: self.client.complete_model(
+                output_model=ReevaluationResult,
+                system_prompt=SYSTEM_PROMPT,
+                user_payload={
+                    "task": (
+                        "Re-evaluate the hypothesis using only supplied Evidence. "
+                        "Never infer confirmed or rejected from execution success alone."
+                    ),
+                    "state": _reasoning_context(state),
+                },
+                operation="reevaluate",
+            ),
+            lambda: DeterministicAgentModel().reevaluate(state),
         )
 
         # Последняя защитная проверка: вывод LLM не является Evidence
@@ -277,6 +311,27 @@ class FallbackLLMAgentModel:
                 ),
             )
         return result
+
+    def _with_deterministic_fallback(
+        self,
+        operation: str,
+        llm_call: Callable[[], Any],
+        deterministic_call: Callable[[], Any],
+    ) -> Any:
+        try:
+            return llm_call()
+        except (LLMUnavailableError, ValueError):
+            return self._deterministic_result(operation, deterministic_call)
+
+    def _deterministic_result(
+        self,
+        operation: str,
+        deterministic_call: Callable[[], Any],
+    ) -> Any:
+        # LLM может деградировать, но не должна превращать проверку в технический сбой
+        if getattr(self.client, "trace", False):
+            print(f"[agent] {operation}: deterministic fallback", file=sys.stderr)
+        return deterministic_call()
 
 
 def _reasoning_context(state: AgentState) -> dict[str, Any]:

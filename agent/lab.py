@@ -32,12 +32,10 @@ class ManagedAgentLab(AbstractContextManager[SafeExecutor]):
             workspace_directory=settings.executor_work_dir,
             target_base_url=settings.target_base_url,
             target_repository_path=settings.target_repository_path,
-            backend_override="docker",
         )
         self._token = None
 
     def __enter__(self) -> SafeExecutor:
-        self.executor.open_managed_lab(self.runtime_services, self.executor_target)
         self._token = _active_executor.set(self.executor)
         return self.executor
 

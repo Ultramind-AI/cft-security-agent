@@ -34,7 +34,14 @@ def error_from_exception(
         code = "DEPENDENCY_UNAVAILABLE"
         retryable = True
         message = _sandbox_public_message(causes)
-    elif isinstance(exc, SemgrepError) or any(isinstance(item, OSError) for item in causes):
+    elif isinstance(exc, SemgrepError):
+        if "CLI was not found" in str(exc):
+            code = "DEPENDENCY_UNAVAILABLE"
+            retryable = True
+        else:
+            code = "EXECUTION_FAILED"
+            message = "Semgrep scan failed while validating rules"
+    elif any(isinstance(item, OSError) for item in causes):
         code = "DEPENDENCY_UNAVAILABLE"
         retryable = True
     elif isinstance(exc, (TypeError, ValueError)):

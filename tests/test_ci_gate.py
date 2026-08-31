@@ -4,6 +4,7 @@ import subprocess
 from executor.sandbox_session import SandboxSessionError, SessionTimeoutError
 from pipeline.errors import error_from_exception
 from pipeline.gate import evaluate_gate
+from sast.semgrep_runner import SemgrepError
 from schemas.errors import ErrorDetail
 from schemas.pipeline import GateResult
 from schemas.pr import PRFindingContext
@@ -197,6 +198,17 @@ def test_pipeline_exception_normalizer_classifies_timeout_without_raw_text() -> 
     assert error.code == "TIMEOUT"
     assert error.retryable is True
     assert raw_secret not in error.message
+
+
+def test_pipeline_exception_normalizer_keeps_semgrep_rule_failure_separate() -> None:
+    error = error_from_exception(
+        SemgrepError("Semgrep exited with code 2: semgrep-core rule validation failed"),
+        layer="sast",
+        public_message="SAST stage failed",
+    )
+
+    assert error.code == "EXECUTION_FAILED"
+    assert error.message == "Semgrep scan failed while validating rules"
 
 
 def test_sandbox_readiness_timeout_is_retryable_timeout() -> None:

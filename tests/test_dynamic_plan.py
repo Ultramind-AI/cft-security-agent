@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import pytest
-
 from agent.llm_model import FallbackLLMAgentModel
 from agent.model import DeterministicAgentModel
 from agent.planning import DynamicPlanValidator
@@ -268,7 +266,7 @@ def test_llm_builds_multistep_plan_only_from_runtime_candidates() -> None:
     assert client.calls[0]["operation"] == "build_dynamic_plan"
 
 
-def test_llm_cannot_invent_runtime_candidate() -> None:
+def test_llm_invented_runtime_candidate_uses_deterministic_plan() -> None:
     choice = LLMDynamicPlanChoice(
         goal="Try an out-of-scope route.",
         max_steps=1,
@@ -284,12 +282,14 @@ def test_llm_cannot_invent_runtime_candidate() -> None:
     model = FallbackLLMAgentModel(_FakeClient(choice))
     state = _state()
 
-    with pytest.raises(ValueError, match="unknown DynamicPlan candidate"):
-        model.build_plan(
-            state,
-            AnalysisResult(summary="test"),
-            state["hypothesis"],
-        )
+    plan = model.build_plan(
+        state,
+        AnalysisResult(summary="test"),
+        state["hypothesis"],
+    )
+
+    assert plan.steps[0].action.tool == "safe_noop"
+    assert plan.steps[0].action.service is None
 
 
 def test_plan_node_persists_scope_validation_before_policy(monkeypatch) -> None:

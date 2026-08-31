@@ -1,3 +1,4 @@
+from agent.llm import LLMUnavailableError
 from agent.llm_model import FallbackLLMAgentModel
 from schemas.action import ActionProposal
 from schemas.agent_outputs import AnalysisResult, ReevaluationResult
@@ -25,6 +26,13 @@ class _FakeClient:
         output = next(self.outputs)
         assert isinstance(output, kwargs["output_model"])
         return output
+
+
+class _UnavailableClient:
+    trace = False
+
+    def complete_model(self, **kwargs):
+        raise LLMUnavailableError("all providers are unavailable")
 
 
 def _state() -> dict:
@@ -60,6 +68,18 @@ def test_llm_model_returns_structured_reasoning() -> None:
     result = model.analyse(_state())
     assert result.summary == "Needs verification"
     assert client.calls[0]["operation"] == "analyse"
+
+
+def test_llm_provider_failure_uses_deterministic_reasoning() -> None:
+    model = FallbackLLMAgentModel(_UnavailableClient())
+    state = _state()
+
+    analysis = model.analyse(state)
+    hypothesis = model.form_hypothesis(state, analysis)
+    plan = model.build_plan(state, analysis, hypothesis)
+
+    assert analysis.needs_verification is True
+    assert plan.steps[0].action.tool == "inspect_dockerfile_user"
 
 
 def test_llm_action_keeps_security_sensitive_fields_deterministic() -> None:

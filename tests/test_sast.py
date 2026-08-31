@@ -85,6 +85,37 @@ def test_runner_uses_local_target_as_cwd(monkeypatch, tmp_path: Path) -> None:
 
 def test_runner_explains_missing_semgrep(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr("sast.semgrep_runner.shutil.which", lambda _: None)
+    monkeypatch.setattr("sast.semgrep_runner._environment_semgrep", lambda: None)
 
     with pytest.raises(SemgrepError, match="SAST extra"):
         run_semgrep_scan(tmp_path)
+
+
+def test_runner_falls_back_to_isolated_docker_after_windows_core_failure(
+    monkeypatch, tmp_path: Path
+) -> None:
+    payload = {"results": [_raw_finding()], "errors": []}
+    calls: list[list[str]] = []
+    monkeypatch.setattr("sast.semgrep_runner.sys.platform", "win32")
+    monkeypatch.setattr(
+        "sast.semgrep_runner.shutil.which",
+        lambda name: "semgrep" if name == "semgrep" else "docker",
+    )
+
+    def fake_run(command, **_kwargs):
+        calls.append(command)
+        if len(calls) == 1:
+            return SimpleNamespace(
+                returncode=2,
+                stdout="",
+                stderr="semgrep-core rule validation failed",
+            )
+        return SimpleNamespace(returncode=0, stdout=json.dumps(payload), stderr="")
+
+    monkeypatch.setattr("sast.semgrep_runner.run_cancellable_process", fake_run)
+
+    result = run_semgrep_scan(tmp_path)
+
+    assert result.findings
+    assert calls[1][:4] == ["docker", "run", "--rm", "--read-only"]
+    assert any("/src:ro" in item for item in calls[1])

@@ -166,6 +166,7 @@ class SafeExecutor:
         self._registry.register("observe_http_surface", self._no_parameters)
         self._active_runtime_services: RuntimeServiceMap | None = None
         self._managed_lab: DockerSequenceRuntime | None = None
+        self._sandbox_before_lab: Sandbox | None = None
         self._registry.register("inspect_dockerfile_user", self._artifact_id_parameter)
         self._registry.register("inspect_python_password_assignment", self._artifact_id_parameter)
         self._registry.register("inspect_react_dangerous_html_flow", self._react_html_flow_parameters)
@@ -188,7 +189,8 @@ class SafeExecutor:
         if self._managed_lab is not None:
             return self._managed_lab.runtime_instance_id
         if not isinstance(self._sandbox, DockerSandbox):
-            raise TypeError("Managed agent lab requires the Docker security boundary")
+            self._sandbox_before_lab = self._sandbox
+            self._sandbox = DockerSandbox(self._policy)
         if runtime_services.network_name is None:
             raise RuntimeError("RuntimeServiceMap has no trusted sandbox network")
         if target.repository_path is None:
@@ -208,6 +210,9 @@ class SafeExecutor:
             self._managed_lab.close()
         finally:
             self._managed_lab = None
+            if self._sandbox_before_lab is not None:
+                self._sandbox = self._sandbox_before_lab
+                self._sandbox_before_lab = None
 
     def record_approval(self, action: ActionProposal, validation) -> None:
         """Approval не переживает proposal и всегда проверяется runner-ом."""

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 from collections import Counter
 from collections.abc import Callable
@@ -32,6 +33,8 @@ from schemas.report import CIGateImpact, FinalReport, ReportFinding, Verificatio
 from schemas.runtime import RuntimeServiceMap
 from schemas.target import TargetProfile
 from tools.runtime import LocalCodeReader
+
+logger = logging.getLogger(__name__)
 
 
 def _parse_args() -> argparse.Namespace:
@@ -318,7 +321,7 @@ def run_pipeline(
             # build_real_initial_state loads the source artifact; PR metadata is an
             # additive pipeline concern and is attached without rewriting that artifact.
             state["finding"] = finding
-            if runtime_services is None:
+            if runtime_services is None or settings.agent_mode != "llm":
                 result = graph.invoke(state)
             else:
                 # Один finding может пройти несколько итерации, workspace должен пережить их все.
@@ -344,7 +347,8 @@ def run_pipeline(
         # Падение одного финдинга не прячет остальные, но гейт это обязательно увидит
         except RunCancelled:
             raise
-        except Exception as exc:  # noqa: BLE001 - граница этапа должна стать ошибкой гейта
+        except Exception as exc:
+            logger.exception("Finding workflow failed: %s", finding.id)
             error = error_from_exception(
                 exc,
                 layer="pipeline",

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -15,6 +16,9 @@ from schemas.finding import Finding
 
 class SemgrepError(RuntimeError):
     """Ошибка, когда локальный скан Semgrep не удалось запустить или завершить."""
+
+
+_DOCKER_SEMGREP_IMAGE = "semgrep/semgrep:1.174.0"
 
 
 @dataclass(frozen=True)
@@ -42,7 +46,7 @@ def run_semgrep_scan(
     if not target_path.is_dir():
         raise SemgrepError(f"SAST target directory does not exist: {target_path}")
 
-    executable = shutil.which("semgrep")
+    executable = shutil.which("semgrep") or _environment_semgrep()
     if executable is None:
         raise SemgrepError(
             "Semgrep CLI was not found. Activate the project venv and install "
@@ -78,6 +82,13 @@ def run_semgrep_scan(
     except OSError as exc:
         raise SemgrepError(f"Failed to start Semgrep: {exc}") from exc
 
+    if completed.returncode != 0 and _needs_windows_docker_fallback(completed):
+        completed = run_cancellable_process(
+            _docker_command(target_path, config),
+            cwd=target_path,
+            timeout=timeout_seconds,
+        )
+
     if completed.returncode != 0:
         detail = completed.stderr.strip() or completed.stdout.strip()
         raise SemgrepError(
@@ -99,3 +110,57 @@ def run_semgrep_scan(
         findings=normalize_semgrep_payload(raw, service_resolver=service_resolver),
         stderr=completed.stderr,
     )
+
+
+def _environment_semgrep() -> str | None:
+    """uv может не добавить Scripts в PATH, но CLI лежит рядом с его Python."""
+    directory = Path(sys.executable).resolve().parent
+    names = ("semgrep.exe", "semgrep") if sys.platform == "win32" else ("semgrep",)
+    for name in names:
+        candidate = directory / name
+        if candidate.is_file():
+            return str(candidate)
+    return None
+
+
+def _needs_windows_docker_fallback(completed: subprocess.CompletedProcess[str]) -> bool:
+    """Windows semgrep-core иногда падает до scan, тогда уходим в Linux container."""
+    diagnostic = f"{completed.stdout}\n{completed.stderr}".lower()
+    return sys.platform == "win32" and "semgrep-core" in diagnostic and shutil.which("docker")
+
+
+def _docker_command(target_path: Path, config: str) -> list[str]:
+    """Target только читаем, Semgrep получает tmpfs для своего cache и git config."""
+    return [
+        "docker",
+        "run",
+        "--rm",
+        "--read-only",
+        "--cap-drop",
+        "ALL",
+        "--security-opt",
+        "no-new-privileges",
+        "--tmpfs",
+        "/tmp:rw,noexec,nosuid,size=64m",
+        "--tmpfs",
+        "/root:rw,noexec,nosuid,size=32m",
+        "-v",
+        f"{target_path}:/src:ro",
+        "-w",
+        "/src",
+        _DOCKER_SEMGREP_IMAGE,
+        "semgrep",
+        "scan",
+        "--config",
+        config,
+        "--json",
+        "--exclude",
+        ".venv",
+        "--exclude",
+        "node_modules",
+        "--exclude",
+        "dist",
+        "--exclude",
+        "build",
+        ".",
+    ]

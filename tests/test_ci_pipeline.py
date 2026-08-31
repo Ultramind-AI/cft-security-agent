@@ -2,17 +2,20 @@ from __future__ import annotations
 
 import argparse
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 
 import yaml
 
 from app.ci_pipeline import (
     _validate_allowed_repository,
+    _write_sandbox_logs,
     run_ci_pipeline,
     target_subprocess_environment,
 )
 from app.config import settings
 from app.pipeline_run import run_pipeline
+from executor.sandbox_manager import SandboxLog
 from schemas.runtime import RuntimeService, RuntimeServiceMap
 from schemas.runtime_telemetry import RuntimeTelemetryTimeline
 from schemas.target import TargetProfile
@@ -85,6 +88,32 @@ def test_target_environment_removes_ci_and_llm_secrets() -> None:
     )
 
     assert clean == {"PATH": "/usr/bin", "NORMAL_SETTING": "ok"}
+
+
+def test_failed_sandbox_logs_are_saved_as_artifact(tmp_path: Path) -> None:
+    class Session:
+        def __init__(self) -> None:
+            self.logs = [
+                SandboxLog(
+                    session_id="session-1",
+                    adapter="docker_compose",
+                    stage="run",
+                    service=None,
+                    argv=("docker", "compose", "up"),
+                    status="failed",
+                    stdout="",
+                    stderr="up failed",
+                    exit_code=1,
+                    timed_out=False,
+                    duration_ms=100,
+                    captured_at=datetime.now(UTC),
+                )
+            ]
+
+    _write_sandbox_logs(tmp_path, Session())
+
+    payload = json.loads((tmp_path / "sandbox-logs.json").read_text(encoding="utf-8"))
+    assert payload["entries"][0]["stderr"] == "up failed"
 
 
 def test_repository_is_bound_to_trusted_profile_metadata(tmp_path: Path) -> None:

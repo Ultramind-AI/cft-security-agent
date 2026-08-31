@@ -289,10 +289,7 @@ class SandboxSession:
             self.prepare()
             self.info.status = SessionStatus.STARTING
             self.info.started_at = self._clock()
-            self._command(
-                self._compose("up", "--build", "--detach"),
-                timeout=self.startup_timeout,
-            )
+            self._start_compose()
             self._wait_until_ready()
             self.info.status = SessionStatus.READY
             self.collect_state()
@@ -309,6 +306,18 @@ class SandboxSession:
             self.info.status = SessionStatus.FAILED
             self.teardown(raise_on_failure=False)
             raise
+
+    def _start_compose(self) -> None:
+        command = self._compose("up", "--build", "--detach")
+        try:
+            self._command(command, timeout=self.startup_timeout)
+        except SandboxSessionError:
+            # Docker Desktop иногда роняет первый up, чистим только свою сессию и пробуем еще раз
+            self._command(
+                self._compose("down", "--volumes", "--remove-orphans"),
+                allow_failure=True,
+            )
+            self._command(command, timeout=self.startup_timeout)
 
     def _wait_until_ready(self) -> None:
         urls = [self.target.build_url(path) for path in self._readiness_paths] if self.target.runtime.base_url else []

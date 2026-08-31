@@ -21,12 +21,14 @@ class FakeCompose:
         self,
         *,
         fail_up: bool = False,
+        fail_first_up: bool = False,
         timeout_up: bool = False,
         fail_resource_query: bool = False,
     ) -> None:
         self.commands: list[list[str]] = []
         self.timeouts: list[float] = []
         self.fail_up = fail_up
+        self.fail_first_up = fail_first_up
         self.timeout_up = timeout_up
         self.fail_resource_query = fail_resource_query
 
@@ -39,7 +41,9 @@ class FakeCompose:
         if "up" in argv:
             if self.timeout_up:
                 raise subprocess.TimeoutExpired(argv, timeout)
-            return subprocess.CompletedProcess(argv, 1 if self.fail_up else 0, "", "up failed" if self.fail_up else "")
+            failed = self.fail_up or self.fail_first_up
+            self.fail_first_up = False
+            return subprocess.CompletedProcess(argv, 1 if failed else 0, "", "up failed" if failed else "")
         if action == "json":
             return subprocess.CompletedProcess(argv, 0, '[{"Service":"app","State":"running"}]', "")
         is_resource_query = (
@@ -171,6 +175,22 @@ def test_start_failure_always_tears_down(tmp_path: Path) -> None:
         session.start()
     assert session.status == SessionStatus.CLOSED
     assert any(" down --volumes --remove-orphans" in " ".join(command) for command in fake.commands)
+
+
+def test_compose_retries_one_transient_up_failure(tmp_path: Path) -> None:
+    fake = FakeCompose(fail_first_up=True)
+    session = SandboxSession(
+        _target(tmp_path),
+        runner=fake,
+        health_probe=lambda url, timeout: True,
+    )
+
+    session.start()
+
+    starts = [command for command in fake.commands if "up" in command]
+    assert len(starts) == 2
+    assert any("down" in command for command in fake.commands)
+    session.teardown()
 
 
 def test_compose_up_uses_dedicated_startup_timeout_and_tears_down(tmp_path: Path) -> None:

@@ -8,6 +8,7 @@ import os
 import re
 import subprocess
 from collections.abc import Callable, Mapping
+from dataclasses import asdict, is_dataclass
 from pathlib import Path
 
 from app.config import settings
@@ -150,6 +151,7 @@ def _run_ci_pipeline_inner(
         "agent_mode": settings.agent_mode,
     }
 
+    session = None
     try:
         check_cancelled()
         target = Path(args.target).expanduser().resolve(strict=True)
@@ -255,6 +257,8 @@ def _run_ci_pipeline_inner(
     except RunCancelled:
         raise
     except Exception as exc:  # noqa: BLE001 - CI boundary converts failures into Gate
+        if session is not None:
+            _write_sandbox_logs(output_dir, session)
         progress.stage(
             "pipeline",
             status="failed",
@@ -352,6 +356,16 @@ def _write_technical_failure(output_dir: Path, exc: Exception) -> int:
     )
     _print_technical_failure(gate)
     return TECHNICAL_FAILURE_EXIT_CODE
+
+
+def _write_sandbox_logs(output_dir: Path, session: object) -> None:
+    logs = getattr(session, "logs", ())
+    entries = [
+        asdict(item) if is_dataclass(item) else str(item)
+        for item in logs
+    ]
+    if entries:
+        _write_json(output_dir / "sandbox-logs.json", {"entries": entries})
 
 
 def _write_json(path: Path, payload: object) -> None:

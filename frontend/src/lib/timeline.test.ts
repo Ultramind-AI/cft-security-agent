@@ -76,7 +76,7 @@ describe("buildConversationTimeline", () => {
       session_id: "chat-1",
       role: "assistant",
       kind: "summary",
-      content: "Анализ завершён. Gate: FAIL.",
+      content: "Анализ завершен. Gate: FAIL.",
       run_id: "run-1",
       created_at: "2026-08-24T10:02:00Z",
     });

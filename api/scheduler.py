@@ -1,4 +1,4 @@
-"""Small FIFO scheduler and shared resource budget for API analysis runs."""
+"""Небольшой FIFO scheduler и общий бюджет ресурсов для запусков анализа через API"""
 
 from __future__ import annotations
 
@@ -112,7 +112,7 @@ class _Job:
 
 
 class RunScheduler:
-    """FIFO queue with a fixed number of worker threads."""
+    """FIFO очередь с фиксированным числом worker thread"""
 
     def __init__(self, *, workers: int) -> None:
         if workers < 1:

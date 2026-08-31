@@ -39,11 +39,11 @@ class LLMProbeResult(BaseModel):
 
 
 class LLMPlanStepChoice(BaseModel):
-    """One reasoning-layer step inside the disposable security lab.
+    """Один шаг reasoning layer внутри одноразовой security lab
 
-    Registered candidates remain available for deterministic capabilities.  T14.1 also
-    allows the model to propose a raw argv command, but that command is later executed
-    only by the Docker sandbox capability with no host access and no arbitrary network.
+    Registered candidates остаются для детерминированных capabilities. T14.1 разрешает
+    модели предложить raw argv, но команда выполняется только в Docker sandbox
+    без доступа к host и произвольной сети
     """
 
     kind: Literal["candidate", "sandbox_command"] = "candidate"
@@ -84,7 +84,7 @@ class LLMPlanStepChoice(BaseModel):
 
 
 class LLMDynamicPlanChoice(BaseModel):
-    """Provider-facing DynamicPlan shape without trusted target identity fields."""
+    """Форма DynamicPlan для provider без trusted полей identity таргета"""
 
     goal: str = Field(min_length=1, max_length=1000)
     max_steps: int = Field(ge=1, le=8)

@@ -30,7 +30,7 @@ HealthProbe = Callable[[str, float], bool]
 
 
 class SandboxConfigurationError(RuntimeError):
-    """Профиль не даёт однозначного и безопасного способа запуска."""
+    """Профиль не дает однозначного и безопасного способа запуска"""
 
 
 @dataclass(frozen=True)

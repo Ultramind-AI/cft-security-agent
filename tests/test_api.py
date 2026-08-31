@@ -345,7 +345,7 @@ def test_chat_describes_technical_failure_without_security_verdict(tmp_path: Pat
 
     assert "технической ошибки" in summary
     assert "Результат анализа безопасности не сформирован" in summary
-    assert "Анализ завершён" not in summary
+    assert "Анализ завершен" not in summary
 
 
 
@@ -609,7 +609,7 @@ def test_api_imports_folder_manifest_with_nested_paths(tmp_path: Path) -> None:
         registered = orchestrator.registry.get(project["id"])
         repository = registered.profile.repository_path
         assert repository is not None
-        # Directory structure must survive the import.
+        # Структура каталогов должна сохраниться после импорта
         assert (repository / "backend" / "app" / "views.py").is_file()
         assert (repository / "backend" / "app" / "__init__.py").read_bytes() == b""
 
@@ -745,8 +745,7 @@ def test_api_serves_progress_and_discovery_during_and_after_run(tmp_path: Path) 
             progress = client.get(f"/runs/{run_id}/progress")
             assert progress.status_code == 200
             progress_payload = progress.json()
-            # Stages and the executor audit trail are written at slightly
-            # different moments by the background pipeline thread.
+            # Фоновый поток пишет stages и audit trail Executor в разные моменты
             if progress_payload["stages"] and progress_payload["activities"]:
                 break
             time.sleep(0.05)
@@ -773,7 +772,7 @@ def test_api_serves_progress_and_discovery_during_and_after_run(tmp_path: Path) 
         assert discovery.status_code == 200
         discovery_text = discovery.text
         assert "django" in discovery_text
-        # The sanitized view must never leak local artifact or repository paths.
+        # Очищенное представление не должно раскрывать локальные пути
         assert str(orchestrator.artifact_root) not in discovery_text
 
         completed = _wait_for_completion(client, run_id)
@@ -784,8 +783,7 @@ def test_api_serves_progress_and_discovery_during_and_after_run(tmp_path: Path) 
 
 
 def test_chat_session_rejects_project_without_repository(tmp_path: Path) -> None:
-    # Build the trusted profile, then remove the checkout it points to so the
-    # project is registered but its repository_available becomes False.
+    # Удаляем checkout после регистрации trusted profile чтобы repository_available стал False
     registry = _target_registry(tmp_path)
     import shutil as _shutil
 

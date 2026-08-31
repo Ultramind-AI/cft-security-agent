@@ -42,7 +42,7 @@ code { overflow-wrap: anywhere; }
 .app-shell { display: flex; height: 100vh; overflow: hidden; }
 .app-main { min-width: 0; flex: 1; overflow: hidden; }
 
-/* Sidebar */
+/* Боковая панель */
 .sidebar {
   width: 272px;
   flex: 0 0 272px;
@@ -87,7 +87,7 @@ code { overflow-wrap: anywhere; }
 .chat-delete-button:hover { background: #392325; color: var(--red); }
 .sidebar-footer { padding-top: 8px; border-top: 1px solid var(--border-soft); font-size: 12px; }
 
-/* Workspace */
+/* Рабочая область */
 .chat-workspace { display: flex; height: 100%; min-height: 0; flex-direction: column; background: var(--bg); }
 .project-header {
   z-index: 3; display: flex; min-height: 58px; align-items: center; gap: 12px; padding: 8px 22px;
@@ -247,7 +247,7 @@ details[open] > summary .details-caret { transform: rotate(90deg); }
 .suggested-action-list button:hover { border-color: #484b4f; background: var(--surface); color: var(--text); }
 .suggested-action-list svg { flex: 0 0 auto; color: var(--blue); }
 
-/* Composer */
+/* Поле ввода */
 .composer-dock { z-index: 2; padding: 8px 22px 14px; background: linear-gradient(transparent, var(--bg) 22%); }
 .composer-card { width: min(100%, 820px); margin: 0 auto; overflow: hidden; border: 1px solid #3a3d40; border-radius: 12px; background: var(--surface); box-shadow: 0 10px 28px #0005; }
 .composer-card:focus-within { border-color: #55595e; }
@@ -261,7 +261,7 @@ details[open] > summary .details-caret { transform: rotate(90deg); }
 .composer-send:disabled { background: #303235; color: #70747a; cursor: default; }
 .composer-note { margin: 6px auto 0; color: var(--faint); font-size: 9.5px; text-align: center; }
 
-/* Empty and dialog */
+/* Пустое состояние и диалог */
 .empty-workspace { position: relative; }
 .empty-project-state { display: grid; max-width: 420px; margin: auto; place-items: center; gap: 8px; padding: 30px; color: var(--muted); text-align: center; }
 .empty-project-state svg { color: var(--faint); }
@@ -307,7 +307,7 @@ details[open] > summary .details-caret { transform: rotate(90deg); }
 .dialog-empty { color: var(--muted); text-align: center; }
 .import-state { color: var(--muted); }
 
-/* Debug and full report */
+/* Debug и полный отчет */
 .debug-page, .full-report-page { height: 100%; overflow-x: hidden; overflow-y: auto; padding: 28px 34px; }
 .debug-header, .full-report-header { width: min(100%, 1100px); margin: 0 auto 24px; }
 .debug-header h1, .full-report-header h1 { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 22px; }

@@ -15,8 +15,7 @@ from agent.nodes import (
 )
 from schemas.state import AgentState
 
-# T15 has several LangGraph super-steps per agent iteration; keep LangGraph
-# recursion guard above the application-level max_steps budget.
+# За одну итерацию T15 проходит несколько super-step, поэтому лимит LangGraph держим выше max_steps
 _AGENT_GRAPH_RECURSION_LIMIT = 128
 
 

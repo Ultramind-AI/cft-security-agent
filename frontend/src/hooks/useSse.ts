@@ -3,12 +3,10 @@ import { useEffect, useRef, useState } from "react";
 export type SseState = "idle" | "live" | "done" | "error";
 
 /**
- * Subscribe to a server-sent event stream that repeats one payload type and
- * finishes with a terminal `done` event carrying the final payload.
+ * Подписываемся на SSE stream одного payload type до терминального события `done`
  *
- * `onEvent` receives every payload; it may write into a react-query cache or
- * local state. The stream is closed after `done` or when the component
- * unmounts. EventSource reconnects automatically on transient failures.
+ * `onEvent` получает каждый payload и может писать в react-query cache или local state
+ * Stream закрывается после `done` или unmount, transient сбои EventSource повторяет сам
  */
 export function useSse<T>(
   url: string | null,
@@ -52,7 +50,7 @@ export function useSse<T>(
         setState("done");
       });
       source.addEventListener("error", () => {
-        // EventSource retries automatically; after `done` we stay closed.
+        // EventSource повторяет запрос сам, после `done` соединение не открываем
         if (!closed) setState((current) => (current === "live" ? "live" : "error"));
       });
     };

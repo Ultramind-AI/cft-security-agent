@@ -226,9 +226,7 @@ function appendRun(
       id: `run:${run.id}:gate`,
       runId: run.id,
       at,
-      // The Gate is the deterministic conclusion of all finding reports, so it
-      // must render after every report card even when static reports inherit
-      // the same run completion timestamp.
+      // Gate завершает все finding reports, поэтому рисуем его после report card даже при одном timestamp
       sortTime: timeOf(run.finished_at, startedMs + 100_000) + 2,
       sortRank: KIND_RANK.gate,
       gate,

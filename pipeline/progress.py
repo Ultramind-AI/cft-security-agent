@@ -1,9 +1,7 @@
-"""Append-only JSONL progress journal for one pipeline run.
+"""Append-only JSONL журнал прогресса одного запуска
 
-The journal is a best-effort observability side channel for live UIs: it must
-never influence pipeline decisions, and every write is guarded so that a
-recording failure can never break the canonical flow. The API layer tails this
-file (plus the executor audit log) to expose mid-run progress.
+Это best-effort observability канал для live UI, он не влияет на решения пайплайна
+Ошибки записи не ломают основной flow. API читает журнал вместе с audit log Executor
 """
 
 from __future__ import annotations
@@ -27,7 +25,7 @@ def _now() -> str:
 
 
 class PipelineProgressRecorder:
-    """Writes one compact JSONL event per pipeline stage boundary."""
+    """Пишем компактное JSONL событие на каждой границе stage"""
 
     def __init__(self, output_dir: str | Path) -> None:
         self.path = Path(output_dir) / PROGRESS_FILE_NAME
@@ -108,12 +106,12 @@ class PipelineProgressRecorder:
                 finally:
                     os.close(descriptor)
         except OSError:
-            # Observability must never break the security pipeline.
+            # Observability не должна ломать security pipeline
             return
 
 
 def read_progress(path: str | Path, *, limit: int = 500) -> list[dict]:
-    """Read recorded progress events; tolerant of concurrent appends."""
+    """Читаем события прогресса с учетом параллельной дозаписи"""
     file_path = Path(path)
     if not file_path.is_file():
         return []

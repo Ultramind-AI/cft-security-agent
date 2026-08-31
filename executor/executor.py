@@ -129,7 +129,7 @@ CAPABILITY_REPOSITORY_ACCESS: dict[str, bool] = {
     "inspect_react_dangerous_html_flow": True,
 }
 
-# Определяет, какой сетевой доступ разрешён для каждой capability
+# Определяет, какой сетевой доступ разрешен для каждой capability
 CAPABILITY_NETWORK_ACCESS: dict[str, str] = {
     "safe_noop": "none",
     "sandbox_command": "none",
@@ -448,7 +448,7 @@ class SafeExecutor:
                 self._active_runtime_services = None
         if has_sandbox_command and not isinstance(self._sandbox, DockerSandbox):
             return self._runner.run(actions, runtime_services=runtime_services)
-        # Existing HTTP observation capability remains Docker-only.
+        # HTTP observation capability остается только в Docker
         if any(action.tool == "observe_http_surface" for action in actions) and not isinstance(
             self._sandbox, DockerSandbox
         ):

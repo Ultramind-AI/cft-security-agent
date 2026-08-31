@@ -1,4 +1,4 @@
-"""Real SberLab runner chain; intentionally skipped outside a Docker-enabled lab."""
+"""Реальная цепочка SberLab runner, вне lab с Docker тест пропускаем"""
 
 from __future__ import annotations
 

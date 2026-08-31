@@ -33,7 +33,7 @@ def redact_error_message(
     *,
     max_length: int = DEFAULT_MAX_ERROR_LENGTH,
 ) -> str:
-    """Return a deterministic, bounded message safe for external error contracts."""
+    """Возвращаем детерминированное ограниченное сообщение для внешнего error contract"""
 
     if max_length < 1:
         raise ValueError("max_length must be at least 1")

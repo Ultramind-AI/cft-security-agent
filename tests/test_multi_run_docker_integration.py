@@ -1,4 +1,4 @@
-"""Real Docker proof for queue cancellation and teardown."""
+"""Проверка отмены очереди и teardown на реальном Docker"""
 
 from __future__ import annotations
 

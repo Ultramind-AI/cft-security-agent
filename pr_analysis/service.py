@@ -11,7 +11,7 @@ from schemas.pr import PRAnalysisSummary, PRFindingContext
 
 
 def finding_fingerprint(finding: Finding) -> str:
-    """Build a stable identity without line numbers, which move between revisions."""
+    """Строим стабильный id без номеров строк, они меняются между ревизиями"""
     identity = {
         "source": finding.source.strip().lower(),
         "rule_id": finding.rule_id.strip(),

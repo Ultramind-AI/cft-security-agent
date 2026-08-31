@@ -1,1 +1,1 @@
-"""Service API for orchestration and persisted run metadata."""
+"""Service API для оркестрации и сохраненных метаданных запуска"""

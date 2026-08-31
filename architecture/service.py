@@ -11,7 +11,7 @@ from schemas.architecture import (
 
 
 class ArchitectureService:
-    """YAML adapter for project descriptions and optional operator overrides."""
+    """YAML adapter для описаний проекта и необязательных overrides оператора"""
 
     def __init__(
         self,

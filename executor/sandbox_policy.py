@@ -13,10 +13,10 @@ class SandboxLimits:
     wall_time_seconds: float = 5.0
     cpu_time_seconds: int = 2
     memory_bytes: int = 256 * 1024 * 1024  # 256 MiB
-    max_file_bytes: int = 1024 * 1024       # 1 MiB single file limit
-    max_processes: int = 8                  # PIDs limit
-    max_output_bytes: int = 16_384          # 16 KiB output stream cap
-    tmpfs_size_bytes: int = 64 * 1024 * 1024 # 64 MiB total ephemeral quota
+    max_file_bytes: int = 1024 * 1024       # Лимит одного файла 1 MiB
+    max_processes: int = 8                  # Лимит PID
+    max_output_bytes: int = 16_384          # Лимит потока вывода 16 KiB
+    tmpfs_size_bytes: int = 64 * 1024 * 1024 # Общая временная квота 64 MiB
     umask: int = 0o077
     max_cpus: float = 1.0
 

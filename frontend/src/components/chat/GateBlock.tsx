@@ -25,7 +25,7 @@ export function GateBlock({
           <ShieldCheck size={19} weight="duotone" />
         </span>
         <div>
-          <span>{technicalFailure ? "Анализ остановлен" : "Анализ завершён"}</span>
+          <span>{technicalFailure ? "Анализ остановлен" : "Анализ завершен"}</span>
           <strong>{technicalFailure ? "ТЕХНИЧЕСКАЯ ОШИБКА" : gateLabel(gate.decision)}</strong>
         </div>
       </div>
@@ -56,7 +56,7 @@ export function GateBlock({
       ) : null}
 
       <Link className="summary-link" to={`/runs/${run.id}`}>
-        Открыть полный отчёт
+        Открыть полный отчет
         <ArrowSquareOut size={15} />
       </Link>
     </article>

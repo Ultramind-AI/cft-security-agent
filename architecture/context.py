@@ -14,7 +14,7 @@ class ArchitectureContextProvider(Protocol):
 
 
 class ProjectDescriptionAdapter:
-    """Build universal scoring facts from an in-memory project description."""
+    """Собираем общие факты для scoring из описания проекта в памяти"""
 
     def __init__(
         self,

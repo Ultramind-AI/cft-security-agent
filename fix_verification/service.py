@@ -66,7 +66,7 @@ _BLOCKED_COMMAND_MARKERS = (
 
 
 class FixVerificationService:
-    """Apply and test a proposed diff in an ephemeral copy of the target only."""
+    """Применяем и тестируем предложенный diff только во временной копии таргета"""
 
     def verify(
         self,
@@ -207,9 +207,8 @@ def _run_process(argv: list[str], *, cwd: Path, timeout_seconds: int) -> FixChec
         directory.mkdir(parents=True, exist_ok=True)
 
     safe_env = {
-        # Do not inherit a user-managed PATH: it can point at wrappers or tools
-        # which themselves read host credentials.  Absolute interpreters remain
-        # usable, while fixed patch commands use the system default path.
+        # Не наследуем пользовательский PATH, его wrappers могут читать credentials хоста
+        # Absolute interpreters остаются доступны, patch команды используют системный path
         "PATH": os.defpath,
         "LANG": "C.UTF-8",
         "LC_ALL": "C.UTF-8",

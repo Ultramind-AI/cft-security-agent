@@ -22,7 +22,7 @@ def classify_finding_gate(
     cvss_severity: str | None,
     pr_classification: str | None = None,
 ) -> FindingGateClassification:
-    """Return the deterministic per-finding CI effect used by reports and gate."""
+    """Детерминированно определяем влияние finding на CI для report и gate"""
     context = context_level.upper() if context_level else None
     cvss = cvss_severity.upper() if cvss_severity else None
 

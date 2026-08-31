@@ -91,7 +91,7 @@ export function Composer({
         </div>
       </div>
       <p className="composer-note">
-        Enter — отправить · Shift+Enter — новая строка · Границы проекта защищены политикой
+        Enter - отправить · Shift+Enter - новая строка · Границы проекта защищены политикой
       </p>
     </div>
   );

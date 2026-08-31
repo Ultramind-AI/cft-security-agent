@@ -31,7 +31,7 @@ export function EvidenceBlock({ evidence }: { evidence: Evidence }) {
             <dd>{evidence.observation.kind}</dd>
           </div>
           <div>
-            <dt>Надёжность</dt>
+            <dt>Надежность</dt>
             <dd>{reliabilityLabel(evidence.reliability)}</dd>
           </div>
           <div>

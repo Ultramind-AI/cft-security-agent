@@ -17,7 +17,7 @@ export function DebugRunsPage() {
         <div>
           <Link to="/" className="back-link"><ArrowLeft size={15} /> Чат</Link>
           <h1><Bug size={20} /> Прогоны и диагностика</h1>
-          <p>История запусков анализа. Основная работа с агентом остаётся в чате.</p>
+          <p>История запусков анализа. Основная работа с агентом остается в чате.</p>
         </div>
       </header>
 
@@ -39,7 +39,7 @@ export function DebugRunsPage() {
                 <td><Link to={`/runs/${run.id}`}><code>{shortId(run.id)}</code></Link></td>
                 <td>{run.target_id}</td>
                 <td><span className={`debug-status ${run.status}`}>{runStatusLabel(run.status)}</span></td>
-                <td>{run.gate_decision ? <span className={`gate-word ${run.gate_decision}`}>{gateLabel(run.gate_decision)}</span> : "—"}</td>
+                <td>{run.gate_decision ? <span className={`gate-word ${run.gate_decision}`}>{gateLabel(run.gate_decision)}</span> : "-"}</td>
                 <td>{formatDateTime(run.started_at ?? run.created_at)}</td>
                 <td>{formatDuration(run.started_at, run.finished_at)}</td>
               </tr>

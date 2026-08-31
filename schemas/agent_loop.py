@@ -25,7 +25,7 @@ AgentStopReason = Literal[
 
 
 class AgentActionRecord(BaseModel):
-    """Immutable-enough audit snapshot for one observe/reason/act iteration."""
+    """Достаточно неизменяемый audit snapshot одной итерации observe/reason/act"""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -39,7 +39,7 @@ class AgentActionRecord(BaseModel):
 
 
 class AgentDecisionRecord(BaseModel):
-    """Why the agent stopped or requested another reasoning iteration."""
+    """Почему агент остановился или запросил еще одну reasoning итерацию"""
 
     model_config = ConfigDict(extra="forbid")
 

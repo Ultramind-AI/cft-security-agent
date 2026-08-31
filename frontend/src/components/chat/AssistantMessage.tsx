@@ -28,6 +28,6 @@ function localizeHistoricalMessage(content: string): string {
     );
   }
   return content
-    .replaceAll("завершён с предупреждением (warn)", "завершён с предупреждениями")
-    .replaceAll("Детерминированные факты (Evidence)", "Подтверждённые факты");
+    .replaceAll("завершен с предупреждением (warn)", "завершен с предупреждениями")
+    .replaceAll("Детерминированные факты (Evidence)", "Подтвержденные факты");
 }

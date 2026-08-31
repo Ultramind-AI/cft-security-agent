@@ -206,7 +206,7 @@ def test_compose_up_uses_dedicated_startup_timeout_and_tears_down(tmp_path: Path
         session.start()
     up_index = next(index for index, command in enumerate(fake.commands) if "up" in command)
     assert fake.timeouts[up_index] == 123
-    assert fake.timeouts[0] == 7  # compose config remains a short command.
+    assert fake.timeouts[0] == 7  # compose config остается короткой командой
     down = next(command for command in fake.commands if "down" in command)
     assert down[down.index("--project-name") + 1] == session.compose_project
     assert session.status == SessionStatus.CLOSED

@@ -1,187 +1,127 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="930" viewBox="0 0 1600 930" role="img" aria-labelledby="title desc">
+  <title id="title">Workflow агента</title>
+  <desc id="desc">Ограниченный цикл от AgentState и анализа finding до Validator, Executor, Evidence и FinalReport</desc>
 
-<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="950" viewBox="0 0 1800 950"
-     role="img" aria-labelledby="flow-title flow-desc">
-  <title id="flow-title">Граф работы агента</title>
-  <desc id="flow-desc">
-    Диаграмма повторяет Miro v0.1: AgentState поступает в загрузку контекста, затем анализ
-    и приоритизацию, формирование гипотезы, план проверки, валидатор, исполнение,
-    сбор evidence, переоценку и стоп-условие. При недостатке evidence цикл возвращается
-    к формированию гипотезы. DENY ведёт в Policy blocked и финальный отчёт.
-  </desc>
   <defs>
-    <marker id="wa" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto">
-      <path d="M0,0 L10,5 L0,10 Z" fill="#416C87"/>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M32 0H0V32" fill="none" stroke="#202426" stroke-width="1"/>
+    </pattern>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10Z" fill="#7f8a91"/>
     </marker>
-    <marker id="wb" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto">
-      <path d="M0,0 L10,5 L0,10 Z" fill="#0284C7"/>
+    <marker id="arrowGreen" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10Z" fill="#55c98c"/>
     </marker>
-    <marker id="wr" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto">
-      <path d="M0,0 L10,5 L0,10 Z" fill="#B84A62"/>
+    <marker id="arrowRed" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10Z" fill="#e06c75"/>
     </marker>
     <style>
-      .bg{fill:#F3F8FC}.grid{stroke:#D8E8F2;stroke-width:1;opacity:.42}
-      .title{font:700 34px Arial,sans-serif;fill:#102A43}
-      .sub{font:400 15px Arial,sans-serif;fill:#58758A}
-      .stage{font:700 12px Arial,sans-serif;letter-spacing:1.7px;fill:#66869B}
-      .n{fill:#FCFEFF;stroke:#9CCCE5;stroke-width:1.5}
-      .step{fill:#EAF7FF;stroke:#63BCE8;stroke-width:1.7}
-      .focus{fill:#DDF3FF;stroke:#2EA9E6;stroke-width:2.5}
-      .decision{fill:#E7F7FD;stroke:#54B5D8;stroke-width:2.1}
-      .blocked{fill:#FCEFF2;stroke:#D98395;stroke-width:1.6}
-      .name{font:700 15px Arial,sans-serif;fill:#15374C}
-      .small{font:400 12px Arial,sans-serif;fill:#5C7788}
-      .mono{font:400 10px ui-monospace,SFMono-Regular,Menlo,monospace;fill:#678396}
-      .edge{fill:none;stroke:#416C87;stroke-width:1.45;marker-end:url(#wa)}
-      .edgeB{fill:none;stroke:#0284C7;stroke-width:1.65;marker-end:url(#wb)}
-      .edgeR{fill:none;stroke:#B84A62;stroke-width:1.45;marker-end:url(#wr)}
-      .label{font:600 10px Arial,sans-serif;fill:#46697F}
-      .labelR{font:600 10px Arial,sans-serif;fill:#9B4055}
+      .bg{fill:#0d0f10}.card{fill:#171a1c;stroke:#34393c;stroke-width:2}.focus{fill:#16211d;stroke:#55c98c;stroke-width:2.4}.decision{fill:#211f18;stroke:#d8ad45;stroke-width:2.4}.blocked{fill:#24191c;stroke:#e06c75;stroke-width:2}.title{font:700 34px Arial,sans-serif;fill:#f3f5f6}.subtitle{font:400 15px Arial,sans-serif;fill:#939ba1}.stage{font:700 12px Arial,sans-serif;letter-spacing:2px;fill:#687177}.name{font:700 16px Arial,sans-serif;fill:#f3f5f6}.text{font:400 12px Arial,sans-serif;fill:#aeb5ba}.mono{font:500 11px ui-monospace,SFMono-Regular,Menlo,monospace;fill:#7f8a91}.label{font:700 11px Arial,sans-serif;fill:#d8ad45}.labelRed{font:700 11px Arial,sans-serif;fill:#e06c75}.edge{fill:none;stroke:#7f8a91;stroke-width:2;marker-end:url(#arrow)}.edgeGreen{fill:none;stroke:#55c98c;stroke-width:2.2;marker-end:url(#arrowGreen)}.edgeRed{fill:none;stroke:#e06c75;stroke-width:2;marker-end:url(#arrowRed)}
     </style>
-    <pattern id="wg" width="26" height="26" patternUnits="userSpaceOnUse">
-      <path d="M26 0H0V26" fill="none" class="grid"/>
-    </pattern>
   </defs>
 
-  <rect class="bg" width="1800" height="950"/>
-  <rect width="1800" height="950" fill="url(#wg)" opacity=".55"/>
+  <rect class="bg" width="1600" height="930"/>
+  <rect width="1600" height="930" fill="url(#grid)" opacity=".45"/>
 
-  <text class="title" x="900" y="58" text-anchor="middle">Граф работы агента</text>
-  <text class="sub" x="900" y="87" text-anchor="middle">finding → контекст → гипотеза → проверка → evidence → решение</text>
+  <text class="title" x="800" y="56" text-anchor="middle">Workflow агента</text>
+  <text class="subtitle" x="800" y="86" text-anchor="middle">Observe · reason · validate · execute · collect Evidence · decide</text>
 
-  <text class="stage" x="145" y="205" text-anchor="middle">ВХОД</text>
-  <text class="stage" x="990" y="205" text-anchor="middle">ОСНОВНОЙ ЦИКЛ АГЕНТА</text>
-  <text class="stage" x="850" y="690" text-anchor="middle">ВЫХОД / ЗАВЕРШЕНИЕ</text>
+  <text class="stage" x="800" y="120" text-anchor="middle">TRUSTED TOOLS</text>
 
-  <!-- tools -->
-  <rect class="n" x="310" y="215" width="190" height="70" rx="11"/>
-  <text class="name" x="405" y="244" text-anchor="middle">Инструменты чтения</text>
-  <text class="small" x="405" y="268" text-anchor="middle">repo • SAST • arch</text>
+  <rect class="card" x="300" y="140" width="190" height="82" rx="14"/>
+  <text class="name" x="395" y="172" text-anchor="middle">Read tools</text>
+  <text class="text" x="395" y="197" text-anchor="middle">repo · SAST · architecture</text>
 
-  <rect class="n" x="570" y="215" width="190" height="70" rx="11"/>
-  <text class="name" x="665" y="244" text-anchor="middle">Инструменты оценки</text>
-  <text class="small" x="665" y="268" text-anchor="middle">CVSS • scoring</text>
+  <rect class="card" x="550" y="140" width="190" height="82" rx="14"/>
+  <text class="name" x="645" y="172" text-anchor="middle">Scoring tools</text>
+  <text class="text" x="645" y="197" text-anchor="middle">CVSS · Context Priority</text>
 
-  <rect class="n" x="1435" y="215" width="200" height="70" rx="11"/>
-  <text class="name" x="1535" y="244" text-anchor="middle">Инструменты проверки</text>
-  <text class="small" x="1535" y="268" text-anchor="middle">только одобренные</text>
+  <rect class="card" x="1290" y="140" width="220" height="82" rx="14"/>
+  <text class="name" x="1400" y="172" text-anchor="middle">Execution tools</text>
+  <text class="text" x="1400" y="197" text-anchor="middle">только approved capabilities</text>
 
-  <!-- main row -->
-  <rect class="step" x="45" y="365" width="200" height="118" rx="12"/>
-  <text class="name" x="145" y="399" text-anchor="middle">Состояние агента</text>
-  <text class="small" x="145" y="425" text-anchor="middle">finding • code context</text>
-  <text class="small" x="145" y="449" text-anchor="middle">history • evidence • limits</text>
+  <text class="stage" x="790" y="258" text-anchor="middle">REASONING И VALIDATION</text>
 
-  <rect class="step" x="310" y="375" width="190" height="98" rx="12"/>
-  <text class="name" x="405" y="408" text-anchor="middle">1. Загрузка контекста</text>
-  <text class="small" x="405" y="435" text-anchor="middle">finding + код + архитектура</text>
+  <rect class="card" x="60" y="285" width="190" height="120" rx="14"/>
+  <text class="name" x="155" y="323" text-anchor="middle">AgentState</text>
+  <text class="text" x="155" y="352" text-anchor="middle">finding · context · history</text>
+  <text class="text" x="155" y="378" text-anchor="middle">Evidence · limits</text>
 
-  <rect class="step" x="570" y="365" width="190" height="118" rx="12"/>
-  <text class="name" x="665" y="399" text-anchor="middle">2. Анализ и приоритизация</text>
-  <text class="small" x="665" y="427" text-anchor="middle">риск • CVSS • важность</text>
+  <rect class="card" x="300" y="285" width="190" height="120" rx="14"/>
+  <text class="name" x="395" y="323" text-anchor="middle">1. Контекст</text>
+  <text class="text" x="395" y="352" text-anchor="middle">код и архитектура</text>
 
-  <rect class="step" x="830" y="365" width="205" height="118" rx="12"/>
-  <text class="name" x="932" y="399" text-anchor="middle">3. Формирование гипотезы</text>
-  <text class="small" x="932" y="427" text-anchor="middle">что именно нужно проверить</text>
+  <rect class="card" x="540" y="285" width="200" height="120" rx="14"/>
+  <text class="name" x="640" y="323" text-anchor="middle">2. Анализ</text>
+  <text class="text" x="640" y="352" text-anchor="middle">риск и приоритет</text>
 
-  <rect class="focus" x="1105" y="356" width="220" height="136" rx="12"/>
-  <text class="name" x="1215" y="392" text-anchor="middle">4. План проверки</text>
-  <text class="small" x="1215" y="420" text-anchor="middle">выбор инструмента</text>
-  <text class="small" x="1215" y="446" text-anchor="middle">подготовка ActionProposal</text>
+  <rect class="card" x="790" y="285" width="210" height="120" rx="14"/>
+  <text class="name" x="895" y="323" text-anchor="middle">3. Гипотеза</text>
+  <text class="text" x="895" y="352" text-anchor="middle">что нужно подтвердить</text>
 
-  <polygon class="decision" points="1435,348 1540,424 1435,500 1330,424"/>
-  <text class="name" x="1435" y="404" text-anchor="middle">5. Валидатор</text>
-  <text class="small" x="1435" y="429" text-anchor="middle">scope • policy</text>
-  <text class="small" x="1435" y="452" text-anchor="middle">APPROVE / DENY</text>
+  <rect class="focus" x="1050" y="275" width="210" height="140" rx="14"/>
+  <text class="name" x="1155" y="316" text-anchor="middle">4. DynamicPlan</text>
+  <text class="text" x="1155" y="347" text-anchor="middle">ActionProposal</text>
+  <text class="text" x="1155" y="373" text-anchor="middle">ожидаемый Evidence</text>
 
-  <rect class="step" x="1580" y="368" width="175" height="112" rx="12"/>
-  <text class="name" x="1668" y="401" text-anchor="middle">6. Исполнение</text>
-  <text class="small" x="1668" y="427" text-anchor="middle">разрешённая проверка</text>
-  <text class="small" x="1668" y="451" text-anchor="middle">sandbox / staging</text>
+  <polygon class="decision" points="1400,260 1510,345 1400,430 1290,345"/>
+  <text class="name" x="1400" y="327" text-anchor="middle">5. Validator</text>
+  <text class="text" x="1400" y="356" text-anchor="middle">scope · policy · limits</text>
+  <text class="text" x="1400" y="382" text-anchor="middle">APPROVE / DENY</text>
 
-  <!-- lower sequence -->
-  <rect class="step" x="1580" y="575" width="175" height="106" rx="12"/>
-  <text class="name" x="1668" y="609" text-anchor="middle">7. Сбор evidence</text>
-  <text class="small" x="1668" y="636" text-anchor="middle">логи • ответы • артефакты</text>
+  <path class="edgeGreen" d="M250 345H300"/>
+  <path class="edgeGreen" d="M490 345H540"/>
+  <path class="edgeGreen" d="M740 345H790"/>
+  <path class="edgeGreen" d="M1000 345H1050"/>
+  <path class="edgeGreen" d="M1260 345H1290"/>
+  <path class="edge" d="M395 222V285"/>
+  <path class="edge" d="M645 222V285"/>
 
-  <rect class="step" x="1330" y="575" width="200" height="106" rx="12"/>
-  <text class="name" x="1430" y="609" text-anchor="middle">8. Переоценка</text>
-  <text class="small" x="1430" y="636" text-anchor="middle">confirmed / rejected / inconclusive</text>
+  <text class="stage" x="950" y="505" text-anchor="middle">EXECUTION И EVIDENCE</text>
 
-  <rect class="blocked" x="1110" y="555" width="180" height="90" rx="12"/>
-  <text class="name" x="1200" y="589" text-anchor="middle">Policy blocked</text>
-  <text class="small" x="1200" y="616" text-anchor="middle">запрет + причина</text>
+  <rect class="focus" x="1290" y="540" width="220" height="120" rx="14"/>
+  <text class="name" x="1400" y="579" text-anchor="middle">6. Executor</text>
+  <text class="text" x="1400" y="608" text-anchor="middle">Docker sandbox</text>
+  <text class="text" x="1400" y="634" text-anchor="middle">approved action</text>
 
-  <polygon class="decision" points="1020,700 1135,785 1020,870 905,785"/>
-  <text class="name" x="1020" y="753" text-anchor="middle">9. Стоп-условие?</text>
-  <text class="small" x="1020" y="779" text-anchor="middle">достаточно evidence?</text>
-  <text class="small" x="1020" y="803" text-anchor="middle">лимит итераций?</text>
-  <text class="small" x="1020" y="827" text-anchor="middle">policy block?</text>
+  <rect class="focus" x="1020" y="540" width="220" height="120" rx="14"/>
+  <text class="name" x="1130" y="579" text-anchor="middle">7. Evidence</text>
+  <text class="text" x="1130" y="608" text-anchor="middle">наблюдения и артефакты</text>
 
-  <rect class="step" x="650" y="725" width="235" height="120" rx="12"/>
-  <text class="name" x="768" y="760" text-anchor="middle">Финальный отчёт</text>
-  <text class="small" x="768" y="788" text-anchor="middle">статус • risk • CVSS</text>
-  <text class="small" x="768" y="814" text-anchor="middle">evidence • remediation</text>
+  <rect class="card" x="750" y="540" width="220" height="120" rx="14"/>
+  <text class="name" x="860" y="579" text-anchor="middle">8. Переоценка</text>
+  <text class="text" x="860" y="608" text-anchor="middle">новый статус finding</text>
 
-  <!-- exact logical connections -->
-  <path class="edgeB" d="M245 424 H310"/>
-  <text class="label" x="278" y="412" text-anchor="middle">input state</text>
+  <polygon class="decision" points="570,500 680,585 570,670 460,585"/>
+  <text class="name" x="570" y="558" text-anchor="middle">9. Стоп?</text>
+  <text class="text" x="570" y="587" text-anchor="middle">Evidence достаточно?</text>
+  <text class="text" x="570" y="613" text-anchor="middle">лимит исчерпан?</text>
 
-  <path class="edge" d="M405 285 V375"/>
-  <text class="label" x="418" y="330">read tools</text>
+  <rect class="card" x="190" y="530" width="220" height="130" rx="14"/>
+  <text class="name" x="300" y="571" text-anchor="middle">FinalReport</text>
+  <text class="text" x="300" y="602" text-anchor="middle">confirmed · rejected</text>
+  <text class="text" x="300" y="628" text-anchor="middle">inconclusive · blocked</text>
 
-  <path class="edge" d="M500 424 H570"/>
-  <text class="label" x="535" y="412" text-anchor="middle">контекст</text>
+  <path class="edge" d="M1400 222V260"/>
+  <path class="edgeGreen" d="M1400 430V540"/>
+  <text class="label" x="1414" y="488">APPROVE</text>
+  <path class="edgeGreen" d="M1290 600H1240"/>
+  <path class="edgeGreen" d="M1020 600H970"/>
+  <path class="edgeGreen" d="M750 585H680"/>
+  <path class="edgeGreen" d="M460 585H410"/>
+  <text class="label" x="435" y="572" text-anchor="middle">FINISH</text>
 
-  <path class="edge" d="M665 285 V365"/>
-  <text class="label" x="678" y="330">scoring tools</text>
+  <path class="edge" d="M570 500V465H895V405"/>
+  <text class="mono" x="725" y="452" text-anchor="middle">CONTINUE: новая гипотеза с накопленным Evidence</text>
 
-  <path class="edge" d="M760 424 H830"/>
-  <text class="label" x="795" y="412" text-anchor="middle">анализ</text>
+  <rect class="blocked" x="1290" y="735" width="220" height="100" rx="14"/>
+  <text class="name" x="1400" y="773" text-anchor="middle">Policy blocked</text>
+  <text class="text" x="1400" y="803" text-anchor="middle">запрет и причина</text>
 
-  <path class="edge" d="M1035 424 H1105"/>
-  <text class="label" x="1070" y="412" text-anchor="middle">гипотеза</text>
+  <path class="edgeRed" d="M1510 345H1550V785H1510"/>
+  <text class="labelRed" x="1535" y="563" transform="rotate(90 1535 563)">DENY</text>
+  <path class="edgeRed" d="M1290 785H300V660"/>
 
-  <path class="edge" d="M1325 424 H1330"/>
-  <text class="label" x="1327" y="411" text-anchor="middle">proposal</text>
-
-  <path class="edge" d="M1535 285 V315 H1668 V368"/>
-  <text class="label" x="1600" y="307" text-anchor="middle">execution tools</text>
-
-  <path class="edgeB" d="M1540 424 H1580"/>
-  <text class="label" x="1560" y="412" text-anchor="middle">APPROVE</text>
-
-  <path class="edgeB" d="M1668 480 V575"/>
-  <text class="label" x="1681" y="532">результат</text>
-
-  <path class="edge" d="M1580 628 H1530"/>
-  <text class="label" x="1555" y="616" text-anchor="middle">evidence</text>
-
-  <path class="edge" d="M1430 681 V785 H1135"/>
-  <text class="label" x="1278" y="774" text-anchor="middle">новый статус</text>
-
-  <path class="edgeB" d="M905 785 H885"/>
-  <text class="label" x="895" y="772" text-anchor="middle">ДА, завершить</text>
-
-  <!-- Miro loop: stop condition -> hypothesis -->
-  <path class="edge" d="M1020 700 V540 H932 V483"/>
-  <text class="label" x="956" y="531" text-anchor="middle">ещё одна итерация</text>
-
-  <path class="edgeR" d="M1435 500 V525 H1200 V555"/>
-  <text class="labelR" x="1318" y="516" text-anchor="middle">DENY</text>
-
-  <path class="edgeR" d="M1110 600 H800 V725"/>
-  <text class="labelR" x="940" y="589" text-anchor="middle">blocked result</text>
-
-  <!-- AgentState note -->
-  <text class="mono" x="145" y="565" text-anchor="middle">State в LangGraph</text>
-  <text class="small" x="145" y="590" text-anchor="middle">finding_id • context • plan</text>
-  <text class="small" x="145" y="614" text-anchor="middle">evidence • status • iteration_count</text>
-
-  <text class="mono" x="145" y="760" text-anchor="middle">Главное правило</text>
-  <text class="small" x="145" y="785" text-anchor="middle">агент думает и планирует,</text>
-  <text class="small" x="145" y="809" text-anchor="middle">но не выполняет действия напрямую</text>
-
-  <text class="mono" x="900" y="920" text-anchor="middle">
-    LangGraph: узлы = шаги • State = общий контекст • stop-условия = переход к финальному отчёту
-  </text>
+  <line x1="60" y1="875" x2="1510" y2="875" stroke="#2b3033"/>
+  <text class="mono" x="785" y="906" text-anchor="middle">Терминальный Evidence важнее интерпретации LLM · каждый action проходит Validator</text>
 </svg>

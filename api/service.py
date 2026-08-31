@@ -80,7 +80,7 @@ class ProjectImportError(ValueError):
 
 
 class RunOrchestrator:
-    """Bounded background orchestration over the canonical CI pipeline."""
+    """Ограниченная фоновая оркестрация поверх канонического CI pipeline"""
 
     def __init__(
         self,
@@ -189,10 +189,10 @@ class RunOrchestrator:
             raise
 
     def import_project_files(self, request: ImportProjectFilesRequest) -> ApiProject:
-        """Import a browser-selected folder sent as relative paths + base64 files.
+        """Импортируем выбранную в браузере папку как relative path и base64 файлы
 
-        Folder and ZIP imports converge into the same staging + Discovery flow.
-        The server owns the project id and workspace; client paths are untrusted.
+        Импорт папки и ZIP сходится в общий staging + Discovery flow
+        Project id и workspace принадлежат серверу, путям клиента не доверяем
         """
         display_name = (request.name or "Uploaded project").strip()[:120] or "Uploaded project"
         total_bytes = 0
@@ -261,9 +261,7 @@ class RunOrchestrator:
         architecture_path = workspace / "architecture.yaml"
         profile_path = workspace / "target-profile.yaml"
         repository = _repository_root(extract_root)
-        # Uploaded trees live inside the agent's own work tree, which is a git
-        # repo with api_data/ ignored; without their own .git, tools like
-        # Semgrep would treat every file as git-ignored and scan nothing.
+        # Загруженному дереву нужен свой .git, иначе Semgrep унаследует ignore для api_data
         _init_staging_repository(repository)
         discovery_api = ProjectDiscovery()
         discovery = discovery_api.discover(repository)
@@ -395,7 +393,7 @@ class RunOrchestrator:
         )
 
     def get_run_progress(self, run_id: str) -> RunProgress:
-        """Mid-run progress; safe to poll while the run is queued or running."""
+        """Прогресс запуска можно безопасно опрашивать в очереди и во время работы"""
         artifact_dir = self.store.artifact_dir(run_id)
         return _build_run_progress(artifact_dir)
 
@@ -410,8 +408,7 @@ class RunOrchestrator:
         self.registry.get(request.target_id)
         project = self.store.get_project(request.target_id)
         if not project.repository_available:
-            # A chat is permanently bound to its project; without a local
-            # checkout no message in it could ever start an analysis.
+            # Чат навсегда привязан к проекту, без локального checkout анализ не запустить
             raise ProjectImportError(
                 "Project repository is not available on the server"
             )
@@ -548,8 +545,8 @@ class RunOrchestrator:
             decision = gate.get("decision", "unknown") if isinstance(gate, dict) else "unknown"
             return (
                 f"Решение последнего запуска: {decision}. "
-                f"В отчёте находок: {len(findings)}. "
-                "Свободный ответ языковой модели сейчас недоступен, но доказательства и отчёты "
+                f"В отчете находок: {len(findings)}. "
+                "Свободный ответ языковой модели сейчас недоступен, но доказательства и отчеты "
                 "остаются доступны в этом чате."
             )
 
@@ -996,11 +993,10 @@ def _extract_project_archive(content: bytes, destination: Path) -> None:
 
 
 def _init_staging_repository(root: Path) -> None:
-    """Best-effort `git init` + index for a staged upload; never fails import.
+    """Best-effort `git init` и index для staged upload, импорт из-за этого не падает
 
-    The staging directory must behave like an ordinary project checkout for
-    git-aware tools (Semgrep, diff tooling). Only the local index is touched:
-    nothing is committed and no identity or network is required.
+    Staging должен выглядеть как обычный checkout для Semgrep и diff tools
+    Трогаем только локальный index, без commit, identity и network
     """
     try:
         subprocess.run(
@@ -1038,7 +1034,7 @@ def _project_name(filename: str) -> str:
 
 
 def _write_discovered_architecture(profile, path: Path) -> None:
-    # Discovery knows structure and stack, but must not invent criticality/trust relationships.
+    # Discovery знает структуру и stack, но не выдумывает criticality и trust relationships
     payload = {
         "services": {
             service_id: {
@@ -1076,7 +1072,7 @@ def _read_optional_gate(artifact_dir: Path) -> GateResult | None:
 
 
 def _public_gate(gate: GateResult | None) -> GateResult | None:
-    """Remove server-owned artifact paths from API/chat representations."""
+    """Убираем серверные пути артефактов из представлений API и чата"""
     if gate is None:
         return None
     return gate.model_copy(
@@ -1134,7 +1130,7 @@ def _run_summary(
     for report in reports:
         counts[report.status] = counts.get(report.status, 0) + 1
     decision_labels = {"pass": "пройден", "warn": "с предупреждениями", "fail": "не пройден"}
-    parts = [f"Анализ завершён. Решение: {decision_labels.get(gate.decision, gate.decision)}."]
+    parts = [f"Анализ завершен. Решение: {decision_labels.get(gate.decision, gate.decision)}."]
     if reports:
         parts.append(
             "Findings: "
@@ -1269,13 +1265,11 @@ def _default_chat_answerer(question: str, context: dict[str, object]) -> str:
 
 
 def _default_pipeline_runner(args: argparse.Namespace) -> int:
-    # Keep the API importable for metadata/read-only clients; the heavy LangGraph
-    # dependency is loaded only when a real analysis run starts.
+    # Тяжелый LangGraph грузим только при старте анализа, чтобы read-only API оставался легким
     from app.config import settings as pipeline_settings
 
     if pipeline_settings.sandbox_image:
-        # The readiness probe reads this directly from the process environment;
-        # pydantic-settings only exposes it on the settings object.
+        # Readiness probe читает значение из process environment, а не из settings object
         os.environ.setdefault("CFT_SANDBOX_IMAGE", pipeline_settings.sandbox_image)
 
     from app.ci_pipeline import run_ci_pipeline

@@ -554,7 +554,7 @@ def _target_profile(state: AgentState):
 
 
 def _runtime_action_target(state: AgentState) -> tuple[str, str]:
-    """Choose coordinates from trusted profile/runtime state, never LLM output."""
+    """Берем координаты из trusted profile/runtime state, а не из ответа LLM"""
     runtime_services = state.get("runtime_services")
     profile = _target_profile(state)
     if runtime_services is not None:

@@ -57,7 +57,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       const payload = await response.json();
       detail = validationDetail(payload) ?? detail;
     } catch {
-      // keep default detail
+      // Оставляем detail по умолчанию
     }
     throw new ApiError(response.status, detail);
   }
@@ -65,7 +65,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
-// ----- Health / projects -----
+// ----- Health и проекты -----
 
 export function getHealth(): Promise<{ status: string }> {
   return request("/health");
@@ -100,7 +100,7 @@ export function importProjectFiles(payload: {
   });
 }
 
-// ----- Runs -----
+// ----- Запуски -----
 
 export function listRuns(limit = 100): Promise<ApiRun[]> {
   return request(`/runs?limit=${limit}`);
@@ -154,7 +154,7 @@ export function getRunDiscovery(runId: string): Promise<RunDiscoveryView> {
   return request(`/runs/${runId}/discovery`);
 }
 
-// ----- Chat -----
+// ----- Чат -----
 
 export function listChatSessions(limit = 100): Promise<ChatSession[]> {
   return request(`/chat/sessions?limit=${limit}`);
@@ -190,7 +190,7 @@ export function sendChatMessage(
   });
 }
 
-// ----- SSE URLs -----
+// ----- SSE URL -----
 
 export function runEventsUrl(runId: string): string {
   return `${BASE_URL}/runs/${runId}/events`;

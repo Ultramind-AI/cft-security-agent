@@ -1,4 +1,4 @@
-"""Cooperative cancellation shared by API, pipeline and sandbox code."""
+"""Общая cooperative cancellation для API, pipeline и sandbox"""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from threading import Event
 
 
 class RunCancelled(RuntimeError):
-    """The operator cancelled an analysis run."""
+    """Оператор отменил запуск анализа"""
 
 
 class CancellationToken:
@@ -55,7 +55,7 @@ def cancellation_scope(token: CancellationToken | None) -> Iterator[None]:
 
 @contextmanager
 def suspend_cancellation() -> Iterator[None]:
-    """Allow mandatory cleanup commands to run after cancellation."""
+    """После отмены разрешаем обязательные cleanup команды"""
 
     marker = _ACTIVE_TOKEN.set(None)
     try:

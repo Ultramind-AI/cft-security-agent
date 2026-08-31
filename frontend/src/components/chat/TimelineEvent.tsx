@@ -52,7 +52,7 @@ export function StageBlock({ stage }: { stage: RunStageEvent }) {
 }
 
 export function DiscoveryBlock({ discovery }: { discovery: RunDiscoveryView }) {
-  const stack = discovery.technologies.join(" · ") || "Стек технологий не определён";
+  const stack = discovery.technologies.join(" · ") || "Стек технологий не определен";
   return (
     <details className="timeline-disclosure discovery-block">
       <summary>
@@ -139,7 +139,7 @@ function stopReason(reason: string): string {
   const labels: Record<string, string> = {
     terminal_evidence: "достаточно доказательств",
     policy_blocked: "заблокировано политикой",
-    plan_rejected: "план отклонён",
+    plan_rejected: "план отклонен",
     iteration_limit: "достигнут предел итераций",
   };
   return labels[reason] ?? reason.replaceAll("_", " ");

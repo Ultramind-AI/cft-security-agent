@@ -1,7 +1,7 @@
 import type { FindingStatus } from "../api/types";
 
 export function formatDateTime(value: string | null | undefined): string {
-  if (!value) return "—";
+  if (!value) return "-";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString("ru-RU", {
@@ -23,9 +23,9 @@ export function formatClock(value: string | null | undefined): string {
 }
 
 export function formatDuration(startedAt: string | null, finishedAt: string | null): string {
-  if (!startedAt || !finishedAt) return "—";
+  if (!startedAt || !finishedAt) return "-";
   const ms = new Date(finishedAt).getTime() - new Date(startedAt).getTime();
-  if (Number.isNaN(ms) || ms < 0) return "—";
+  if (Number.isNaN(ms) || ms < 0) return "-";
   if (ms < 1000) return `${ms} мс`;
   const seconds = ms / 1000;
   if (seconds < 60) return `${seconds.toFixed(1)} с`;
@@ -54,9 +54,9 @@ export function severityTone(severity: string | null | undefined): string {
 export function findingStatusLabel(status: FindingStatus): string {
   switch (status) {
     case "confirmed":
-      return "Подтверждён";
+      return "Подтвержден";
     case "rejected":
-      return "Отклонён";
+      return "Отклонен";
     case "inconclusive":
       return "Недостаточно данных";
     case "policy_blocked":
@@ -128,7 +128,7 @@ export function runStatusLabel(status: string): string {
   switch (status) {
     case "queued": return "В очереди";
     case "running": return "Выполняется";
-    case "completed": return "Завершён";
+    case "completed": return "Завершен";
     case "technical_failure": return "Техническая ошибка";
     default: return status;
   }

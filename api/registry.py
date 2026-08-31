@@ -13,7 +13,7 @@ class RegisteredTarget:
 
 
 class ApiTargetRegistry:
-    """Trusted static profiles plus server-generated uploaded project profiles."""
+    """Trusted статические профили и созданные сервером профили загруженных проектов"""
 
     def __init__(self, targets: list[RegisteredTarget]) -> None:
         self._targets = {target.profile.id: target for target in targets}
@@ -49,7 +49,7 @@ class ApiTargetRegistry:
         return cls(targets)
 
     def register_generated(self, *, profile_path: Path, profile: TargetProfile) -> None:
-        """Register a profile created server-side by deterministic Discovery."""
+        """Регистрируем профиль, созданный на сервере детерминированным Discovery"""
 
         if profile.id in self._targets:
             raise ValueError(f"Duplicate API target id: {profile.id}")

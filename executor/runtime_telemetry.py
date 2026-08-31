@@ -81,7 +81,7 @@ class RuntimeTelemetryCollector:
             state = self.session.collect_state()
         except RunCancelled:
             raise
-        except Exception:  # noqa: BLE001 -- telemetry gap becomes a structured event
+        except Exception:  # noqa: BLE001 - пробел в telemetry превращаем в structured event
             state = {}
             events.append(self._error("collect_session_state", run_id))
 

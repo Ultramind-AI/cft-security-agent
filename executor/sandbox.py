@@ -223,7 +223,7 @@ def _apply_posix_resource_limits(limits: SandboxLimits) -> None:
         except (ValueError, OSError):
             pass
 
-# RunLimiter
+# Лимит повторных и параллельных запусков
 
 class RunLimiter:
     _instances: ClassVar[dict[str, RunLimiter]] = {}
@@ -313,7 +313,7 @@ class ProcessSandbox:
                 cwd=str(workspace_dir),
                 env=env,
                 shell=False,
-                preexec_fn=preexec,  # noqa: PLW1509 -- needed for POSIX rlimits
+                preexec_fn=preexec,  # noqa: PLW1509 - нужен для POSIX rlimits
             )
 
             raw_stdout, stdout_trunc, raw_stderr, stderr_trunc, timed_out = _communicate_bounded(
@@ -329,7 +329,7 @@ class ProcessSandbox:
 
         except RunCancelled:
             raise
-        except Exception as exc:  # noqa: BLE001 -- sandbox errors become structured results
+        except Exception as exc:  # noqa: BLE001 - ошибки sandbox превращаем в structured result
             stdout_str = ""
             stderr_str = f"Process sandbox execution failed: {type(exc).__name__}: {exc}"
             exit_code = 127
@@ -422,7 +422,7 @@ class DockerSandbox:
 
         except RunCancelled:
             raise
-        except Exception as exc:  # noqa: BLE001 -- sandbox errors become structured results
+        except Exception as exc:  # noqa: BLE001 - ошибки sandbox превращаем в structured result
             stdout_str = ""
             stderr_str = f"Docker container launch failed: {type(exc).__name__}: {exc}"
             exit_code = 127
@@ -443,7 +443,7 @@ class DockerSandbox:
 
 
 class DockerSequenceRuntime:
-    """One disposable Docker container reused by a trusted action sequence."""
+    """Один одноразовый Docker container на trusted последовательность действий"""
 
     def __init__(self, policy: SandboxPolicy, worker_path: Path, network_name: str, repository_path: Path | None) -> None:
         self.policy = policy

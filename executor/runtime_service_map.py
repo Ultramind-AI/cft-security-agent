@@ -65,7 +65,7 @@ class _NoRedirect(HTTPRedirectHandler):
 
 
 def _http_probe(url: str, timeout: float, response_limit: int) -> ProbeResult:
-    """Legacy injectable probe retained for isolated unit tests; never a builder default."""
+    """Legacy injectable probe оставлен для изолированных unit tests, но не для default builder"""
     request = Request(url, method="GET", headers={"Accept": "application/json, text/plain, */*"})
     try:
         with build_opener(_NoRedirect).open(request, timeout=timeout) as response:
@@ -80,7 +80,7 @@ def _http_probe(url: str, timeout: float, response_limit: int) -> ProbeResult:
 
 
 class DockerNetworkProbe:
-    """Perform one GET from a disposable, locked-down container in a Compose network."""
+    """Делаем один GET из одноразового закрытого контейнера в Compose network"""
 
     def __init__(self, image: str, *, runner: Runner = subprocess.run) -> None:
         if not _DIGEST_IMAGE.fullmatch(image):
@@ -120,7 +120,7 @@ class DockerNetworkProbe:
 
 
 class RuntimeServiceMapBuilder:
-    """Build a map from trusted profile facts and an active managed session."""
+    """Собираем map из trusted фактов профиля и активной managed session"""
 
     def __init__(self, *, probe: Probe | None = None, network_probe: NetworkProbe | None = None, probe_timeout: float = _PROBE_TIMEOUT, response_limit: int = _RESPONSE_LIMIT) -> None:
         if probe_timeout <= 0 or response_limit < 1:

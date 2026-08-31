@@ -223,7 +223,7 @@ def create_app(orchestrator: RunOrchestrator | None = None) -> FastAPI:
 
     @app.get("/runs/{run_id}/discovery", response_model=RunDiscoveryView)
     def get_run_discovery(run_id: str) -> RunDiscoveryView:
-        # Discovery is available as soon as the pipeline wrote it, even mid-run.
+        # Discovery доступен сразу после записи пайплайном, даже посреди запуска
         return _not_found(lambda: service.get_run_discovery(run_id), "Discovery not found")
 
     @app.get("/runs/{run_id}/findings", response_model=list[ApiFinding])

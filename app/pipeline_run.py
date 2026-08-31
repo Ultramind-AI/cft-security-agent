@@ -113,11 +113,10 @@ def run_pipeline(
     profile_override: TargetProfile | None = None,
     runtime_services: RuntimeServiceMap | None = None,
 ) -> int:
-    """Run the SAST -> agent -> FinalReport -> Gate part of the pipeline.
+    """Запускаем часть пайплайна SAST -> agent -> FinalReport -> Gate
 
-    The CI orchestrator passes a discovered profile and the service map of an
-    already running sandbox.  The ordinary CLI can still call this function
-    without either value and keeps its previous behaviour.
+    CI orchestrator передает discovered profile и service map уже поднятого sandbox
+    Обычный CLI по-прежнему может вызвать функцию без них
     """
     if args.max_iterations < 1:
         raise SystemExit("--max-iterations must be at least 1")
@@ -318,8 +317,7 @@ def run_pipeline(
             if runtime_services is not None:
                 # Все действия одного CI-запуска используют уже поднятую sandbox-сессию.
                 state["runtime_services"] = runtime_services
-            # build_real_initial_state loads the source artifact; PR metadata is an
-            # additive pipeline concern and is attached without rewriting that artifact.
+            # PR metadata добавляем поверх source artifact, не переписывая его
             state["finding"] = finding
             if runtime_services is None or settings.agent_mode != "llm":
                 result = graph.invoke(state)
@@ -392,7 +390,7 @@ def _build_static_finding_report(
     *,
     reason: str,
 ) -> FinalReport:
-    """Create an auditable report when no trusted active verification is available."""
+    """Собираем auditable report когда trusted active verification недоступен"""
 
     code = LocalCodeReader(target).read_code(
         finding.file,
@@ -454,7 +452,7 @@ def _build_static_finding_report(
 
 
 def _unsupported_verification_reason(profile: TargetProfile, finding) -> str | None:
-    """Return why a specialized capability cannot be bound to trusted profile data."""
+    """Объясняем почему capability нельзя привязать к trusted данным профиля"""
 
     rule_id = finding.rule_id.lower()
     required_paths: list[tuple[str, str | None]] = []

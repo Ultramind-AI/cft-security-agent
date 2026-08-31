@@ -9,7 +9,7 @@ environments:
   - staging
 
 runtime:
-  backend: process # or docker
+  backend: process # или docker
   sandbox_image: "example.invalid/cft-sandbox@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   network_mode: none
   internal_network: cft_internal_security_net

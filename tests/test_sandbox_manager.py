@@ -123,7 +123,7 @@ def test_adapters_publish_internal_service_port(
 def test_dockerfile_path_containment_is_enforced(tmp_path: Path) -> None:
     profile = _profile(tmp_path, "dockerfile", "unknown")
     service = profile.services["app"].model_copy(update={"dockerfile": "../Dockerfile"})
-    # Модель обычно блокирует traversal; model_copy simulates a corrupted external object.
+    # Модель обычно блокирует traversal, через model_copy имитируем поврежденный внешний object
     profile = profile.model_copy(update={"services": {"app": service}})
     with pytest.raises(SandboxConfigurationError, match="inside the repository"):
         SandboxManager().open(profile)

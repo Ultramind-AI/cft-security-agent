@@ -8,7 +8,7 @@ from schemas.target import TargetArtifact, TargetProfile, TargetRuntimeConfig
 
 @dataclass(frozen=True)
 class TargetArtifactDefinition:
-    """Legacy constructor kept during TargetProfile migration."""
+    """Legacy constructor оставлен на время миграции TargetProfile"""
 
     id: str
     kind: str
@@ -41,7 +41,7 @@ class TargetArtifactDefinition:
 
 @dataclass(frozen=True)
 class TargetDefinition:
-    """Legacy MVP target shape converted at the registry boundary."""
+    """Legacy форма MVP таргета конвертируется на границе registry"""
 
     id: str
     environment: str

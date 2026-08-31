@@ -606,7 +606,7 @@ def _compose_health_path(healthcheck: object) -> str | None:
     else:
         return None
 
-    # Берём только URL path. Host/port позже заменит RuntimeServiceMap
+    # Берем только URL path. Host/port позже заменит RuntimeServiceMap
     for raw_url in _HEALTH_URL.findall(text):
         parsed = urlsplit(raw_url)
         if (

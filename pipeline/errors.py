@@ -16,7 +16,7 @@ def error_from_exception(
     layer: ErrorLayer,
     public_message: str,
 ) -> ErrorDetail:
-    """Map an exception at a pipeline boundary without exposing its raw text."""
+    """На границе пайплайна маппим исключение без утечки raw text"""
 
     causes = tuple(_exception_chain(exc))
     code: ErrorCode

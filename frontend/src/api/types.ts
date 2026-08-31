@@ -1,4 +1,4 @@
-// Mirror of the FastAPI contracts in schemas/api.py + related schema modules.
+// Зеркало контрактов FastAPI из schemas/api.py и связанных schema modules
 
 export type ApiRunStatus = "queued" | "running" | "completed" | "technical_failure";
 export type GateDecision = "pass" | "warn" | "fail" | null;
@@ -130,7 +130,7 @@ export interface RunTimeline {
   findings: FindingTimeline[];
 }
 
-// ----- Reports -----
+// ----- Отчеты -----
 
 export interface ReportFinding {
   id: string;
@@ -265,7 +265,7 @@ export interface GateResult {
   findings: PipelineFindingResult[];
 }
 
-// ----- Progress / discovery (live run) -----
+// ----- Прогресс и discovery активного запуска -----
 
 export interface RunStageEvent {
   stage: string;
@@ -323,7 +323,7 @@ export interface RunDiscoveryView {
   warnings: string[];
 }
 
-// ----- Chat -----
+// ----- Чат -----
 
 export interface ChatSession {
   id: string;

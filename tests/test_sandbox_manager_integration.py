@@ -1,4 +1,4 @@
-"""Optional real-target checks; each target is discovered before it is started."""
+"""Опциональные проверки реального таргета, перед запуском каждый проходит discovery"""
 
 from __future__ import annotations
 

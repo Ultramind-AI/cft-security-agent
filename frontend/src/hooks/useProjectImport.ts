@@ -77,9 +77,8 @@ interface FolderSelection {
 }
 
 /**
- * Collect a browser-selected folder into relative paths + base64 payloads.
- * The browser never sends absolute host paths — only paths relative to the
- * picked root, which the server re-validates inside its own staging area.
+ * Собираем выбранную папку в relative path и base64 payload
+ * Браузер отправляет только пути от выбранного root, сервер повторно валидирует их в staging
  */
 export async function collectFolder(
   fileList: FileList | File[],
@@ -88,7 +87,7 @@ export async function collectFolder(
   const all = Array.from(fileList);
   if (all.length === 0) throw new Error("Папка пуста");
 
-  // webkitRelativePath looks like "MyProject/src/main.py"; strip the root.
+  // webkitRelativePath выглядит как "MyProject/src/main.py", убираем root
   const first = all[0] as File & { webkitRelativePath?: string };
   const rootName =
     first.webkitRelativePath?.split("/")[0] ?? first.name.split("/")[0] ?? "project";

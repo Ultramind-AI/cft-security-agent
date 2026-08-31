@@ -27,7 +27,7 @@ def build_http_surface_evidence(
     artifact_refs: list[str],
     hypothesis_id: str,
 ) -> list[Evidence]:
-    """Создать семь фактических записей из сохранённого GET-наблюдения."""
+    """Создать семь фактических записей из сохраненного GET-наблюдения"""
     session_id = record.get("session_id")
     if not isinstance(session_id, str) or not session_id:
         return []

@@ -147,7 +147,7 @@ class RunStageEvent(BaseModel):
 
 
 class RunActivityEvent(BaseModel):
-    """One executed sandbox action surfaced from the executor audit log."""
+    """Одно выполненное sandbox действие из audit log Executor"""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -161,7 +161,7 @@ class RunActivityEvent(BaseModel):
 
 
 class RunFindingProgressEvent(BaseModel):
-    """Sanitized finding lifecycle event from the progress journal."""
+    """Очищенное событие жизненного цикла finding из progress journal"""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -201,7 +201,7 @@ class DiscoveryComponentView(BaseModel):
 
 
 class RunDiscoveryView(BaseModel):
-    """Sanitized Discovery facts; never exposes local repository paths."""
+    """Очищенные факты Discovery без локальных путей репозитория"""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -212,7 +212,7 @@ class RunDiscoveryView(BaseModel):
 
 
 class ChatRunSnapshot(BaseModel):
-    """One run and its sanitized presentation artifacts inside a chat."""
+    """Один запуск и его очищенные presentation artifacts внутри чата"""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -237,13 +237,12 @@ class ChatSnapshot(BaseModel):
 
 
 class ImportedProjectFile(BaseModel):
-    """One relative project file sent by the browser folder picker."""
+    """Один relative path проекта из browser folder picker"""
 
     model_config = ConfigDict(extra="forbid")
 
     path: str = Field(min_length=1, max_length=1024)
-    # Empty source files (for example Python package __init__.py files) encode
-    # to an empty Base64 string and are valid project artifacts.
+    # Пустые файлы вроде __init__.py кодируются пустой Base64 строкой и остаются валидными
     content_base64: str = Field(max_length=200_000_000)
 
 

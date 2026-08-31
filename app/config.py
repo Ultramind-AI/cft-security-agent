@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     api_run_cpu: float = Field(default=1.0, gt=0)
     api_run_memory_mb: int = Field(default=512, ge=64)
 
-    # Digest-pinned image for sandbox-network readiness probes (CFT_SANDBOX_IMAGE).
+    # Digest-pinned image для readiness probe внутри sandbox network
     sandbox_image: str = ""
 
     agent_mode: Literal["stub", "llm"] = "stub"

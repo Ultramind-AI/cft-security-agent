@@ -35,14 +35,12 @@ class StoredRunJob:
 
 
 class ApiStore:
-    """SQLite metadata store. Large executor artifacts remain on disk."""
+    """Метаданные храним в SQLite, крупные артефакты Executor оставляем на диске"""
 
     def __init__(self, path: str | Path) -> None:
         self.path = Path(path).expanduser().resolve()
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        # All operations are short metadata reads/writes coming from both the
-        # API worker pool and the background run thread; serialize them so no
-        # two threads are ever inside sqlite3 on this file at once.
+        # Короткие операции из API worker pool и фонового потока сериализуем для sqlite3
         self._lock = threading.Lock()
         self._initialize()
 
@@ -164,7 +162,7 @@ class ApiStore:
                     ON chat_session_runs(session_id, linked_at, run_id);
                 """
             )
-            # Existing T23 databases predate cancellation and chat prompt columns.
+            # Старые базы T23 созданы до колонок отмены и chat prompt
             _ensure_column(connection, "runs", "cancellation_reason", "TEXT")
             _ensure_column(connection, "runs", "analysis_request", "TEXT")
             connection.execute(
@@ -315,7 +313,7 @@ class ApiStore:
             )
 
     def request_cancel(self, run_id: str, reason: str) -> ApiRun:
-        """Atomically cancel a queued run or signal an active run."""
+        """Атомарно отменяем запуск в очереди или отправляем сигнал активному"""
         with self._connection() as connection:
             row = connection.execute(
                 "SELECT status FROM runs WHERE run_id = ?",
@@ -375,7 +373,7 @@ class ApiStore:
         ]
 
     def recover_abandoned(self) -> int:
-        """A new process cannot safely resume a previously active sandbox."""
+        """Новый процесс не может безопасно продолжить ранее активный sandbox"""
         error = ErrorDetail(
             code="INTERNAL_ERROR",
             layer="pipeline",
@@ -570,7 +568,7 @@ class ApiStore:
         return [_chat_session_from_row(row) for row in rows]
 
     def delete_chat_session(self, session_id: str) -> None:
-        """Delete only chat metadata, preserving linked runs and their artifacts."""
+        """Удаляем только метаданные чата, связанные запуски и артефакты сохраняем"""
         with self._connection() as connection:
             row = connection.execute(
                 """

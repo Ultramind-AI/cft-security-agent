@@ -17,10 +17,10 @@ class PlannedAction(BaseModel):
 
 
 class DynamicPlan(BaseModel):
-    """Structured verification plan proposed by the reasoning layer.
+    """Структурированный план проверки от reasoning layer
 
-    The plan is data only. It never grants execution permission: every action still
-    passes the deterministic Validator immediately before execution.
+    План содержит только данные и не дает разрешение на запуск
+    Каждое действие все равно проходит детерминированный Validator перед выполнением
     """
 
     model_config = ConfigDict(extra="forbid")

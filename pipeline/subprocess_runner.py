@@ -1,4 +1,4 @@
-"""Bounded subprocess execution with timeout and cooperative cancellation."""
+"""Ограниченный запуск subprocess с timeout и cooperative cancellation"""
 
 from __future__ import annotations
 

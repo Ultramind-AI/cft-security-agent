@@ -93,7 +93,7 @@ export function OpenProjectDialog({
             <ProjectSource
               icon={<FolderOpen size={28} weight="duotone" />}
               title="Открыть папку репозитория"
-              description="Браузер передаёт отфильтрованное дерево относительных путей. Абсолютные пути вашего компьютера не отправляются."
+              description="Браузер передает отфильтрованное дерево относительных путей. Абсолютные пути вашего компьютера не отправляются."
               action="Выбрать папку"
               onClick={() => folderInputRef.current?.click()}
             />
@@ -121,7 +121,7 @@ export function OpenProjectDialog({
           ref={folderInputRef}
           type="file"
           multiple
-          // @ts-expect-error webkitdirectory is the cross-browser folder picker fallback.
+          // @ts-expect-error webkitdirectory нужен как cross-browser fallback выбора папки
           webkitdirectory=""
           directory=""
           hidden
@@ -246,7 +246,7 @@ function ImportState({ progress }: { progress: ImportProgress }) {
             ? `Собрано исходных файлов: ${progress.collected}`
             : done
               ? "Открываем новый чат безопасности"
-              : "Загружаем дерево файлов и создаём профиль цели"}
+              : "Загружаем дерево файлов и создаем профиль цели"}
         </span>
       </div>
     </div>

@@ -1,4 +1,4 @@
-"""One CI entrypoint for discovery, sandbox lifecycle and the security gate."""
+"""Единая CI точка входа для discovery, sandbox lifecycle и security gate"""
 
 from __future__ import annotations
 
@@ -78,7 +78,7 @@ def _parse_args() -> argparse.Namespace:
 def target_subprocess_environment(
     source: Mapping[str, str] | None = None,
 ) -> dict[str, str]:
-    """Return an environment that cannot expose CI/LLM credentials to target tools."""
+    """Собираем окружение без CI/LLM credentials для target tools"""
 
     source = source or os.environ
     clean: dict[str, str] = {}
@@ -117,7 +117,7 @@ def run_ci_pipeline(
     runtime_builder: RuntimeServiceMapBuilder | None = None,
     pipeline_runner: Callable[..., int] = run_pipeline,
 ) -> int:
-    """Execute the complete CI flow and keep technical failures on exit code 2."""
+    """Запускаем полный CI flow, технические сбои возвращаем с exit code 2"""
 
     token: CancellationToken | None = getattr(args, "cancellation_token", None)
     with cancellation_scope(token):
@@ -256,7 +256,7 @@ def _run_ci_pipeline_inner(
         return exit_code
     except RunCancelled:
         raise
-    except Exception as exc:  # noqa: BLE001 - CI boundary converts failures into Gate
+    except Exception as exc:  # noqa: BLE001 - на границе CI сбои превращаются в Gate
         if session is not None:
             _write_sandbox_logs(output_dir, session)
         progress.stage(

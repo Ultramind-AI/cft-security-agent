@@ -3,13 +3,13 @@ import { formatDateTime, formatDuration, severityTone } from "./format";
 
 describe("format", () => {
   it("renders missing dates as a dash", () => {
-    expect(formatDateTime(null)).toBe("—");
-    expect(formatDateTime("")).toBe("—");
+    expect(formatDateTime(null)).toBe("-");
+    expect(formatDateTime("")).toBe("-");
   });
 
   it("formats valid ISO timestamps", () => {
     const text = formatDateTime("2026-08-24T10:30:00Z");
-    expect(text).not.toBe("—");
+    expect(text).not.toBe("-");
     expect(text.length).toBeGreaterThan(0);
   });
 
@@ -17,7 +17,7 @@ describe("format", () => {
     expect(
       formatDuration("2026-08-24T10:00:00Z", "2026-08-24T10:00:30.500Z"),
     ).toContain("с");
-    expect(formatDuration(null, null)).toBe("—");
+    expect(formatDuration(null, null)).toBe("-");
   });
 
   it("maps severities to tones", () => {

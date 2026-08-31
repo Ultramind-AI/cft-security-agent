@@ -5,11 +5,10 @@ from schemas.state import AgentState
 
 
 class DynamicPlanValidator:
-    """Validate plan scope against trusted runtime/application state.
+    """Проверяем scope плана по trusted runtime/application state
 
-    This is not a replacement for PolicyValidator. It only proves that a plan does
-    not reference a target, service, endpoint or sandbox session outside the state
-    that was supplied to the agent.
+    Это не замена PolicyValidator. Здесь только проверяем что план не ссылается
+    на target, service, endpoint или sandbox session за пределами state агента
     """
 
     def validate(self, plan: DynamicPlan, state: AgentState) -> PlanValidationResult:

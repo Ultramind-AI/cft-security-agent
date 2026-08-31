@@ -18,7 +18,7 @@ class StructuredPatchClient(Protocol):
 
 
 class PatchProposalService:
-    """Ask an LLM only for a diff artifact; it never receives execution access."""
+    """Просим у LLM только diff artifact, доступ к выполнению она не получает"""
 
     def __init__(self, client: StructuredPatchClient) -> None:
         self.client = client

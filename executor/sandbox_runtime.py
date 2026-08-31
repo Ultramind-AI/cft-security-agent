@@ -25,7 +25,7 @@ class DockerRuntimeBuilder:
         self.policy = policy
 
     def _workspace_tmpfs_options(self) -> str:
-        """Derive tmpfs ownership from the configured non-root Docker user."""
+        """Владельца tmpfs берем из настроенного non-root Docker user"""
         # tmpfs получает UID/GID non-root пользователя, иначе /workspace недоступен для записи.
         user_parts = self.policy.container_user.split(":", maxsplit=1)
         if len(user_parts) != 2 or not all(part.isdecimal() for part in user_parts):
